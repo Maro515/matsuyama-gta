@@ -2775,8 +2775,11 @@ function renderBigmap(){
    地面: トップダウン描画をMode-7方式で透視変換
    立体物: 透視投影＋奥行きソートで描画
    ========================================================= */
-const GS3=0.6,GW3=1536;
+const GS3=0.7,GW3=2048;   // 遠景グラウンド
+const GSN=3.0,GWN=1280;   // 近景グラウンド（高解像度）
 const gndCv=document.createElement('canvas');gndCv.width=GW3;gndCv.height=GW3;
+const gndNearCv=document.createElement('canvas');gndNearCv.width=GWN;gndNearCv.height=GWN;
+let noisePat=null;
 function drawGroundLM(c){ // 三人称時に地面レイヤーへ描くランドマークの平面部分
   c.save();c.translate(897,4548);c.rotate(Math.atan2(4785-4310,1005-790));
   c.fillStyle='#54575c';c.fillRect(-290,-34,580,68);
@@ -2793,16 +2796,17 @@ function drawGroundLM(c){ // 三人称時に地面レイヤーへ描くランド
     c.fillStyle='#adbf96';c.fillRect(s[0],s[1],s[2]-s[0],s[3]-s[1]);
   }
 }
-function renderGround3D(){
-  const g=gndCv.getContext('2d');
+function paintGround(cv2,scale){ // 地面レイヤーを指定解像度で描く
+  const g=cv2.getContext('2d');
   const saveP=P3D;P3D=null;
   const pk=V.k;V.k=0;
+  const cullR=cv2.width/scale*.75+120;
   g.setTransform(1,0,0,1,0,0);
-  g.fillStyle='#c9c5b4';g.fillRect(0,0,GW3,GW3);
+  g.fillStyle='#c9c5b4';g.fillRect(0,0,cv2.width,cv2.height);
   g.save();
-  g.translate(GW3/2,GW3*.8);
+  g.translate(cv2.width/2,cv2.height*.8);
   g.rotate(-saveP.yaw-Math.PI/2);
-  g.scale(GS3,GS3);
+  g.scale(scale,scale);
   g.translate(-saveP.cx,-saveP.cy);
   drawTerrain(g,false);
   drawRails(g);
@@ -2825,23 +2829,42 @@ function renderGround3D(){
     g.fillStyle=S.active?'rgba(80,210,255,.25)':'rgba(255,211,77,.25)';
     g.beginPath();g.arc(mp[0],mp[1],26+pulse,0,TAU);g.fill();
   }
-  // 落ち影（近傍のみ）
+  // 落ち影（キャンバス範囲内のみ）
   g.fillStyle='rgba(24,30,40,.2)';
   for(const b of buildings){
     const bx=(b.x0+b.x1)/2,by=(b.y0+b.y1)/2;
-    if(hyp(bx-saveP.cx,by-saveP.cy)>1450)continue;
+    if(hyp(bx-saveP.cx,by-saveP.cy)>cullR)continue;
     boxShadow(g,b.x0,b.y0,b.x1,b.y1,b.hW*.9);
   }
   for(const l of LMS){
-    if(!l.solid||hyp(l.x-saveP.cx,l.y-saveP.cy)>1450)continue;
+    if(!l.solid||hyp(l.x-saveP.cx,l.y-saveP.cy)>cullR)continue;
     boxShadow(g,l.solid[0],l.solid[1],l.solid[2],l.solid[3],LMH[l.t]||14);
   }
   for(const t of TREES){
-    if(hyp(t[0]-saveP.cx,t[1]-saveP.cy)>1200)continue;
+    if(hyp(t[0]-saveP.cx,t[1]-saveP.cy)>Math.min(cullR,1200))continue;
     g.beginPath();g.ellipse(t[0]+SHX*13,t[1]+SHY*13,t[2],t[2]*.75,0,0,TAU);g.fill();
+  }
+  // 路面の微細テクスチャ（高解像度キャンバスのみ）
+  if(scale>1.5){
+    if(!noisePat){
+      const nc=document.createElement('canvas');nc.width=nc.height=64;
+      const n2=nc.getContext('2d');
+      for(let i=0;i<430;i++){
+        n2.fillStyle='rgba('+(Math.random()<.5?'255,255,255':'18,20,24')+','+(Math.random()*.15+.04).toFixed(2)+')';
+        n2.fillRect(Math.random()*64,Math.random()*64,1.1,1.1);
+      }
+      noisePat=g.createPattern(nc,'repeat');
+    }
+    g.fillStyle=noisePat;
+    const R=cv2.width/scale*.6;
+    g.fillRect(saveP.cx-R,saveP.cy-R,R*2,R*2);
   }
   g.restore();
   V.k=pk;P3D=saveP;
+}
+function renderGround3D(){
+  paintGround(gndCv,GS3);
+  paintGround(gndNearCv,GSN);
 }
 function skyCol(){
   const n=NIGHT/0.58;
@@ -3260,16 +3283,29 @@ function renderTPS(){
   c.fillStyle='#c9c5b4';c.fillRect(0,Math.max(0,P3D.horY),cw,ch-Math.max(0,P3D.horY));
   renderGround3D();
   const y0s=Math.max(0,Math.ceil(P3D.horY)+1);
-  for(let sy2=y0s;sy2<ch;sy2+=2){
-    const r=(P3D.hy-sy2)/f;
-    const den=sp-r*cp;
-    if(den<=0.0002)continue;
-    const dF=camH*(cp+r*sp)/den;
-    const zd=dF*cp+camH*sp;
-    const halfW=cw/2*zd/f;
-    const srcY=GW3*.8-dF*GS3;
-    if(srcY<0||srcY>=GW3-1)continue;
-    c.drawImage(gndCv,GW3/2-halfW*GS3,srcY,halfW*2*GS3,1.6,0,sy2,cw,2);
+  {
+    let sy2=y0s;
+    while(sy2<ch){
+      const step=sy2>ch*.55?1:2; // 手前ほど細かくサンプリング
+      const r=(P3D.hy-sy2)/f;
+      const den=sp-r*cp;
+      if(den<=0.0002){sy2+=step;continue;}
+      const dF=camH*(cp+r*sp)/den;
+      const r2=(P3D.hy-(sy2+step))/f;
+      const den2=sp-r2*cp;
+      const dF2=den2>0.0002?camH*(cp+r2*sp)/den2:Math.max(0,dF-3);
+      const zd=dF*cp+camH*sp;
+      const halfW=cw/2*zd/f;
+      // 近景は高解像度キャンバスから
+      const nearOK=halfW*2*GSN<=GWN-4&&(GWN*.8-dF*GSN)>=0;
+      const cvG=nearOK?gndNearCv:gndCv;
+      const G=nearOK?GSN:GS3, GWx=nearOK?GWN:GW3;
+      const srcY=GWx*.8-dF*G;
+      if(srcY<0||srcY>=GWx-1){sy2+=step;continue;}
+      const srcH=Math.max(1,(dF-dF2)*G);
+      c.drawImage(cvG,GWx/2-halfW*G,srcY,halfW*2*G,srcH,0,sy2,cw,step);
+      sy2+=step;
+    }
   }
   // 遠景フォグ
   const fogG=c.createLinearGradient(0,P3D.horY,0,P3D.horY+ch*.22);

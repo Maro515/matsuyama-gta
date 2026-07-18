@@ -30,6 +30,8 @@
   #hpFill{height:100%;width:100%;background:#69d06b;border-radius:4px}
   #toast{position:fixed;left:50%;bottom:calc(env(safe-area-inset-bottom,0px) + 84px);transform:translateX(-50%);
     font-size:14px;font-weight:700;max-width:82vw;text-align:center;opacity:0;transition:opacity .3s}
+  #ridehint{position:fixed;left:50%;bottom:calc(env(safe-area-inset-bottom,0px) + 132px);transform:translateX(-50%);
+    font-size:14px;font-weight:800;display:none;color:#fff}
   #district{position:fixed;left:16px;bottom:calc(env(safe-area-inset-bottom,0px) + 196px);
     font-size:24px;font-weight:900;color:#fff;text-shadow:0 2px 6px #000,0 0 14px rgba(0,0,0,.6);
     opacity:0;transition:opacity .5s;font-style:italic;letter-spacing:1px;pointer-events:none}
@@ -93,6 +95,7 @@
   <div id="minimapWrap"><canvas id="mm" width="234" height="156"></canvas><div id="hpBar"><div id="hpFill"></div></div></div>
   <div id="speed"></div>
   <div id="toast" class="chip"></div>
+  <div id="ridehint" class="chip">🚗 E：乗車</div>
   <div id="district"></div>
   <div id="keyhint">E:乗車　C:カメラ　R:ラジオ　M:マップ　Shift:ダッシュ　Space:ブレーキ　H:クラクション</div>
 </div>
@@ -573,6 +576,69 @@ const MIKANS=[];
   for(const b of _ov)if(x>b.x0-8&&x<b.x1+8&&y>b.y0-8&&y<b.y1+8){bad=true;break;}
   if(!bad)MIKANS.push({x,y,id:MIKANS.length,got:false});
  }}
+/* 街路樹（並木道） */
+for(const rn of ['平和通り','花園町通り','空港通り','千舟町通り']){
+  const r=ROADS.find(q=>q.n===rn);
+  if(!r)continue;
+  for(let d=70;d<r.pl.len-40;d+=150){
+    const p=plAt(r.pl,d);
+    for(const sgn of[-1,1])
+      TREES.push([p.x+Math.sin(p.a)*sgn*(r.w/2+13),p.y-Math.cos(p.a)*sgn*(r.w/2+13),4.5+rng()*2]);
+  }
+}
+/* 電柱（生活道路沿い・電線で連結） */
+const POLES=[];
+for(const r of ROADS){
+  if(r.kind!=='minor')continue;
+  let prev=null;
+  for(let d=40;d<r.pl.len-20;d+=210){
+    const p=plAt(r.pl,d);
+    const pole={x:p.x+Math.sin(p.a)*(r.w/2+8),y:p.y-Math.cos(p.a)*(r.w/2+8),
+      lx:prev?prev.x:null,ly:prev?prev.y:null};
+    POLES.push(pole);prev=pole;
+  }
+}
+/* 信号機（横断歩道の交差点） */
+const SIGNALS=CROSSWALKS.map(cwk=>({
+  x:cwk[0]+Math.cos(cwk[2])*16+Math.sin(cwk[2])*(cwk[3]/2+7),
+  y:cwk[1]+Math.sin(cwk[2])*16-Math.cos(cwk[2])*(cwk[3]/2+7),
+  a:cwk[2],g:Math.abs(Math.cos(cwk[2]))>.7?0:1}));
+function sigCol(g){ // 信号現示（16秒サイクル）
+  const t=tSec%16;
+  if(g===0)return t<7?'#3ee06a':t<8.5?'#ffd23c':'#ff4646';
+  return (t>=8.5&&t<15.5)?'#3ee06a':t>=15.5?'#ffd23c':'#ff4646';
+}
+/* 自動販売機 */
+const VENDING=[];
+{let t=0;
+ while(VENDING.length<110&&t++<4000){
+  const x=300+rng()*(W-600),y=250+rng()*(H-500);
+  if(inWaterRaw(x,y))continue;
+  const ri=roadInfo(x,y);
+  if(!ri||ri.road.kind==='arcade')continue;
+  if(ri.d<ri.road.w/2+9||ri.d>ri.road.w/2+16)continue;
+  let bad=false;
+  gridNear(bldGrid,x,y,_ov);
+  for(const b of _ov)if(x>b.x0-6&&x<b.x1+6&&y>b.y0-6&&y<b.y1+6){bad=true;break;}
+  if(!bad)VENDING.push({x,y,c:['#d43c3c','#2456a8','#f0f0f2'][VENDING.length%3]});
+ }}
+/* バス停・マンホール */
+const BUSSTOPS=[];
+for(const r of ROADS){
+  if(r.kind!=='main')continue;
+  for(let d=300;d<r.pl.len-100;d+=760){
+    const p=plAt(r.pl,d);
+    BUSSTOPS.push([p.x+Math.sin(p.a)*(r.w/2+10),p.y-Math.cos(p.a)*(r.w/2+10)]);
+  }
+}
+const MANHOLES=[];
+for(const r of ROADS){
+  if(r.kind==='arcade')continue;
+  for(let d=160;d<r.pl.len-40;d+=330){
+    const p=plAt(r.pl,d);
+    MANHOLES.push([p.x+Math.sin(p.a)*r.w*.15,p.y-Math.cos(p.a)*r.w*.15]);
+  }
+}
 
 /* =========================================================
    ゲーム状態
@@ -583,6 +649,8 @@ const CARTYPES={
  taxi:{max:300,acc:230,l:46,w:24,cols:['#e8862c']},
  truck:{max:220,acc:130,l:62,w:28,cols:['#dde0e4','#7c94ac','#8ca07c']},
  sports:{max:385,acc:320,l:44,w:23,cols:['#d43c3c','#f2c22e','#3c78d4','#e8e8e8']},
+ bus:{max:235,acc:130,l:84,w:30,cols:['#e8862c','#e8862c','#5b8c46']},
+ bike:{max:295,acc:255,l:26,w:10,cols:['#d43c3c','#2a2a2e','#3c78d4','#e8e8e8']},
  police:{max:345,acc:280,l:46,w:24,cols:['#f0f2f4']},
 };
 function mkCar(x,y,a,type){
@@ -616,6 +684,7 @@ const PLANE={st:0,t:20,x:0,y:0,a:0,alt:0}; // st:0待機 1着陸 2停止 3離陸
 // 初期駐車車両
 [[5888,3450,-Math.PI/2,'sedan'],[4785,3035,Math.PI/2,'kei'],[7432,2385,Math.PI,'taxi'],[6020,3125,0,'sedan'],
  [1100,1782,0,'kei'],[958,4462,Math.PI,'sedan'],[6150,3442,Math.PI/2,'sports'],[6457,3220,Math.PI/2,'kei'],
+ [5852,3452,-Math.PI/2,'bus'],[6262,3122,0,'bike'],[7408,2402,Math.PI,'bike'],
  [5700,2292,0,'truck'],[6390,3428,0,'sedan'],[1120,1030,Math.PI/2,'kei'],[5165,3050,0,'sedan']
 ].forEach(p=>parked.push(mkCar(p[0],p[1],p[2],p[3])));
 
@@ -745,7 +814,10 @@ function updateAudio(dt){
   const drive=S.mode==='car'&&!S.paused;
   const sp=drive?Math.abs(S.pcar.v):0;
   engGain.gain.value=(S.muted||!drive)?0:clamp(.025+sp/380*.08,.0,.11);
-  if(engOsc)engOsc.frequency.value=55+sp*.55;
+  if(engOsc){
+    const tf=drive?(S.pcar.type==='bike'?1.9:(S.pcar.type==='bus'||S.pcar.type==='truck')?0.6:1):1;
+    engOsc.frequency.value=(55+sp*.55)*tf;
+  }
   const chase=polices.length>0&&!S.paused;
   if(chase&&!S.muted){
     sirenTimer-=dt;
@@ -880,6 +952,10 @@ function updPlayer(dt){
       moveEnt(S,S.px+vx*sp*dt,S.py+vy*sp*dt,7,false)||0;
       // moveEntはo.x/o.yを使うため一時変換
     }
+    // 近くの乗り物（乗車プロンプト用）
+    S.nearVeh=false;
+    for(const cc of parked)if(hyp(cc.x-S.px,cc.y-S.py)<52){S.nearVeh=true;break;}
+    if(!S.nearVeh)for(const cc of traffic)if(hyp(cc.x-S.px,cc.y-S.py)<52){S.nearVeh=true;break;}
   }else{
     const c=S.pcar;
     const wet=1-.28*S.rainI; // 雨でグリップ・制動が低下
@@ -989,10 +1065,13 @@ function spawnTraffic(){
     const p=plAt(r.pl,d);
     const dist=hyp(p.x-S.px,p.y-S.py);
     if(dist<450||dist>1500)continue;
-    const types=['sedan','sedan','kei','kei','taxi','truck','sports'];
+    const types=r.kind==='main'?['sedan','sedan','kei','kei','taxi','truck','sports','bus','bike']
+      :['sedan','sedan','kei','kei','taxi','truck','bike'];
     const c=mkCar(p.x,p.y,p.a,types[(Math.random()*types.length)|0]);
     c.road=r;c.d=d;c.dir=Math.random()<.5?1:-1;
     c.cruise=(r.kind==='main'?130:95)+Math.random()*45;
+    if(c.type==='bus')c.cruise*=.72;
+    if(c.type==='bike')c.cruise*=1.08;
     c.v=c.cruise;c.stun=0;
     traffic.push(c);
     return;
@@ -1469,13 +1548,21 @@ function drawRoads(c,mini){
     strokePl(c,r.pl,9,'rgba(60,56,50,.35)');
     strokePl(c,r.pl,1.6,'#35322d');
   }
-  // 横断歩道
+  // 横断歩道・停止線・マンホール
   if(!mini){
     c.fillStyle='rgba(232,235,238,.78)';
     for(const cwk of CROSSWALKS){
       c.save();c.translate(cwk[0],cwk[1]);c.rotate(cwk[2]);
       for(let i=-2;i<=2;i++)c.fillRect(i*7-2,-cwk[3]/2+5,4,cwk[3]-10);
+      c.fillStyle='rgba(232,235,238,.65)';
+      c.fillRect(-27,-cwk[3]/2+5,3.5,cwk[3]-10);
+      c.fillRect(23.5,-cwk[3]/2+5,3.5,cwk[3]-10);
+      c.fillStyle='rgba(232,235,238,.78)';
       c.restore();
+    }
+    c.strokeStyle='rgba(30,32,36,.45)';c.lineWidth=1.5;
+    for(const m of MANHOLES){
+      c.beginPath();c.arc(m[0],m[1],4,0,TAU);c.stroke();
     }
   }
 }
@@ -1512,6 +1599,22 @@ function bld3D(c,b){
     c.fillStyle=col;
     c.beginPath();c.moveTo(p0[0],p0[1]);c.lineTo(q0[0],q0[1]);c.lineTo(q1[0],q1[1]);c.lineTo(p1[0],p1[1]);c.closePath();c.fill();
     const fl=b.hgt;
+    // 1階の店構え（帯・入口・オーニング）
+    const B=(u,tt)=>{
+      const bx2=p0[0]+(q0[0]-p0[0])*u,by2=p0[1]+(q0[1]-p0[1])*u;
+      const tx2=p1[0]+(q1[0]-p1[0])*u,ty2=p1[1]+(q1[1]-p1[1])*u;
+      return[bx2+(tx2-bx2)*tt,by2+(ty2-by2)*tt];
+    };
+    const gt=0.92/(fl+0.55);
+    const quad=(a1,b1,c1,d1,col2)=>{
+      c.fillStyle=col2;
+      c.beginPath();c.moveTo(a1[0],a1[1]);c.lineTo(b1[0],b1[1]);c.lineTo(c1[0],c1[1]);c.lineTo(d1[0],d1[1]);c.closePath();c.fill();
+    };
+    quad(B(0,0),B(1,0),B(1,gt*.85),B(0,gt*.85),'rgba(42,46,54,.24)');
+    const u0=.28+(b.seed%3)*.16;
+    quad(B(u0,0),B(u0+.14,0),B(u0+.14,gt*.68),B(u0,gt*.68),'rgba(24,27,33,.5)');
+    if(b.seed%4===0)
+      quad(B(.06,gt*.85),B(.94,gt*.85),B(.94,gt*1.04),B(.06,gt*1.04),['#b8483a','#3c6ea8','#3f8a52'][b.seed%3]);
     c.lineWidth=2.1;c.setLineDash([4,5]);
     for(let f=1;f<=fl;f++){
       const t=(f-0.32)/(fl+0.55);
@@ -1854,6 +1957,21 @@ function planeShape(c){
 }
 function carShape(c,car,isPolice,tsec){
   const t=CARTYPES[car.type],L=t.l,Wd=t.w;
+  if(car.type==='bike'){ // 二輪はトップダウン専用の簡易描画
+    c.save();c.translate(car.x,car.y);c.rotate(car.a);
+    c.fillStyle='rgba(22,28,36,.3)';
+    c.beginPath();c.ellipse(1,2,L/2,4,0,0,TAU);c.fill();
+    c.strokeStyle=car.color;c.lineWidth=3;
+    c.beginPath();c.moveTo(-L/2+3,0);c.lineTo(L/2-3,0);c.stroke();
+    c.fillStyle='#1a1c20';
+    c.beginPath();c.ellipse(L*.36,0,3.5,1.8,0,0,TAU);c.ellipse(-L*.36,0,3.5,1.8,0,0,TAU);c.fill();
+    c.fillStyle=car===S.pcar?'#2e6e46':'#5a6270';
+    c.beginPath();c.arc(-1,0,3.4,0,TAU);c.fill();
+    c.fillStyle=car===S.pcar?'#ff9d2e':'#2c2e33';
+    c.beginPath();c.arc(-2,0,2.2,0,TAU);c.fill();
+    c.restore();
+    return;
+  }
   const dx=(car.x-V.cx)*6*V.k,dy=(car.y-V.cy)*6*V.k;
   // 落ち影（太陽方向）
   c.save();c.translate(car.x+SHX*7,car.y+SHY*7);c.rotate(car.a);
@@ -1873,6 +1991,10 @@ function carShape(c,car,isPolice,tsec){
   rr(c,-L/2+1,-Wd/2+1,L-2,Wd-2,4);c.stroke();
   if(car.type==='taxi'){c.fillStyle='#fff';c.fillRect(-4,-5,8,10);
     c.fillStyle='#d43c3c';c.fillRect(-2,-2,4,4);}
+  if(car.type==='bus'){
+    c.fillStyle='rgba(215,232,242,.85)';
+    c.fillRect(-L/2+6,-Wd/2+2,L-12,4);c.fillRect(-L/2+6,Wd/2-6,L-12,4);
+  }
   if(isPolice){
     c.fillStyle='#20242a';c.fillRect(-L/2+6,-Wd/2+1,L*.3,Wd-2);
     const fl=Math.floor(tsec*6)%2;
@@ -2050,10 +2172,38 @@ function render(){
     if(t[0]<x0||t[0]>x1||t[1]<y0||t[1]>y1)continue;
     c.beginPath();c.ellipse(t[0]+SHX*13,t[1]+SHY*13,t[2],t[2]*.75,0,0,TAU);c.fill();
   }
-  // 街灯・地上エンティティ（建物より先に描く＝奥に隠れる）
+  // 街灯・電柱・信号・自販機・バス停
   for(const lp of LAMPS){
     if(lp[0]<x0||lp[0]>x1||lp[1]<y0||lp[1]>y1)continue;
     drawLamp(c,lp[0],lp[1]);
+  }
+  for(const p of POLES){
+    if(p.x<x0||p.x>x1||p.y<y0||p.y>y1)continue;
+    const tx=LX(p.x,p.y,24),ty=LY(p.x,p.y,24);
+    c.strokeStyle='#6e675c';c.lineWidth=1.8;
+    c.beginPath();c.moveTo(p.x,p.y);c.lineTo(tx,ty);c.stroke();
+    if(p.lx!=null){
+      c.strokeStyle='rgba(38,38,42,.3)';c.lineWidth=1;
+      c.beginPath();c.moveTo(tx,ty);c.lineTo(LX(p.lx,p.ly,24),LY(p.lx,p.ly,24));c.stroke();
+    }
+  }
+  for(const sg of SIGNALS){
+    if(sg.x<x0||sg.x>x1||sg.y<y0||sg.y>y1)continue;
+    const tx=LX(sg.x,sg.y,26),ty=LY(sg.x,sg.y,26);
+    c.strokeStyle='#7d8188';c.lineWidth=1.8;
+    c.beginPath();c.moveTo(sg.x,sg.y);c.lineTo(tx,ty);c.stroke();
+    c.fillStyle=sigCol(sg.g);
+    c.beginPath();c.arc(tx,ty,3,0,TAU);c.fill();
+  }
+  for(const v of VENDING){
+    if(v.x<x0||v.x>x1||v.y<y0||v.y>y1)continue;
+    c.fillStyle=v.c;c.fillRect(v.x-3,v.y-2.5,6,5);
+    c.strokeStyle='rgba(30,32,36,.5)';c.lineWidth=.8;c.strokeRect(v.x-3,v.y-2.5,6,5);
+  }
+  for(const bs of BUSSTOPS){
+    if(bs[0]<x0||bs[0]>x1||bs[1]<y0||bs[1]>y1)continue;
+    c.fillStyle='#e8862c';c.beginPath();c.arc(bs[0],bs[1],3,0,TAU);c.fill();
+    c.fillStyle='#fff';c.beginPath();c.arc(bs[0],bs[1],1.4,0,TAU);c.fill();
   }
   drawFerryBoats(c);
   for(const tr of TRAINS)drawTrain(c,tr);
@@ -2462,24 +2612,83 @@ function bldTPSsafe(c,b){
 }
 function vehTPS(c,car,isPolice){
   const t=CARTYPES[car.type];
+  const ca=Math.cos(car.a),sa=Math.sin(car.a);
   const sh=proj3(car.x+SHX*5,car.y+SHY*5,0);
   if(!sh)return;
+  // 落ち影
   c.save();c.translate(sh[0],sh[1]);c.rotate(car.a-P3D.yaw);
   c.fillStyle='rgba(22,28,36,.28)';
   c.beginPath();c.ellipse(0,0,Math.min((t.l/2+3)*sh[3],130),Math.min((t.w/2+2)*sh[3]*.7,60),0,0,TAU);c.fill();
   c.restore();
-  if(!boxObj(c,car.x,car.y,car.a,t.l/2,t.w/2,0,8,car.color,shade(car.color,1.05)))return;
-  boxObj(c,car.x-Math.cos(car.a)*t.l*.12,car.y-Math.sin(car.a)*t.l*.12,car.a,t.l*.3,t.w*.37,8,14,'#8fb2c9',shade(car.color,1.15));
+  // タイヤ（4輪／二輪）
+  const wheel=(lx,ly,r)=>{
+    const wp=proj3(car.x+lx*ca-ly*sa,car.y+lx*sa+ly*ca,2.6);
+    if(!wp)return;
+    c.fillStyle='#1a1c20';
+    c.beginPath();c.ellipse(wp[0],wp[1],clamp(r*wp[3],1,26),clamp(r*.95*wp[3],1,24),0,0,TAU);c.fill();
+    c.fillStyle='#585c62';
+    c.beginPath();c.arc(wp[0],wp[1],clamp(r*.35*wp[3],.5,9),0,TAU);c.fill();
+  };
+  if(car.type==='bike'){
+    // 原付バイク＋ライダー
+    wheel(t.l*.36,0,3.6);wheel(-t.l*.36,0,3.6);
+    const f1=proj3(car.x+ca*7,car.y+sa*7,7),r1=proj3(car.x-ca*7,car.y-sa*7,6);
+    if(f1&&r1){
+      const s=f1[3];
+      c.strokeStyle=car.color;c.lineWidth=clamp(2.6*s,1,11);
+      c.beginPath();c.moveTo(r1[0],r1[1]);c.lineTo(f1[0],f1[1]);c.stroke();
+      c.strokeStyle='#3a3d42';c.lineWidth=clamp(1.6*s,1,7);
+      const hb=proj3(car.x+ca*8,car.y+sa*8,10);
+      if(hb){c.beginPath();c.moveTo(f1[0],f1[1]);c.lineTo(hb[0],hb[1]);c.stroke();}
+      // ライダー
+      const isP=car===S.pcar;
+      const tb=proj3(car.x-ca*2,car.y-sa*2,11),hd=proj3(car.x-ca*3,car.y-sa*3,15.5);
+      if(tb&&hd){
+        c.fillStyle=isP?'#2e6e46':'#5a6270';
+        c.beginPath();c.ellipse(tb[0],tb[1],2.8*s,4*s,0,0,TAU);c.fill();
+        c.fillStyle=isP?'#ff9d2e':'#2c2e33';
+        c.beginPath();c.arc(hd[0],hd[1],2.2*s,0,TAU);c.fill();
+      }
+    }
+    const rp2=proj3(car.x-ca*t.l/2,car.y-sa*t.l/2,5);
+    if(rp2){
+      c.fillStyle=car.brakeL?'#ff4030':'#a03028';
+      c.beginPath();c.ellipse(rp2[0],rp2[1],1.8*rp2[3]*(car.brakeL?1.5:1),1.3*rp2[3],0,0,TAU);c.fill();
+    }
+    return;
+  }
+  wheel(t.l*.32,t.w*.42,3.4);wheel(t.l*.32,-t.w*.42,3.4);
+  wheel(-t.l*.32,t.w*.42,3.4);wheel(-t.l*.32,-t.w*.42,3.4);
+  // バンパー
+  boxObj(c,car.x+ca*(t.l/2-1.6),car.y+sa*(t.l/2-1.6),car.a,2.2,t.w/2+.8,2.2,6.5,'#393c41','#4a4d52');
+  boxObj(c,car.x-ca*(t.l/2-1.6),car.y-sa*(t.l/2-1.6),car.a,2.2,t.w/2+.8,2.2,6.5,'#393c41','#4a4d52');
+  // 車体（タイプ別）
+  if(car.type==='truck'){
+    if(!boxObj(c,car.x+ca*t.l*.3,car.y+sa*t.l*.3,car.a,t.l*.18,t.w/2,2,13,car.color,shade(car.color,1.1)))return;
+    boxObj(c,car.x+ca*t.l*.26,car.y+sa*t.l*.26,car.a,t.l*.12,t.w*.4,13,17.5,'#2c4353',shade(car.color,1.15));
+    boxObj(c,car.x-ca*t.l*.17,car.y-sa*t.l*.17,car.a,t.l*.31,t.w/2,2,20,'#e6e4de','#d6d4ce');
+  }else if(car.type==='bus'){
+    if(!boxObj(c,car.x,car.y,car.a,t.l/2,t.w/2,2,17,car.color,shade(car.color,1.08)))return;
+    boxObj(c,car.x,car.y,car.a,t.l/2-3,t.w/2+.5,9.5,14.5,'#2c4353','#3a5a6e');
+    boxObj(c,car.x+ca*(t.l/2-4),car.y+sa*(t.l/2-4),car.a,3,t.w*.3,17,20,'#f4f4f0','#e8e8e2'); // 行先表示
+  }else if(car.type==='sports'){
+    if(!boxObj(c,car.x,car.y,car.a,t.l/2,t.w/2,2,6.5,car.color,shade(car.color,1.06)))return;
+    boxObj(c,car.x-ca*t.l*.06,car.y-sa*t.l*.06,car.a,t.l*.24,t.w*.36,6.5,11,'#243c4c',shade(car.color,1.16));
+    boxObj(c,car.x-ca*(t.l/2-3),car.y-sa*(t.l/2-3),car.a,1.6,t.w*.42,9,10.5,shade(car.color,.8),shade(car.color,.9)); // スポイラー
+  }else{ // sedan / kei / taxi / police
+    if(!boxObj(c,car.x,car.y,car.a,t.l/2,t.w/2,2,9,car.color,shade(car.color,1.05)))return;
+    boxObj(c,car.x-ca*t.l*.1,car.y-sa*t.l*.1,car.a,t.l*.28,t.w*.38,9,14,'#2c4353',shade(car.color,1.15));
+  }
   if(isPolice){
     const fl=Math.floor(tSec*6)%2;
     boxObj(c,car.x,car.y,car.a,4,t.w*.3,14,17,fl?'#ff3838':'#3878ff','#e8e8e8');
   }
   if(car.type==='taxi')boxObj(c,car.x,car.y,car.a,3.5,3.5,14,17,'#ffb02e','#fff2c8');
   // テール／ヘッドライト
-  const ca=Math.cos(car.a),sa=Math.sin(car.a);
+  const topH=car.type==='bus'?12:5;
   const rvis=((P3D.cx-car.x)*(-ca)+(P3D.cy-car.y)*(-sa))>0;
   if(rvis){
-    const rp=proj3(car.x-ca*t.l/2,car.y-sa*t.l/2,5);
+    const rp=proj3(car.x-ca*t.l/2,car.y-sa*t.l/2,topH);
     if(rp){
       const s=rp[3],k=car.brakeL?1.5:1;
       c.fillStyle=car.brakeL?'#ff4030':'#a03028';
@@ -2489,7 +2698,7 @@ function vehTPS(c,car,isPolice){
       c.fill();
     }
   }else{
-    const fp=proj3(car.x+ca*t.l/2,car.y+sa*t.l/2,5);
+    const fp=proj3(car.x+ca*t.l/2,car.y+sa*t.l/2,topH);
     if(fp){
       const s=fp[3];
       c.fillStyle=NIGHT>0.15?'#fff3c0':'#e8e0b8';
@@ -2511,13 +2720,24 @@ function pedTPS(c,p){
     c.fillStyle='#e8c8a0';c.beginPath();c.arc(g0[0]+7*s,g0[1]-2*s,2.8*s,0,TAU);c.fill();
     return;
   }
-  const bob=Math.sin(p.t*9)*.8*s;
-  const b1=proj3(p.x,p.y,4.5),hd=proj3(p.x,p.y,9.5);
-  if(!b1||!hd)return;
+  const ph2=Math.sin(p.t*9);
+  const bob=ph2*.6*s;
+  const lg=proj3(p.x,p.y,2),b1=proj3(p.x,p.y,5.6),hd=proj3(p.x,p.y,9.7);
+  if(!lg||!b1||!hd)return;
+  // 脚（交互に動く）
+  c.fillStyle='#3a3f48';
+  c.beginPath();
+  c.ellipse(lg[0]-1.3*s,lg[1]-ph2*1.1*s,1.15*s,2.5*s,0,0,TAU);
+  c.ellipse(lg[0]+1.3*s,lg[1]+ph2*1.1*s,1.15*s,2.5*s,0,0,TAU);
+  c.fill();
+  // 胴体（シャツ）
   c.fillStyle=p.c;
-  c.beginPath();c.ellipse(b1[0],b1[1]+bob,3.4*s,5*s,0,0,TAU);c.fill();
+  c.beginPath();c.ellipse(b1[0],b1[1]+bob,3.1*s,4.2*s,0,0,TAU);c.fill();
+  // 頭・髪
   c.fillStyle='#e8c8a0';
-  c.beginPath();c.arc(hd[0],hd[1]+bob,2.3*s,0,TAU);c.fill();
+  c.beginPath();c.arc(hd[0],hd[1]+bob,2.2*s,0,TAU);c.fill();
+  c.fillStyle='#3c3430';
+  c.beginPath();c.arc(hd[0],hd[1]+bob-1*s,1.9*s,Math.PI,0);c.fill();
   if(p.say){
     const fs=clamp(11*s*2.2,9,17);
     c.font='600 '+fs+'px sans-serif';c.textAlign='center';
@@ -2545,13 +2765,15 @@ function footTPS(c){
   c.beginPath();c.arc(hd[0],hd[1]-2.2*s,2.2*s,0,TAU);c.fill();
 }
 function treeTPS(c,t){
-  const g0=proj3(t[0],t[1],0),tp=proj3(t[0],t[1],13);
+  const sway=Math.sin(tSec*1.1+t[0]*.05)*1.4;
+  const g0=proj3(t[0],t[1],0),tp=proj3(t[0]+sway*.3,t[1],13);
   if(!g0||!tp)return;
-  c.strokeStyle='#6b5236';c.lineWidth=Math.max(1.5,2.4*g0[3]);
+  c.strokeStyle='#6b5236';c.lineWidth=clamp(2.4*g0[3],1.2,10);
   c.beginPath();c.moveTo(g0[0],g0[1]);c.lineTo(tp[0],tp[1]);c.stroke();
-  const r=t[2]*tp[3]*1.15;
-  c.fillStyle='#44693c';c.beginPath();c.arc(tp[0],tp[1],r,0,TAU);c.fill();
-  c.fillStyle='#5d8551';c.beginPath();c.arc(tp[0]-r*.28,tp[1]-r*.28,r*.6,0,TAU);c.fill();
+  const r=clamp(t[2]*tp[3]*1.15,2,90);
+  c.fillStyle='#39592f';c.beginPath();c.arc(tp[0],tp[1]+r*.14,r,0,TAU);c.fill();
+  c.fillStyle='#4a7040';c.beginPath();c.arc(tp[0]+sway*.15*r*.1,tp[1]-r*.08,r*.85,0,TAU);c.fill();
+  c.fillStyle='#5f8a50';c.beginPath();c.arc(tp[0]-r*.25,tp[1]-r*.3,r*.5,0,TAU);c.fill();
 }
 function lampTPS(c,lp){
   const g0=proj3(lp[0],lp[1],0),tp=proj3(lp[0],lp[1],15);
@@ -2622,6 +2844,65 @@ function arcadeTPS(c,r){
     for(let j=1;j<4;j++)c.lineTo(q[j][0],q[j][1]);
     c.closePath();c.fill();c.stroke();
   }
+}
+function poleTPS(c,p){
+  const g0=proj3(p.x,p.y,0),tp=proj3(p.x,p.y,24);
+  if(!g0||!tp)return;
+  const s=g0[3];
+  c.strokeStyle='#6e675c';c.lineWidth=clamp(2.2*s,1,9);
+  c.beginPath();c.moveTo(g0[0],g0[1]);c.lineTo(tp[0],tp[1]);c.stroke();
+  const pa2=proj3(p.x,p.y,21.5);
+  if(pa2){
+    c.lineWidth=clamp(1.4*s,1,6);
+    c.beginPath();c.moveTo(pa2[0]-6*pa2[3],pa2[1]);c.lineTo(pa2[0]+6*pa2[3],pa2[1]);c.stroke();
+  }
+  if(p.lx!=null){ // 電線（たわみ付き）
+    const a1=proj3(p.x,p.y,22),b1=proj3(p.lx,p.ly,22),m=proj3((p.x+p.lx)/2,(p.y+p.ly)/2,18.5);
+    if(a1&&b1&&m){
+      c.strokeStyle='rgba(38,38,42,.5)';c.lineWidth=1;
+      c.beginPath();c.moveTo(a1[0],a1[1]);
+      c.quadraticCurveTo(m[0]*2-(a1[0]+b1[0])/2,m[1]*2-(a1[1]+b1[1])/2,b1[0],b1[1]);
+      c.stroke();
+    }
+  }
+}
+function signalTPS(c,sg){
+  const g0=proj3(sg.x,sg.y,0),tp=proj3(sg.x,sg.y,26);
+  if(!g0||!tp)return;
+  c.strokeStyle='#7d8188';c.lineWidth=clamp(2*g0[3],1,8);
+  c.beginPath();c.moveTo(g0[0],g0[1]);c.lineTo(tp[0],tp[1]);c.stroke();
+  const ax=sg.x-Math.sin(sg.a)*11,ay=sg.y+Math.cos(sg.a)*11;
+  const ae=proj3(ax,ay,25);
+  if(!ae)return;
+  c.beginPath();c.moveTo(tp[0],tp[1]);c.lineTo(ae[0],ae[1]);c.stroke();
+  const s=ae[3];
+  c.fillStyle='#2e3238';
+  c.fillRect(ae[0]-5.5*s,ae[1]-2*s,11*s,4*s);
+  const lit=sigCol(sg.g);
+  const cols=['#3ee06a','#ffd23c','#ff4646'];
+  for(let i=0;i<3;i++){
+    const col=cols[i];
+    c.fillStyle=col===lit?col:'rgba(30,32,36,.9)';
+    c.beginPath();c.arc(ae[0]+(i-1)*3.2*s,ae[1],1.35*s,0,TAU);c.fill();
+  }
+}
+function vendingTPS(c,v){
+  boxObj(c,v.x,v.y,0,3,2.4,0,10,v.c,shade(v.c,.85));
+  const fr=proj3(v.x,v.y-2.4,6);
+  if(fr){
+    c.fillStyle=NIGHT>0.15?'rgba(255,244,200,.9)':'rgba(240,242,244,.75)';
+    c.fillRect(fr[0]-2.2*fr[3],fr[1]-3*fr[3],4.4*fr[3],5*fr[3]);
+  }
+}
+function busstopTPS(c,bs){
+  const g0=proj3(bs[0],bs[1],0),tp=proj3(bs[0],bs[1],16);
+  if(!g0||!tp)return;
+  c.strokeStyle='#8a8d92';c.lineWidth=clamp(1.6*g0[3],1,6);
+  c.beginPath();c.moveTo(g0[0],g0[1]);c.lineTo(tp[0],tp[1]);c.stroke();
+  c.fillStyle='#e8862c';
+  c.beginPath();c.arc(tp[0],tp[1],clamp(3.4*tp[3],1.5,14),0,TAU);c.fill();
+  c.fillStyle='#fff';
+  c.beginPath();c.arc(tp[0],tp[1],clamp(1.6*tp[3],.8,7),0,TAU);c.fill();
 }
 function renderTPS(){
   if(cw<2||ch<2){resize();if(cw<2||ch<2)return;}
@@ -2713,6 +2994,10 @@ function renderTPS(){
   const mp=missionMarkerPos();
   if(mp)addI(mp[0],mp[1],12,mp);
   if(PLANE.st!==0)addI(PLANE.x,PLANE.y,13,PLANE);
+  for(const p of POLES)addI(p.x,p.y,14,p);
+  for(const sg of SIGNALS)addI(sg.x,sg.y,15,sg);
+  for(const v of VENDING)addI(v.x,v.y,16,v);
+  for(const bs of BUSSTOPS)addI(bs[0],bs[1],17,bs);
   items.sort((a,b)=>b[0]-a[0]);
   for(const it of items){
     switch(it[1]){
@@ -2730,6 +3015,10 @@ function renderTPS(){
       case 11:footTPS(c);break;
       case 12:markerTPS(c,it[2]);break;
       case 13:planeTPS(c);break;
+      case 14:poleTPS(c,it[2]);break;
+      case 15:signalTPS(c,it[2]);break;
+      case 16:vendingTPS(c,it[2]);break;
+      case 17:busstopTPS(c,it[2]);break;
     }
   }
   // 主要ランドマークの名前ラベル
@@ -2780,8 +3069,19 @@ function renderTPS(){
       g.fillStyle=gr;g.fillRect(p[0]-rr2,p[1]-rr2,rr2*2,rr2*2);
     };
     glowT(S.px,S.py,4,110,.85);
-    if(S.mode==='car')glowT(S.px+Math.cos(S.pa)*95,S.py+Math.sin(S.pa)*95,2,130,.9);
-    for(const car of traffic)glowT(car.x+Math.cos(car.a)*50,car.y+Math.sin(car.a)*50,2,80,.7);
+    if(S.mode==='car'){ // ヘッドライトの伸びる光芒
+      glowT(S.px+Math.cos(S.pa)*95,S.py+Math.sin(S.pa)*95,2,130,.9);
+      glowT(S.px+Math.cos(S.pa)*185,S.py+Math.sin(S.pa)*185,2,170,.6);
+    }
+    for(const car of traffic){
+      glowT(car.x+Math.cos(car.a)*50,car.y+Math.sin(car.a)*50,2,80,.7);
+      glowT(car.x+Math.cos(car.a)*120,car.y+Math.sin(car.a)*120,2,110,.4);
+    }
+    for(const v of VENDING){
+      const dxv=v.x-P3D.cx,dyv=v.y-P3D.cy;
+      if(dxv*fx+dyv*fy<0||hyp(dxv,dyv)>600)continue;
+      glowT(v.x,v.y,6,30,.45);
+    }
     for(const car of polices)glowT(car.x,car.y,4,110,.8);
     for(const lp of LAMPS){
       const dx=lp[0]-P3D.cx,dy=lp[1]-P3D.cy;
@@ -2886,6 +3186,7 @@ function updSpeedUI(){
     el.style.display='block';
     el.textContent=Math.round(Math.abs(S.pcar.v)*0.5)+' km/h　🔧'+Math.max(0,Math.round(S.pcar.hp))+'%';
   }else el.style.display='none';
+  document.getElementById('ridehint').style.display=(S.mode==='foot'&&S.nearVeh)?'block':'none';
   document.getElementById('hpFill').style.width=S.hp+'%';
   document.getElementById('hpFill').style.background=S.hp>50?'#69d06b':S.hp>25?'#e8b93c':'#e05050';
 }

@@ -21,19 +21,26 @@
   #missionBox b{color:#ffd34d;font-size:14px}
   #missionBox .d{font-size:12px;opacity:.92;margin-top:2px}
   #missionBox .t{font-size:17px;font-weight:800;color:#7fd7ff;margin-top:2px}
-  #minimapWrap{position:fixed;right:12px;bottom:calc(env(safe-area-inset-bottom,0px) + 12px)}
+  #minimapWrap{position:fixed;left:12px;bottom:calc(env(safe-area-inset-bottom,0px) + 12px)}
   #mm{display:block;border-radius:11px;border:2px solid rgba(255,255,255,.6);box-shadow:0 3px 12px rgba(0,0,0,.45)}
-  #speed{position:fixed;right:16px;bottom:calc(env(safe-area-inset-bottom,0px) + 172px);
+  #speed{position:fixed;right:14px;bottom:calc(env(safe-area-inset-bottom,0px) + 34px);
     font-size:13px;font-weight:700;color:#fff;text-shadow:0 1px 3px #000;text-align:right;display:none}
-  #hpBar{position:fixed;right:250px;bottom:calc(env(safe-area-inset-bottom,0px) + 14px);width:90px;height:9px;
-    background:rgba(0,0,0,.5);border-radius:5px;overflow:hidden;border:1px solid rgba(255,255,255,.4)}
+  #hpBar{width:234px;height:7px;margin-top:5px;
+    background:rgba(0,0,0,.55);border-radius:5px;overflow:hidden;border:1px solid rgba(255,255,255,.35)}
   #hpFill{height:100%;width:100%;background:#69d06b;border-radius:4px}
   #toast{position:fixed;left:50%;bottom:calc(env(safe-area-inset-bottom,0px) + 84px);transform:translateX(-50%);
     font-size:14px;font-weight:700;max-width:82vw;text-align:center;opacity:0;transition:opacity .3s}
-  #district{position:fixed;left:16px;bottom:calc(env(safe-area-inset-bottom,0px) + 46px);
-    font-size:26px;font-weight:900;color:#fff;text-shadow:0 2px 6px #000,0 0 14px rgba(0,0,0,.6);
+  #district{position:fixed;left:16px;bottom:calc(env(safe-area-inset-bottom,0px) + 196px);
+    font-size:24px;font-weight:900;color:#fff;text-shadow:0 2px 6px #000,0 0 14px rgba(0,0,0,.6);
     opacity:0;transition:opacity .5s;font-style:italic;letter-spacing:1px;pointer-events:none}
-  #keyhint{position:fixed;left:14px;bottom:calc(env(safe-area-inset-bottom,0px) + 12px);font-size:11px;color:rgba(255,255,255,.75);text-shadow:0 1px 2px #000}
+  #keyhint{position:fixed;right:14px;bottom:calc(env(safe-area-inset-bottom,0px) + 12px);font-size:11px;color:rgba(255,255,255,.75);text-shadow:0 1px 2px #000}
+  /* ---- シネマティック演出 ---- */
+  #cineTop,#cineBot{position:fixed;left:0;right:0;height:0;background:#000;z-index:12;transition:height .7s ease;pointer-events:none}
+  #cineTop{top:0}#cineBot{bottom:0}
+  #cineTitle{position:fixed;left:24px;bottom:calc(env(safe-area-inset-bottom,0px) + 240px);z-index:13;
+    font-family:Georgia,'Times New Roman',serif;font-style:italic;font-weight:700;font-size:30px;color:#ffd34d;
+    text-shadow:0 2px 8px #000,0 0 18px rgba(0,0,0,.7);opacity:0;transition:opacity .6s;pointer-events:none}
+  #cineTitle .sub2{font-family:inherit;font-size:14px;color:#e8e8e0;margin-top:4px;font-style:normal;max-width:420px}
   #banner{position:fixed;inset:0;display:none;align-items:center;justify-content:center;flex-direction:column;
     background:rgba(0,0,0,.45);z-index:15;text-align:center}
   #banner h1{color:#fff;font-size:44px;margin:0;text-shadow:0 3px 10px #000}
@@ -83,14 +90,14 @@
     <div id="stars"></div>
   </div>
   <div id="missionBox" class="chip"><b id="mTitle"></b><div class="d" id="mDesc"></div><div class="t" id="mTimer"></div></div>
-  <div id="minimapWrap"><canvas id="mm" width="234" height="156"></canvas></div>
+  <div id="minimapWrap"><canvas id="mm" width="234" height="156"></canvas><div id="hpBar"><div id="hpFill"></div></div></div>
   <div id="speed"></div>
-  <div id="hpBar"><div id="hpFill"></div></div>
   <div id="toast" class="chip"></div>
   <div id="district"></div>
-  <div id="keyhint">E:乗車/降車　M:マップ　Shift:ダッシュ　Space:ブレーキ　H:クラクション　Esc:ポーズ</div>
+  <div id="keyhint">E:乗車　C:カメラ　R:ラジオ　M:マップ　Shift:ダッシュ　Space:ブレーキ　H:クラクション</div>
 </div>
 
+<div id="cineTop"></div><div id="cineBot"></div><div id="cineTitle"></div>
 <div id="banner"><h1 id="bannerH"></h1><p id="bannerP"></p></div>
 
 <div id="bigmap">
@@ -103,7 +110,9 @@
   <h1 style="font-size:34px">PAUSE</h1>
   <div class="sub">WASD/矢印: 移動・運転　　E: 車に乗る/降りる　　Shift: ダッシュ<br>
   Space: ブレーキ/ハンドブレーキ　　M: マップ　　H: クラクション　　X: ミッション中止<br>
-  車を奪って松山の街を走り回ろう。悪さをすると手配度★が上がりパトカーが追ってくる。</div>
+  <b>C: チェイスカメラ切替</b>　　<b>R: カーラジオ</b>　　N: 時間を進める<br>
+  車を奪って松山の街を走り回ろう。悪さをすると手配度★が上がりパトカーが追ってくる。<br>
+  天気は晴れ→曇り→雨と変化し、雨の日は路面が滑りやすい。</div>
   <button class="btn" id="btnResume">再開する</button>
   <button class="btn sm" id="btnMute">サウンド: ON</button>
   <button class="btn sm" id="btnReset">最初からやり直す（セーブ消去）</button>
@@ -130,6 +139,8 @@
   <div class="tbtn" id="btnBrake">ﾌﾞﾚｰｷ</div>
   <div class="tbtn" id="btnHorn">📯</div>
   <div class="tbtn" id="btnMap">🗺</div>
+  <div class="tbtn" id="btnCam" style="right:18px;bottom:calc(env(safe-area-inset-bottom,0px) + 340px);width:54px;height:54px">📷</div>
+  <div class="tbtn" id="btnRadio" style="right:96px;bottom:calc(env(safe-area-inset-bottom,0px) + 384px);width:54px;height:54px">📻</div>
 </div>
 
 <script>
@@ -566,9 +577,11 @@ const S={
   mIdx:0,active:null,gig:null,gigsDone:0,
   bustT:0,time:36,  // 昼スタート(DAYLEN=360の0.1)
   district:'',muted:false,
-  camX:5880,camY:3560,camZ:1.1,
+  camX:5880,camY:3560,camZ:1.1,camRot:0,chase:true,
+  shake:0,dmgFlash:0,slowmo:0,radio:0,skidOn:0,
+  weaM:'clear',weaT:45,rainI:0,cloudI:0,flash:0,
 };
-const traffic=[],peds=[],polices=[],parked=[],parts=[];
+const traffic=[],peds=[],polices=[],parked=[],parts=[],SKIDS=[];
 const TRAINS=[
  {pl:TRAM_LOOP,d:0,dir:1,sp:60,loop:true,type:'botchan',cars:2,dwell:0},
  {pl:DOGO_LINE,d:0,dir:1,sp:85,loop:false,type:'tram',cars:1,dwell:0},
@@ -630,7 +643,8 @@ load();
 /* =========================================================
    サウンド（WebAudio 最小構成）
    ========================================================= */
-let AC=null,engOsc=null,engGain=null,sirenTimer=0,sirenHi=false,sirenOsc=null,sirenGain=null;
+let AC=null,engOsc=null,engGain=null,sirenTimer=0,sirenHi=false,sirenOsc=null,sirenGain=null,
+    skidGain=null,rainGain=null,radT=0,radN=5;
 function audioInit(){
   if(AC)return;
   try{
@@ -645,6 +659,19 @@ function audioInit(){
     const sf=AC.createBiquadFilter();sf.type='lowpass';sf.frequency.value=1200;
     sirenOsc.connect(sf);sf.connect(sirenGain);sirenGain.connect(AC.destination);
     sirenOsc.start();
+    // タイヤスキッド音（ノイズループ）
+    const nbuf=AC.createBuffer(1,AC.sampleRate,AC.sampleRate);
+    const nd=nbuf.getChannelData(0);
+    for(let i=0;i<nd.length;i++)nd[i]=Math.random()*2-1;
+    const sk=AC.createBufferSource();sk.buffer=nbuf;sk.loop=true;
+    const skf=AC.createBiquadFilter();skf.type='bandpass';skf.frequency.value=950;
+    skidGain=AC.createGain();skidGain.gain.value=0;
+    sk.connect(skf);skf.connect(skidGain);skidGain.connect(AC.destination);sk.start();
+    // 雨音（ノイズループ）
+    const rn=AC.createBufferSource();rn.buffer=nbuf;rn.loop=true;rn.playbackRate.value=.7;
+    const rnf=AC.createBiquadFilter();rnf.type='lowpass';rnf.frequency.value=650;
+    rainGain=AC.createGain();rainGain.gain.value=0;
+    rn.connect(rnf);rnf.connect(rainGain);rainGain.connect(AC.destination);rn.start();
   }catch(e){AC=null;}
 }
 function blip(freq,dur,type,vol){
@@ -666,6 +693,30 @@ function thud(vol){
   src.connect(f);f.connect(g);g.connect(AC.destination);src.start();
 }
 function horn(){blip(392,.28,'square',.14);blip(494,.28,'square',.1);}
+function thunder(){
+  if(!AC||S.muted)return;
+  const len=AC.sampleRate*.7,buf=AC.createBuffer(1,len,AC.sampleRate),d=buf.getChannelData(0);
+  for(let i=0;i<len;i++)d[i]=(Math.random()*2-1)*Math.pow(1-i/len,2);
+  const src=AC.createBufferSource(),g=AC.createGain(),f=AC.createBiquadFilter();
+  f.type='lowpass';f.frequency.value=140;g.gain.value=.5;
+  src.buffer=buf;src.connect(f);f.connect(g);g.connect(AC.destination);src.start();
+}
+// カーラジオ（生成BGM 2局）
+const PENTA=[0,3,5,7,10,12,15,17];
+function radioTick(){
+  if(S.radio===1){ // FM句碑: アルペジオ
+    radN=clamp(radN+((Math.random()*3)|0)-1,0,PENTA.length-1);
+    const f=196*Math.pow(2,PENTA[radN]/12);
+    blip(f,.16,'square',.02);
+    if(Math.random()<.28)blip(98,.2,'sawtooth',.028);
+    return .21;
+  }else{ // 道後FM: アンビエント
+    radN=clamp(radN+((Math.random()*3)|0)-1,0,PENTA.length-1);
+    const f=147*Math.pow(2,PENTA[radN]/12);
+    blip(f,.85,'sine',.018);blip(f*1.5,.85,'sine',.011);
+    return .55;
+  }
+}
 function updateAudio(dt){
   if(!AC)return;
   const drive=S.mode==='car'&&!S.paused;
@@ -678,6 +729,13 @@ function updateAudio(dt){
     if(sirenTimer<=0){sirenTimer=.42;sirenHi=!sirenHi;sirenOsc.frequency.value=sirenHi?880:640;}
     sirenGain.gain.value=.035;
   }else sirenGain.gain.value=0;
+  if(skidGain)skidGain.gain.value=(S.skidOn>0&&!S.muted&&!S.paused)?.055:0;
+  if(rainGain)rainGain.gain.value=(S.muted||S.paused)?0:S.rainI*.045;
+  // ラジオ（乗車中のみ）
+  if(!S.muted&&!S.paused&&S.radio>0&&S.mode==='car'){
+    radT-=dt;
+    if(radT<=0)radT=radioTick();
+  }
 }
 
 /* =========================================================
@@ -694,6 +752,8 @@ addEventListener('keydown',e=>{
   if(e.code==='KeyB'){S.muted=!S.muted;save();updMuteBtn();}
   if(e.code==='KeyN')S.time+=40;
   if(e.code==='KeyX')abortMission();
+  if(e.code==='KeyC'){S.chase=!S.chase;toast(S.chase?'📷 チェイスカメラ（車の向きに追従）':'📷 ノースアップ固定');}
+  if(e.code==='KeyR'){S.radio=(S.radio+1)%3;toast('📻 '+['ラジオ OFF','FM句碑（アルペジオ）','道後FM（アンビエント）'][S.radio]);}
   if(e.code==='Escape'){if(bigmapOpen)toggleMap();else togglePause();}
 });
 addEventListener('keyup',e=>{if(e.code in KEYMAP)k[KEYMAP[e.code]]=0;});
@@ -728,6 +788,8 @@ if(isTouch)document.getElementById('touchui').style.display='block';
   bind('btnBrake',()=>{k.brake=1;k.down=1;},()=>{k.brake=0;k.down=0;});
   bind('btnHorn',()=>{horn();scarePeds(S.px,S.py,160);});
   bind('btnMap',()=>toggleMap());
+  bind('btnCam',()=>{S.chase=!S.chase;toast(S.chase?'📷 チェイスカメラ':'📷 ノースアップ');});
+  bind('btnRadio',()=>{S.radio=(S.radio+1)%3;toast('📻 '+['ラジオ OFF','FM句碑','道後FM'][S.radio]);});
 }
 function inputVec(){
   let x=(k.right?1:0)-(k.left?1:0),y=(k.down?1:0)-(k.up?1:0);
@@ -791,18 +853,19 @@ function updPlayer(dt){
     }
   }else{
     const c=S.pcar;
+    const wet=1-.28*S.rainI; // 雨でグリップ・制動が低下
     let acc=0;
     if(inp.y<-0.15)acc=CARTYPES[c.type].acc*(-inp.y);
-    if(inp.y>0.15)acc=(c.v>25?-460:-170)*inp.y;
+    if(inp.y>0.15)acc=(c.v>25?-460*wet:-170)*inp.y;
     c.v+=acc*dt;
     c.v-=c.v*0.55*dt;
-    if(k.brake)c.v-=c.v*2.6*dt;
+    if(k.brake)c.v-=c.v*2.6*wet*dt;
     const ri=roadInfo(c.x,c.y);
     const onRoad=ri&&ri.d<ri.road.w/2+10;
     if(!onRoad)c.v-=c.v*1.5*dt;
     c.v=clamp(c.v,-95,CARTYPES[c.type].max);
     const steer=inp.x*2.7*clamp(Math.abs(c.v)/70,0,1)*(c.v<0?-1:1);
-    c.a+=steer*dt;
+    c.a+=steer*wet*dt;
     const nx=c.x+Math.cos(c.a)*c.v*dt,ny=c.y+Math.sin(c.a)*c.v*dt;
     const spd=Math.abs(c.v);
     const hit=moveEnt(c,nx,ny,15,true);
@@ -810,8 +873,24 @@ function updPlayer(dt){
       if(spd>130){
         c.hp-=spd*0.05;addPart(c.x+Math.cos(c.a)*20,c.y+Math.sin(c.a)*20,'spark',5);
         thud(clamp(spd/500,.1,.4));c.v*=-0.32;
+        S.shake=Math.min(10,spd*.03);
       }else c.v*=0.4;
     }
+    // ブレーキランプ・スキッド痕
+    c.brakeL=(inp.y>0.15||k.brake)&&spd>8;
+    const drift=(k.brake&&spd>110)||(Math.abs(inp.x)>.85&&spd>235)||(hit&&spd>130);
+    if(drift&&SKIDS.length<240){
+      const bx=c.x-Math.cos(c.a)*14,by=c.y-Math.sin(c.a)*14;
+      const px2=Math.sin(c.a)*8,py2=-Math.cos(c.a)*8;
+      const mv=Math.max(spd*dt*1.25,3);
+      for(const sd of[-1,1]){
+        SKIDS.push({x1:bx+px2*sd,y1:by+py2*sd,
+          x2:bx+px2*sd-Math.cos(c.a)*mv,y2:by+py2*sd-Math.sin(c.a)*mv,ttl:7});
+      }
+      if(Math.random()<dt*18)addPart(bx,by,'smoke',1);
+      S.skidOn=.15;
+    }
+    S.skidOn=Math.max(0,S.skidOn-dt);
     S.px=c.x;S.py=c.y;S.pa=c.a;
     if(c.hp<40&&Math.random()<dt*6)addPart(c.x,c.y,'smoke',1);
     if(c.hp<=0)explodeCar();
@@ -901,6 +980,7 @@ function updTraffic(dt){
     if(S.mode==='car'&&hyp(S.pcar.x-ax,S.pcar.y-ay)<46)slow=true;
     if(S.mode==='foot'&&hyp(S.px-ax,S.py-ay)<34)slow=true;
     for(const o of traffic)if(o!==c&&Math.cos(c.a-o.a)>-0.5&&hyp(o.x-ax,o.y-ay)<38){slow=true;break;}
+    c.brakeL=slow;
     c.v=lerp(c.v,slow?0:c.cruise,dt*3);
     c.d+=c.dir*c.v*dt;
     if(c.d<0||c.d>c.road.pl.len){c.dir*=-1;c.d=clamp(c.d,0,c.road.pl.len);}
@@ -935,14 +1015,19 @@ function spawnPed(){
     return;
   }
 }
+const PEDSAY=['ようおいでたなもし','ぬくい日じゃねぇ','みかん、食べる？','坊っちゃん列車が来よるよ','道後の湯はえぇよ〜','じゃこ天買うて帰ろわい','大街道は今日も賑やかじゃ','お城がきれいじゃねぇ'];
 function updPeds(dt){
   const carX=S.mode==='car'?S.pcar.x:null;
   for(let i=peds.length-1;i>=0;i--){
     const p=peds[i];
     if(hyp(p.x-S.px,p.y-S.py)>1400){peds.splice(i,1);continue;}
+    if(p.say){p.say.t-=dt;if(p.say.t<=0)p.say=null;}
     if(p.down>0){p.down-=dt;continue;}
     p.t+=dt;
+    if(!p.say&&p.flee<=0&&Math.random()<dt*.05&&hyp(p.x-S.px,p.y-S.py)<170)
+      p.say={t:3,txt:PEDSAY[(Math.random()*PEDSAY.length)|0]};
     if(S.mode==='car'&&Math.abs(S.pcar.v)>110&&hyp(S.pcar.x-p.x,S.pcar.y-p.y)<90){
+      if(p.flee<=0)p.say={t:1.6,txt:Math.random()<.5?'ひぃっ！':'あぶないぞなもし！'};
       p.flee=1.5;p.fa=Math.atan2(p.y-S.pcar.y,p.x-S.pcar.x);
     }
     let a,sp;
@@ -1042,7 +1127,7 @@ function busted(){
   S.money-=fine;S.stars=0;S.bustT=0;polices.length=0;
   if(S.active&&!S.active.def.evade)failMission('逮捕されてミッション失敗…');
   else if(S.active&&S.active.def.evade)failMission('逮捕されてミッション失敗…');
-  banner('逮捕された！','罰金 ¥'+fine+'　松山東警察署で釈放…');
+  wastedFx('確保','BUSTED ― 罰金 ¥'+fine+'　松山東警察署で釈放…');
   if(S.mode==='car'){parked.push(S.pcar);S.pcar=null;S.mode='foot';}
   S.px=6382;S.py=3428;S.hp=100;
   updStarsUI();updMoneyUI();save();
@@ -1051,7 +1136,7 @@ function busted(){
 function hospital(){
   S.money-=Math.min(1000,S.money);S.hp=100;S.stars=0;polices.length=0;
   if(S.active)failMission('病院送りでミッション失敗…');
-  banner('病院送り…','松山赤十字病院で手当てを受けた（¥1000）');
+  wastedFx('WASTED','病院送り…松山赤十字病院で手当てを受けた（¥1000）');
   if(S.mode==='car'){parked.push(S.pcar);S.pcar=null;S.mode='foot';}
   S.px=6355;S.py=2655;
   updStarsUI();updMoneyUI();save();
@@ -1116,6 +1201,26 @@ function updParts(dt){
     if(p.type==='steam'||p.type==='smoke')p.r+=dt*9;
     if(p.life<=0)parts.splice(i,1);
   }
+  for(let i=SKIDS.length-1;i>=0;i--){SKIDS[i].ttl-=dt;if(SKIDS[i].ttl<=0)SKIDS.splice(i,1);}
+}
+/* ---------- 天候（晴→曇→雨のサイクル） ---------- */
+function updWeather(dt){
+  S.weaT-=dt;
+  if(S.weaT<=0){
+    if(S.weaM==='clear'){S.weaM=Math.random()<.45?'cloud':'clear';S.weaT=40+Math.random()*50;}
+    else if(S.weaM==='cloud'){
+      S.weaM=Math.random()<.55?'rain':'clear';
+      S.weaT=S.weaM==='rain'?28+Math.random()*35:50+Math.random()*40;
+      if(S.weaM==='rain')toast('☔ 雨が降ってきた…路面に注意');
+    }
+    else{S.weaM='cloud';S.weaT=30+Math.random()*30;toast('🌤 雨が上がった');}
+  }
+  S.rainI+=clamp((S.weaM==='rain'?1:0)-S.rainI,-dt*.35,dt*.35);
+  S.cloudI+=clamp((S.weaM==='clear'?0:1)-S.cloudI,-dt*.3,dt*.3);
+  if(S.rainI>.6&&Math.random()<dt*.05){S.flash=.4;thunder();}
+  S.flash=Math.max(0,S.flash-dt*1.3);
+  S.shake=Math.max(0,S.shake-dt*16);
+  S.dmgFlash=Math.max(0,S.dmgFlash-dt*1.5);
 }
 
 /* =========================================================
@@ -1178,13 +1283,12 @@ function startMission(){
   if(def){
     S.active={def,timer:def.time||0,cpIdx:0};
     if(def.evade){S.stars=def.evade;S.crimeT=0;updStarsUI();}
-    banner(def.title,def.desc);
-    blip(523,.15,'sine',.15);blip(784,.2,'sine',.15);
+    cine(def.title,def.desc);
   }else if(S.gig){
     const g=S.gig;
     S.active={def:{title:'配達ギグ',desc:g.to[0]+'へ届けろ！',goal:[g.to[1],g.to[2]],gn:g.to[0],
       reward:g.reward,time:g.time,gig:true},timer:g.time,cpIdx:0};
-    banner('配達ギグ',g.to[0]+'へ '+g.time+'秒以内に届けろ！');
+    cine('配達ギグ',g.to[0]+'へ '+g.time+'秒以内に届けろ！');
   }
 }
 function completeMission(){
@@ -1225,12 +1329,13 @@ function missionMarkerPos(){
 const cv=document.getElementById('cv'),ctx=cv.getContext('2d');
 const mmCv=document.getElementById('mm'),mmCtx=mmCv.getContext('2d');
 const mapCv=document.getElementById('mapcv'),mapCtx=mapCv.getContext('2d');
-let dpr=1,cw=0,ch=0;
+let dpr=1,cw=0,ch=0,vigCv=null;
 function resize(){
   dpr=Math.min(devicePixelRatio||1,2);
   cw=innerWidth;ch=innerHeight;
   cv.width=cw*dpr;cv.height=ch*dpr;
   cv.style.width=cw+'px';cv.style.height=ch+'px';
+  vigCv=null;
 }
 addEventListener('resize',resize);resize();
 
@@ -1723,6 +1828,10 @@ function carShape(c,car,isPolice,tsec){
   // ライト
   c.fillStyle='#ffe9a8';c.fillRect(L/2-3.5,-Wd/2+2.5,3,4);c.fillRect(L/2-3.5,Wd/2-6.5,3,4);
   c.fillStyle='#d84040';c.fillRect(-L/2+1,-Wd/2+2.5,2.5,4);c.fillRect(-L/2+1,Wd/2-6.5,2.5,4);
+  if(car.brakeL){ // ブレーキランプ点灯
+    c.fillStyle='rgba(255,66,48,.95)';
+    c.fillRect(-L/2-1.5,-Wd/2+1.5,4,6);c.fillRect(-L/2-1.5,Wd/2-7.5,4,6);
+  }
   c.restore();
 }
 function rr(c,x,y,w,h,r){
@@ -1799,7 +1908,8 @@ function drawMarkers(c,tsec){
   c.beginPath();c.arc(mp[0],mp[1],26+pulse,0,TAU);c.fill();
   c.fillStyle=isStart?'#ffd34d':'#50d2ff';
   c.font='900 22px sans-serif';c.textAlign='center';
-  c.fillText(isStart?'M':'▶',mp[0],mp[1]-38-pulse);
+  c.save();c.translate(mp[0],mp[1]-38-pulse);c.rotate(-S.camRot);
+  c.fillText(isStart?'M':'▶',0,0);c.restore();
 }
 function drawLabels(c,zoom,x0,y0,x1,y1){
   c.textAlign='center';
@@ -1811,7 +1921,9 @@ function drawLabels(c,zoom,x0,y0,x1,y1){
     c.lineWidth=px*.28;c.strokeStyle='rgba(20,26,34,.85)';
     c.fillStyle=l.s>=2?'#fff':'rgba(255,255,255,.94)';
     const oy=l.t==='castle'?-72:l.t==='onsen'?-84:l.t==='depart'?-84:l.t==='airport'?-40:-34;
-    c.strokeText(l.n,l.x,l.y+oy);c.fillText(l.n,l.x,l.y+oy);
+    c.save();c.translate(l.x,l.y+oy);c.rotate(-S.camRot);
+    c.strokeText(l.n,0,0);c.fillText(l.n,0,0);
+    c.restore();
   }
 }
 /* ---------- メイン描画 ---------- */
@@ -1822,14 +1934,22 @@ function render(){
   const c=ctx;
   c.setTransform(dpr,0,0,dpr,0,0);
   c.fillStyle='#5da4cd';c.fillRect(0,0,cw,ch);
-  // カメラ
+  // カメラ（チェイスカメラ時は車の向きへ回転・前方を広く見せる）
   const targZ=S.mode==='car'?lerp(.95,.58,clamp(Math.abs(S.pcar.v)/380,0,1)):1.08;
   S.camZ=lerp(S.camZ,targZ,.04);
   S.camX=lerp(S.camX,S.px,.12);S.camY=lerp(S.camY,S.py,.12);
+  const chaseOn=S.chase&&S.mode==='car';
+  const rotT=chaseOn?-(S.pa+Math.PI/2):0;
+  S.camRot+=angDiff(S.camRot,rotT)*(chaseOn?.09:.06);
+  const cosR=Math.cos(S.camRot),sinR=Math.sin(S.camRot);
+  const cy0=ch/2+(chaseOn?ch*.13:0);
   const z=S.camZ;
-  const vw=cw/z,vh=ch/z;
-  const x0=S.camX-vw/2-80,y0=S.camY-vh/2-80,x1=S.camX+vw/2+80,y1=S.camY+vh/2+80;
-  c.translate(cw/2,ch/2);c.scale(z,z);c.translate(-S.camX,-S.camY);
+  const cullR=Math.hypot(cw,ch)/(2*z)+140;
+  const x0=S.camX-cullR,y0=S.camY-cullR,x1=S.camX+cullR,y1=S.camY+cullR;
+  const shkx=(Math.random()-.5)*S.shake,shky=(Math.random()-.5)*S.shake;
+  c.translate(cw/2+shkx,cy0+shky);
+  c.rotate(S.camRot);
+  c.scale(z,z);c.translate(-S.camX,-S.camY);
   // 疑似3Dカメラ・太陽（時刻で影が回る）
   V.cx=S.camX;V.cy=S.camY;V.k=1/950;
   {
@@ -1848,6 +1968,13 @@ function render(){
     const b=1+Math.sin(tSec*3+m.id)*.15;
     c.fillStyle='#ff9d2e';c.beginPath();c.arc(m.x,m.y,7*b,0,TAU);c.fill();
     c.fillStyle='#4e8a3c';c.fillRect(m.x-1.5,m.y-9*b,3,4);
+  }
+  // スキッド痕
+  c.lineCap='round';
+  for(const sk of SKIDS){
+    c.strokeStyle='rgba(28,30,34,'+(clamp(sk.ttl/7,0,1)*.4)+')';
+    c.lineWidth=3.4;
+    c.beginPath();c.moveTo(sk.x1,sk.y1);c.lineTo(sk.x2,sk.y2);c.stroke();
   }
   // 落ち影パス（建物・ランドマーク・樹木）
   c.fillStyle='rgba(24,30,40,.2)';
@@ -1909,6 +2036,18 @@ function render(){
       else arcadeRoof(c,it[2]);
     }
   }
+  // 歩行者のセリフ吹き出し
+  c.textAlign='center';
+  for(const p of peds){
+    if(!p.say)continue;
+    const fs=11.5/z;
+    c.font='600 '+fs+'px sans-serif';
+    c.save();c.translate(p.x,p.y-14);c.rotate(-S.camRot);
+    c.lineWidth=fs*.3;c.strokeStyle='rgba(20,26,34,.8)';
+    c.strokeText(p.say.txt,0,0);
+    c.fillStyle='#fff';c.fillText(p.say.txt,0,0);
+    c.restore();
+  }
   drawPlane(c);
   // パーティクル
   for(const p of parts){
@@ -1923,6 +2062,26 @@ function render(){
   drawMarkers(c,tSec);
   drawLabels(c,z,x0,y0,x1,y1);
   c.setTransform(dpr,0,0,dpr,0,0);
+  // 大気・天候（朝焼け夕焼け→曇→雨→雷）
+  const dusk=clamp(1-Math.abs(NIGHT-.26)/.15,0,1)*.22;
+  if(dusk>0.01){
+    c.globalCompositeOperation='multiply';
+    c.fillStyle='rgba(255,168,92,'+dusk+')';c.fillRect(0,0,cw,ch);
+    c.globalCompositeOperation='source-over';
+  }
+  if(S.cloudI>0.02){c.fillStyle='rgba(88,96,110,'+(S.cloudI*.14)+')';c.fillRect(0,0,cw,ch);}
+  if(S.rainI>0.02){
+    c.fillStyle='rgba(60,72,92,'+(S.rainI*.13)+')';c.fillRect(0,0,cw,ch);
+    c.strokeStyle='rgba(200,215,235,'+(S.rainI*.42)+')';c.lineWidth=1.2;
+    c.beginPath();
+    const n=Math.floor(120*S.rainI);
+    for(let i=0;i<n;i++){
+      const rx=Math.random()*cw,ry=Math.random()*ch;
+      c.moveTo(rx,ry);c.lineTo(rx-3,ry+13);
+    }
+    c.stroke();
+  }
+  if(S.flash>0){c.fillStyle='rgba(255,255,255,'+(S.flash*.8)+')';c.fillRect(0,0,cw,ch);}
   // 夜
   const dark=NIGHT;
   if(dark>0.04){
@@ -1931,7 +2090,8 @@ function render(){
     const g=lc.getContext('2d');
     g.fillStyle='rgba(12,16,44,'+dark+')';g.fillRect(0,0,cw,ch);
     g.globalCompositeOperation='destination-out';
-    const w2s=(wx,wy)=>[(wx-S.camX)*z+cw/2,(wy-S.camY)*z+ch/2];
+    const w2s=(wx,wy)=>{const dx=(wx-S.camX)*z,dy=(wy-S.camY)*z;
+      return[cw/2+dx*cosR-dy*sinR,cy0+dx*sinR+dy*cosR];};
     function glow(wx,wy,r,a){
       const p=w2s(wx,wy);
       const gr=g.createRadialGradient(p[0],p[1],0,p[0],p[1],r*z);
@@ -1952,9 +2112,36 @@ function render(){
     }
     c.drawImage(lc,0,0);
   }
+  // ビネット
+  if(!vigCv)buildVig();
+  c.drawImage(vigCv,0,0,cw,ch);
+  // 被ダメージの赤フラッシュ
+  if(S.dmgFlash>0){c.fillStyle='rgba(200,30,30,'+(S.dmgFlash*.3)+')';c.fillRect(0,0,cw,ch);}
+  // 目的地エッジ矢印（画面外のとき）
+  const mp2=missionMarkerPos();
+  if(mp2){
+    const adx=(mp2[0]-S.camX)*z,ady=(mp2[1]-S.camY)*z;
+    const sx=cw/2+adx*cosR-ady*sinR,sy=cy0+adx*sinR+ady*cosR;
+    if(sx<-10||sx>cw+10||sy<-10||sy>ch+10){
+      const ang=Math.atan2(sy-ch/2,sx-cw/2);
+      const ex=clamp(sx,36,cw-36),ey=clamp(sy,36,ch-36);
+      c.save();c.translate(ex,ey);c.rotate(ang);
+      c.fillStyle=S.active?'rgba(80,210,255,.92)':'rgba(255,211,77,.92)';
+      c.beginPath();c.moveTo(15,0);c.lineTo(-8,-9);c.lineTo(-4,0);c.lineTo(-8,9);c.closePath();c.fill();
+      c.strokeStyle='rgba(0,0,0,.6)';c.lineWidth=1.5;c.stroke();
+      c.restore();
+    }
+  }
   renderMinimap();
 }
 const lightCv=document.createElement('canvas');
+function buildVig(){
+  vigCv=document.createElement('canvas');vigCv.width=cw;vigCv.height=ch;
+  const g=vigCv.getContext('2d');
+  const gr=g.createRadialGradient(cw/2,ch/2,Math.min(cw,ch)*.42,cw/2,ch/2,Math.hypot(cw,ch)/2);
+  gr.addColorStop(0,'rgba(0,0,12,0)');gr.addColorStop(1,'rgba(0,0,12,.38)');
+  g.fillStyle=gr;g.fillRect(0,0,cw,ch);
+}
 /* ---------- ミニマップ / 大マップ ---------- */
 let mapImg=null;
 function buildMapImg(){
@@ -1974,36 +2161,44 @@ function buildMapImg(){
 function renderMinimap(){
   if(!mapImg)buildMapImg();
   const c=mmCtx,vw=234,vh=156;
-  const span=1750; // 表示ワールド幅
-  const sc=.25;
-  const sw=span*sc,sh=span*vh/vw*sc;
-  let sx=S.px*sc-sw/2,sy=S.py*sc-sh/2;
-  c.fillStyle='#5da4cd';c.fillRect(0,0,vw,vh);
-  c.drawImage(mapImg,sx,sy,sw,sh,0,0,vw,vh);
-  const w2m=(wx,wy)=>[(wx*sc-sx)/sw*vw,(wy*sc-sy)/sh*vh];
-  // ミッションマーカー
+  const span=1750,sc=.25; // 表示ワールド幅・mapImg縮尺
+  const scale=vw/(span*sc);
+  const rot=S.camRot; // GTA5風にカメラと一緒に回転
+  c.fillStyle='#4d86a8';c.fillRect(0,0,vw,vh);
+  c.save();
+  c.translate(vw/2,vh/2);c.rotate(rot);c.scale(scale,scale);
+  c.translate(-S.px*sc,-S.py*sc);
+  c.drawImage(mapImg,0,0);
+  c.restore();
+  const cR=Math.cos(rot),sR=Math.sin(rot);
+  const toMM=(wx,wy)=>{
+    const dx=(wx-S.px)*sc*scale,dy=(wy-S.py)*sc*scale;
+    return[vw/2+dx*cR-dy*sR,vh/2+dx*sR+dy*cR];
+  };
   const mp=missionMarkerPos();
   if(mp){
-    let p=w2m(mp[0],mp[1]);
+    const p=toMM(mp[0],mp[1]);
     p[0]=clamp(p[0],8,vw-8);p[1]=clamp(p[1],8,vh-8);
     c.fillStyle=S.active?'#50d2ff':'#ffd34d';
     c.beginPath();c.arc(p[0],p[1],5,0,TAU);c.fill();
     c.strokeStyle='#000';c.lineWidth=1;c.stroke();
   }
   for(const cop of polices){
-    const p=w2m(cop.x,cop.y);
+    const p=toMM(cop.x,cop.y);
     if(p[0]>0&&p[0]<vw&&p[1]>0&&p[1]<vh){
       c.fillStyle='#ff4040';c.beginPath();c.arc(p[0],p[1],3.5,0,TAU);c.fill();
     }
   }
-  // プレイヤー矢印
-  c.save();c.translate(vw/2,vh/2);c.rotate(S.pa);
+  // プレイヤー矢印（チェイス時は常に上向き）
+  c.save();c.translate(vw/2,vh/2);c.rotate(S.pa+rot);
   c.fillStyle='#fff';c.strokeStyle='#222';c.lineWidth=1.5;
   c.beginPath();c.moveTo(7,0);c.lineTo(-5,-5);c.lineTo(-2,0);c.lineTo(-5,5);c.closePath();
   c.fill();c.stroke();c.restore();
-  // N
-  c.fillStyle='rgba(255,255,255,.85)';c.font='700 10px sans-serif';c.textAlign='left';
-  c.fillText('N',5,12);
+  // 北向きインジケータ
+  const na=-Math.PI/2+rot;
+  const nx=vw/2+Math.cos(na)*(vh/2-13),ny=vh/2+Math.sin(na)*(vh/2-13);
+  c.fillStyle='rgba(255,255,255,.9)';c.font='700 10px sans-serif';c.textAlign='center';
+  c.fillText('N',nx,ny+3);
 }
 let bigmapOpen=false;
 function toggleMap(){
@@ -2107,6 +2302,27 @@ function banner(h,p){
   clearTimeout(el._t);
   el._t=setTimeout(()=>el.style.display='none',2600);
 }
+function cine(title,sub){ // GTA風レターボックス＋タイトルカード
+  document.getElementById('cineTop').style.height='60px';
+  document.getElementById('cineBot').style.height='60px';
+  const t=document.getElementById('cineTitle');
+  t.innerHTML=title+(sub?'<div class="sub2">'+sub+'</div>':'');
+  t.style.opacity=1;
+  blip(523,.15,'sine',.14);blip(784,.22,'sine',.12);
+  clearTimeout(t._t);
+  t._t=setTimeout(()=>{
+    t.style.opacity=0;
+    document.getElementById('cineTop').style.height='0px';
+    document.getElementById('cineBot').style.height='0px';
+  },3800);
+}
+function wastedFx(h,p){ // グレースケール＋スローモーション
+  cv.style.filter='grayscale(1) brightness(.75)';
+  S.slowmo=1.8;
+  banner(h,p);
+  blip(110,.7,'sawtooth',.15);
+  setTimeout(()=>{cv.style.filter='';},2200);
+}
 function updMoneyUI(){
   document.getElementById('money').textContent='¥'+S.money.toLocaleString();
   document.getElementById('mikanC').textContent='🍊 '+S.mikan+'/60';
@@ -2151,9 +2367,12 @@ let last=0,acc=0,spawnT=0;
 function frame(ts){
   requestAnimationFrame(frame);
   if(!S.started)return;
-  const dt=Math.min((ts-last)/1000,.1);last=ts;
+  const dtr=Math.min((ts-last)/1000,.1);last=ts;
+  const dt=dtr*(S.slowmo>0?0.35:1); // WASTED/確保時のスローモーション
+  if(S.slowmo>0)S.slowmo=Math.max(0,S.slowmo-dtr);
   if(!S.paused&&!bigmapOpen){
     tSec+=dt;S.time+=dt;
+    updWeather(dt);
     updPlayer(dt);
     updTraffic(dt);updPeds(dt);updPolice(dt);
     updTrains(dt);updParts(dt);
@@ -2180,7 +2399,7 @@ function frame(ts){
     }else{
       for(const o of traffic){
         if(o.v>70&&hyp(o.x-S.px,o.y-S.py)<16){
-          S.hp-=18;S.knock=1;
+          S.hp-=18;S.knock=1;S.dmgFlash=.6;S.shake=6;
           const a=Math.atan2(S.py-o.y,S.px-o.x);
           S.px+=Math.cos(a)*26;S.py+=Math.sin(a)*26;
           addPart(S.px,S.py,'star',4);thud(.3);

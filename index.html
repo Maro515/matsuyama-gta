@@ -335,6 +335,10 @@ const ROADS=[
  {n:'祝谷通り',kind:'minor',w:24,pts:[[6800,2700],[7320,2680]]},
  {n:'三津本通り',kind:'minor',w:24,pts:[[1080,1720],[1400,1650],[1700,1600]]},
  {n:'三津駅前',kind:'minor',w:24,pts:[[1200,1500],[1250,1900]]},
+ {n:'余戸西通り',kind:'minor',w:26,pts:[[3000,3760],[3900,3880],[4600,3950],[5000,3920]]},
+ {n:'潮見通り',kind:'minor',w:24,pts:[[4800,1000],[5400,1150],[5560,1700]]},
+ {n:'畑寺通り',kind:'minor',w:26,pts:[[6600,3880],[7300,3760],[7900,3550],[8150,3395]]},
+ {n:'垣生通り',kind:'minor',w:24,pts:[[1500,4750],[2400,4680],[3200,4600],[3900,4900]]},
  {n:'ロープウェー街',kind:'minor',w:26,pts:[[6244,3105],[6300,2980],[6322,2938]]},
  {n:'大街道',kind:'arcade',w:30,pts:[[6210,3480],[6230,3300],[6244,3110]]},
  {n:'銀天街',kind:'arcade',w:26,pts:[[5920,3600],[6100,3560],[6210,3480]]},
@@ -513,11 +517,12 @@ const ZONES=[
  {r:[6900,2300,8100,3500],n:70,s:[26,48],pal:['#c8beac','#bcb4a4'],hg:[1,2]},
  {r:[900,1400,2300,2100],n:50,s:[24,46],pal:['#bcb4a6','#c4baa8'],hg:[1,2]},
  {r:[7050,2050,7720,2500],n:46,s:[44,86],pal:['#b0863e','#c09a56','#c8a462','#9c8656'],hg:[3,6]},
- {r:[1100,4100,2700,4620],n:36,s:[30,60],pal:['#b1b6b0','#bcc0b6'],hg:[1,2]},
- {r:[4200,350,5300,750],n:22,s:[24,44],pal:['#c4bcac'],hg:[1,1]},
- {r:[3000,1800,4600,2650],n:44,s:[24,46],pal:['#c6beac','#bab2a2'],hg:[1,2]},
- {r:[3400,4300,4900,5000],n:36,s:[26,48],pal:['#c0b8a8'],hg:[1,1]},
- {r:[6900,3560,7900,4200],n:30,s:[26,46],pal:['#c4bcaa'],hg:[1,1]},
+ {r:[1100,4100,3300,5080],n:50,s:[30,60],pal:['#b1b6b0','#bcc0b6','#c6beac'],hg:[1,2]},
+ {r:[4200,340,5450,950],n:40,s:[24,44],pal:['#c4bcac','#bcb4a4'],hg:[1,1]},
+ {r:[2700,1700,4600,2700],n:60,s:[24,46],pal:['#c6beac','#bab2a2'],hg:[1,2]},
+ {r:[3000,3700,4900,5050],n:60,s:[26,48],pal:['#c0b8a8','#c8beae'],hg:[1,1]},
+ {r:[6900,3540,8150,4380],n:55,s:[26,46],pal:['#c4bcaa','#bcb2a0'],hg:[1,1]},
+ {r:[4550,700,5600,1650],n:35,s:[24,46],pal:['#c6beac','#bab2a2'],hg:[1,2]},
 ];
 ZONES[1].pal[3]='#aba29a'; // 全角文字混入ガード
 const _ov=[];
@@ -639,6 +644,54 @@ for(const r of ROADS){
     MANHOLES.push([p.x+Math.sin(p.a)*r.w*.15,p.y-Math.cos(p.a)*r.w*.15]);
   }
 }
+/* 田畑（郊外の農地パッチ） */
+const FIELDS=[];
+{
+  const FZ=[[2600,3860,4700,4420],[1600,4640,3400,5120],[4400,620,5600,1560],
+    [6700,3560,8150,4340],[2200,2450,3500,3420],[5600,4560,7200,5320]];
+  for(const z of FZ){
+    for(let y=z[1];y<z[3]-58;y+=76){
+      for(let x=z[0];x<z[2]-88;x+=104){
+        if(rng()<0.42)continue;
+        const fx=x+rng()*14,fy=y+rng()*12,fw=78+rng()*16,fh=52+rng()*12;
+        const cx2=fx+fw/2,cy2=fy+fh/2;
+        if(inWaterRaw(cx2,cy2)||inWaterRaw(fx,fy)||inWaterRaw(fx+fw,fy+fh))continue;
+        if(hillAt(cx2,cy2)||inPark(cx2,cy2,10))continue;
+        const ri=roadInfo(cx2,cy2);
+        if(ri&&ri.d<ri.road.w/2+46)continue;
+        let bad=false;
+        gridNear(bldGrid,cx2,cy2,_ov);
+        for(const b of _ov)if(fx+fw>b.x0-8&&fx<b.x1+8&&fy+fh>b.y0-8&&fy<b.y1+8){bad=true;break;}
+        if(bad)continue;
+        FIELDS.push({x:fx,y:fy,w:fw,h:fh,
+          c:['#9dbf7a','#a8c684','#b5cc8e','#8fb471','#c2b98a','#b3a97e'][(rng()*6)|0],v:rng()<.5});
+      }
+    }
+  }
+}
+/* みかん畑（丘の斜面に植栽列） */
+const ORCHARDS=[];
+for(const h of HILLS){
+  if(h.castle)continue;
+  const step=Math.max(34,h.rx/8);
+  for(let gy=h.y-h.ry;gy<h.y+h.ry;gy+=step)
+    for(let gx=h.x-h.rx;gx<h.x+h.rx;gx+=step){
+      const nx=(gx-h.x)/h.rx,ny2=(gy-h.y)/h.ry;
+      const rr2=nx*nx+ny2*ny2;
+      if(rr2<0.3||rr2>0.82)continue;
+      if(rng()<0.38)continue;
+      ORCHARDS.push([gx+rng()*10,gy+rng()*10]);
+    }
+}
+/* ビニールハウス */
+const GREENH=[];
+{let t=0;
+ while(GREENH.length<16&&t++<600&&FIELDS.length){
+  const f=FIELDS[(rng()*FIELDS.length)|0];
+  if(f.gh||f.w<74)continue;
+  f.gh=true;
+  GREENH.push({x:f.x+f.w/2,y:f.y+f.h/2,a:f.w>=f.h?0:Math.PI/2});
+ }}
 
 
 /* =========================================================
@@ -1629,6 +1682,20 @@ function drawTerrain(c,mini){
   c.fillStyle='#cfd0be';c.fillRect(0,0,W,H);
   // 市街地トーン
   c.fillStyle='#d6d2c2';c.fillRect(4300,1500,2900,3000);
+  // 田畑（郊外）
+  for(const f of FIELDS){
+    c.fillStyle=f.c;
+    c.fillRect(f.x,f.y,f.w,f.h);
+    c.strokeStyle='rgba(150,140,110,.55)';c.lineWidth=2;
+    c.strokeRect(f.x,f.y,f.w,f.h);
+    if(!mini){
+      c.strokeStyle='rgba(60,80,45,.18)';c.lineWidth=1.1;
+      c.beginPath();
+      if(f.v)for(let gx=f.x+6;gx<f.x+f.w;gx+=7){c.moveTo(gx,f.y+2);c.lineTo(gx,f.y+f.h-2);}
+      else for(let gy=f.y+5;gy<f.y+f.h;gy+=7){c.moveTo(f.x+2,gy);c.lineTo(f.x+f.w-2,gy);}
+      c.stroke();
+    }
+  }
   // 海
   c.fillStyle='#5da4cd';poly(c,SEA);c.fill();
   c.strokeStyle='rgba(255,255,255,.5)';c.lineWidth=10;poly(c,SEA);c.stroke();
@@ -1669,6 +1736,33 @@ function drawTerrain(c,mini){
       c.beginPath();c.ellipse(cx2,cy2,h.rx*.3,h.ry*.3,0,0,TAU);c.stroke();
     }
   }
+  // みかん畑（丘の斜面）
+  if(!mini){
+    c.fillStyle='#3e6234';
+    c.beginPath();
+    for(const o of ORCHARDS){c.moveTo(o[0]+4,o[1]);c.arc(o[0],o[1],4,0,TAU);}
+    c.fill();
+    c.fillStyle='#ff9d2e';
+    c.beginPath();
+    for(const o of ORCHARDS){
+      c.moveTo(o[0]+2.1,o[1]-1.5);c.arc(o[0]+1,o[1]-1.5,1.1,0,TAU);
+      c.moveTo(o[0]-.9,o[1]+1.2);c.arc(o[0]-2,o[1]+1.2,1.1,0,TAU);
+    }
+    c.fill();
+  }
+  // ビニールハウス（地面レイヤー）
+  for(const g of GREENH){
+    c.save();c.translate(g.x,g.y);c.rotate(g.a);
+    c.fillStyle='rgba(236,241,243,.88)';
+    rr(c,-26,-7,52,14,5);c.fill();
+    if(!mini){
+      c.strokeStyle='rgba(150,160,165,.6)';c.lineWidth=1;
+      c.beginPath();
+      for(let k=-20;k<=20;k+=8){c.moveTo(k,-7);c.lineTo(k,7);}
+      c.stroke();
+    }
+    c.restore();
+  }
   // 城の堀
   c.strokeStyle='#6fb2d8';c.lineWidth=26;
   c.strokeRect(5490,2585,620,660);
@@ -1692,12 +1786,16 @@ function drawRails(c){
   c.globalAlpha=1;
 }
 function drawRoads(c,mini){
-  // 歩道→縁石→アスファルト
-  for(const r of ROADS)if(r.kind!=='arcade')strokePl(c,r.pl,r.w+14,'#a7a89f');
-  for(const r of ROADS)if(r.kind!=='arcade')strokePl(c,r.pl,r.w+4,'#83857e');
+  // 歩道外縁→歩道（明）→縁石（暗い段差）→外側線（白）→車道アスファルト（暗）
+  for(const r of ROADS)if(r.kind!=='arcade')strokePl(c,r.pl,r.w+16.5,'#90928a');
+  for(const r of ROADS)if(r.kind!=='arcade')strokePl(c,r.pl,r.w+14,'#bcbdb6');
+  for(const r of ROADS)if(r.kind!=='arcade')strokePl(c,r.pl,r.w+4,'#74766e');
   for(const r of ROADS){
     if(r.kind==='arcade'){strokePl(c,r.pl,r.w,'#d5cbb9');continue;}
-    strokePl(c,r.pl,r.w,r.kind==='main'?'#44474d':'#53565c');
+    if(r.kind==='main'){
+      strokePl(c,r.pl,r.w,'#d8dadc');
+      strokePl(c,r.pl,r.w-3,'#3f4248');
+    }else strokePl(c,r.pl,r.w,'#4d5056');
   }
   if(!mini){
     for(const r of ROADS){
@@ -1798,6 +1896,20 @@ function bld3D(c,b){
   if(V.cx<x0)face(x0,y0,x0,y1,b.cW);
   if(V.cx>x1)face(x1,y0,x1,y1,b.cE);
   if(P3D&&P3D.camH<=h)return; // カメラより高いビルは屋根なし（見上げ）
+  if(b.hgt<=1){ // 郊外住宅: 軒の出のある瓦屋根＋棟
+    const o=3;
+    const RA=P(x0-o,y0-o,h),RB=P(x1+o,y0-o,h),RC=P(x1+o,y1+o,h),RD=P(x0-o,y1+o,h);
+    const rc=['#5a626e','#71584e','#4e5a66'][b.seed%3];
+    c.fillStyle=rc;
+    c.beginPath();c.moveTo(RA[0],RA[1]);c.lineTo(RB[0],RB[1]);c.lineTo(RC[0],RC[1]);c.lineTo(RD[0],RD[1]);c.closePath();c.fill();
+    c.strokeStyle='rgba(30,32,36,.45)';c.lineWidth=1;c.stroke();
+    const longX=(x1-x0)>=(y1-y0);
+    const m1=longX?P(x0+(x1-x0)*.18,(y0+y1)/2,h+2.6):P((x0+x1)/2,y0+(y1-y0)*.18,h+2.6);
+    const m2=longX?P(x1-(x1-x0)*.18,(y0+y1)/2,h+2.6):P((x0+x1)/2,y1-(y1-y0)*.18,h+2.6);
+    c.strokeStyle=shade(rc,1.3);c.lineWidth=2;
+    c.beginPath();c.moveTo(m1[0],m1[1]);c.lineTo(m2[0],m2[1]);c.stroke();
+    return;
+  }
   const A1=P(x0,y0,h),B1=P(x1,y0,h),C1=P(x1,y1,h),D1=P(x0,y1,h);
   c.fillStyle=b.cR;
   c.beginPath();c.moveTo(A1[0],A1[1]);c.lineTo(B1[0],B1[1]);c.lineTo(C1[0],C1[1]);c.lineTo(D1[0],D1[1]);c.closePath();c.fill();
@@ -3199,6 +3311,7 @@ function renderTPS(){
   for(const sg of SIGNALS)addI(sg.x,sg.y,15,sg);
   for(const v of VENDING)addI(v.x,v.y,16,v);
   for(const bs of BUSSTOPS)addI(bs[0],bs[1],17,bs);
+  for(const g of GREENH)addI(g.x,g.y,18,g);
   items.sort((a,b)=>b[0]-a[0]);
   for(const it of items){
     switch(it[1]){
@@ -3220,6 +3333,7 @@ function renderTPS(){
       case 15:signalTPS(c,it[2]);break;
       case 16:vendingTPS(c,it[2]);break;
       case 17:busstopTPS(c,it[2]);break;
+      case 18:boxObj(c,it[2].x,it[2].y,it[2].a,26,7,0,2.6,'#e8ecee','#f2f5f6');break;
     }
   }
   // 主要ランドマークの名前ラベル

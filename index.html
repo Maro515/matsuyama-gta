@@ -640,6 +640,66 @@ for(const r of ROADS){
   }
 }
 
+
+/* =========================================================
+   道路ネットワーク（交差点グラフ・横断歩道投影・電停）
+   ========================================================= */
+function dOnPl(pl,x,y){ // ポリライン上の最近傍パラメータ
+  let bd=1e9,bda=0;
+  for(let d=0;d<=pl.len;d+=12){
+    const p=plAt(pl,d);
+    const dd=hyp(p.x-x,p.y-y);
+    if(dd<bd){bd=dd;bda=d;}
+  }
+  return bda;
+}
+for(const r of ROADS){r.junc=[];r.cross=[];}
+{
+  const segs=[];
+  for(const r of ROADS)for(let i=1;i<r.pts.length;i++)
+    segs.push({r,ax:r.pts[i-1][0],ay:r.pts[i-1][1],bx:r.pts[i][0],by:r.pts[i][1],d0:r.pl.cum[i-1]});
+  const addJ=(r,d,or_,od)=>{
+    d=clamp(d,0,r.pl.len);od=clamp(od,0,or_.pl.len);
+    for(const j of r.junc)if(j.road===or_&&Math.abs(j.d-d)<25)return;
+    r.junc.push({d,road:or_,od});
+  };
+  // 線分同士の交差
+  for(let i=0;i<segs.length;i++)for(let k=i+1;k<segs.length;k++){
+    const A=segs[i],B=segs[k];
+    if(A.r===B.r)continue;
+    const d1x=A.bx-A.ax,d1y=A.by-A.ay,d2x=B.bx-B.ax,d2y=B.by-B.ay;
+    const den=d1x*d2y-d1y*d2x;
+    if(Math.abs(den)<1e-6)continue;
+    const t=((B.ax-A.ax)*d2y-(B.ay-A.ay)*d2x)/den;
+    const u=((B.ax-A.ax)*d1y-(B.ay-A.ay)*d1x)/den;
+    if(t<-0.02||t>1.02||u<-0.02||u>1.02)continue;
+    const dA=A.d0+t*hyp(d1x,d1y),dB=B.d0+u*hyp(d2x,d2y);
+    addJ(A.r,dA,B.r,dB);addJ(B.r,dB,A.r,dA);
+  }
+  // 端点がほかの道路に接するT字路
+  for(const r of ROADS)for(const de of [0,r.pl.len]){
+    const pe=plAt(r.pl,de);
+    for(const o of ROADS){
+      if(o===r)continue;
+      let best=null;
+      for(let i=1;i<o.pts.length;i++){
+        const sg=seg(pe.x,pe.y,o.pts[i-1][0],o.pts[i-1][1],o.pts[i][0],o.pts[i][1]);
+        if(!best||sg.d<best.d){best=sg;best.c0=o.pl.cum[i-1];best.c1=o.pl.cum[i];}
+      }
+      if(best&&best.d<o.w/2+r.w/2+6){
+        const od=best.c0+best.t*(best.c1-best.c0);
+        addJ(r,de,o,od);addJ(o,od,r,de);
+      }
+    }
+  }
+  for(const r of ROADS)r.junc.sort((a,b)=>a.d-b.d);
+  // 横断歩道を道路パラメータへ投影（歩行者の横断ポイント）
+  for(const cwk of CROSSWALKS){
+    const ri=roadInfo(cwk[0],cwk[1]);
+    if(ri)ri.road.cross.push(dOnPl(ri.road.pl,cwk[0],cwk[1]));
+  }
+}
+
 /* =========================================================
    ゲーム状態
    ========================================================= */
@@ -675,10 +735,20 @@ const S={
 const traffic=[],peds=[],polices=[],parked=[],parts=[],SKIDS=[];
 const TRAINS=[
  {pl:TRAM_LOOP,d:0,dir:1,sp:60,loop:true,type:'botchan',cars:2,dwell:0},
+ {pl:TRAM_LOOP,d:TRAM_LOOP.len*.5,dir:-1,sp:64,loop:true,type:'tram',cars:1,dwell:0},
  {pl:DOGO_LINE,d:0,dir:1,sp:85,loop:false,type:'tram',cars:1,dwell:0},
  {pl:RAILS[0].pl,d:200,dir:1,sp:115,loop:false,type:'iyotetsu',cars:2,dwell:0},
  {pl:RAILS[3].pl,d:400,dir:1,sp:135,loop:false,type:'jr',cars:3,dwell:0},
 ];
+// 電停・駅（実在位置で停車する）
+{
+  const st=(tr,pts)=>{tr.stops=pts.map(pt=>dOnPl(tr.pl,pt[0],pt[1])).sort((a,b)=>a-b);};
+  st(TRAINS[0],[[5560,3120],[4740,2985],[4990,2280],[5900,2258],[6800,2248],[6800,3085],[6244,3105],[5896,3110]]);
+  TRAINS[1].stops=TRAINS[0].stops;
+  st(TRAINS[2],[[5870,3255],[5896,3110],[6244,3105],[6800,3085],[7180,2620]]);
+  st(TRAINS[3],[[4700,3150],[3900,2830],[1800,1950],[1100,1150]]);
+  st(TRAINS[4],[[4740,2985]]);
+}
 const FERRY={t:0,dir:1,ax:1120,ay:900,bx:760,by:1080};
 const PLANE={st:0,t:20,x:0,y:0,a:0,alt:0}; // st:0待機 1着陸 2停止 3離陸
 // 初期駐車車両
@@ -1094,8 +1164,37 @@ function updTraffic(dt){
     for(const o of traffic)if(o!==c&&Math.cos(c.a-o.a)>-0.5&&hyp(o.x-ax,o.y-ay)<16){slow=true;break;}
     c.brakeL=slow;
     c.v=lerp(c.v,slow?0:c.cruise,dt*3);
+    const pdd=c.d;
     c.d+=c.dir*c.v*dt;
-    if(c.d<0||c.d>c.road.pl.len){c.dir*=-1;c.d=clamp(c.d,0,c.road.pl.len);}
+    // 交差点でランダムに曲がる（バスは幹線のみ）
+    for(const j of c.road.junc){
+      const passed=c.dir>0?(j.d>pdd&&j.d<=c.d):(j.d<pdd&&j.d>=c.d);
+      if(!passed)continue;
+      if(j.road.kind==='arcade')continue;
+      if(c.type==='bus'&&j.road.kind!=='main')continue;
+      if(Math.random()<0.45){
+        const na=plAt(j.road.pl,j.od).a;
+        const dirPref=Math.cos(na-c.a)>=0?1:-1;
+        c.road=j.road;c.d=clamp(j.od+dirPref*2,0,j.road.pl.len);
+        c.dir=Math.random()<0.85?dirPref:-dirPref;
+      }
+      break;
+    }
+    if(c.d<0||c.d>c.road.pl.len){
+      // 行き止まり: 接続道路があれば曲がる、なければUターン
+      const endD=clamp(c.d,0,c.road.pl.len);
+      let took=false;
+      for(const j of c.road.junc){
+        if(Math.abs(j.d-endD)>45||j.road.kind==='arcade')continue;
+        if(c.type==='bus'&&j.road.kind!=='main')continue;
+        const na=plAt(j.road.pl,j.od).a;
+        const dirPref=Math.cos(na-c.a)>=0?1:-1;
+        c.road=j.road;c.d=clamp(j.od+dirPref*2,0,j.road.pl.len);
+        c.dir=Math.random()<0.6?dirPref:-dirPref;
+        took=true;break;
+      }
+      if(!took){c.dir*=-1;c.d=endD;}
+    }
     const q=plAt(c.road.pl,c.d);
     const ta=q.a+(c.dir<0?Math.PI:0);
     const lx=Math.sin(ta),ly=-Math.cos(ta); // 左側通行オフセット
@@ -1115,6 +1214,19 @@ function spawnPedAt(x,y,flee){
     down:0,t:Math.random()*10};
   peds.push(p);return p;
 }
+function pedOffFor(r,side){ // 歩道上のオフセット
+  return r.kind==='arcade'?(Math.random()-.5)*r.w*.5:(r.w/2+4.5+Math.random()*2)*side;
+}
+function reattachPed(p){ // 最寄りの歩道へ復帰
+  const ri=roadInfo(p.x,p.y);
+  if(!ri){p.road=null;return;}
+  p.road=ri.road;
+  p.d=dOnPl(ri.road.pl,p.x,p.y);
+  const q=plAt(ri.road.pl,p.d);
+  const sideSign=((p.x-q.x)*Math.sin(q.a)-(p.y-q.y)*Math.cos(q.a))>=0?1:-1;
+  p.off=p.toff=pedOffFor(ri.road,sideSign);
+  p.rdir=Math.random()<.5?1:-1;
+}
 function spawnPed(){
   if(peds.length>=22)return;
   for(let t=0;t<10;t++){
@@ -1122,19 +1234,18 @@ function spawnPed(){
     const list=arc?ROADS.filter(r=>r.kind==='arcade'):ROADS;
     const r=list[(Math.random()*list.length)|0];
     const d=Math.random()*r.pl.len;
-    const p=plAt(r.pl,d);
-    const side=Math.random()<.5?1:-1;
-    const x=p.x+Math.sin(p.a)*side*(r.w/2+9),y=p.y-Math.cos(p.a)*side*(r.w/2+9);
+    const q=plAt(r.pl,d);
+    const off=pedOffFor(r,Math.random()<.5?1:-1);
+    const x=q.x+Math.sin(q.a)*off,y=q.y-Math.cos(q.a)*off;
     const dist=hyp(x-S.px,y-S.py);
-    if(dist<340||dist>1000)continue;
-    if(blockedAt(x,y,2,false))continue;
-    spawnPedAt(x,y,false);
+    if(dist<120||dist>900)continue;
+    const pp=spawnPedAt(x,y,false);
+    pp.road=r;pp.d=d;pp.rdir=Math.random()<.5?1:-1;pp.off=off;pp.toff=off;
     return;
   }
 }
 const PEDSAY=['ようおいでたなもし','ぬくい日じゃねぇ','みかん、食べる？','坊っちゃん列車が来よるよ','道後の湯はえぇよ〜','じゃこ天買うて帰ろわい','大街道は今日も賑やかじゃ','お城がきれいじゃねぇ'];
 function updPeds(dt){
-  const carX=S.mode==='car'?S.pcar.x:null;
   for(let i=peds.length-1;i>=0;i--){
     const p=peds[i];
     if(hyp(p.x-S.px,p.y-S.py)>1400){peds.splice(i,1);continue;}
@@ -1147,15 +1258,55 @@ function updPeds(dt){
       if(p.flee<=0)p.say={t:1.6,txt:Math.random()<.5?'ひぃっ！':'あぶないぞなもし！'};
       p.flee=1.5;p.fa=Math.atan2(p.y-S.pcar.y,p.x-S.pcar.x);
     }
-    let a,sp;
-    if(p.flee>0){p.flee-=dt;a=p.fa;sp=50;}
-    else{
-      if(Math.random()<dt*.5)p.a+=(Math.random()-.5)*1.6;
-      a=p.a;sp=p.sp;
+    if(p.flee>0){ // 恐慌時のみ歩道を離れて逃げる
+      p.flee-=dt;
+      const nx=p.x+Math.cos(p.fa)*50*dt,ny=p.y+Math.sin(p.fa)*50*dt;
+      if(blockedAt(nx,ny,2,false))p.fa+=Math.PI*.7;
+      else{p.x=nx;p.y=ny;}
+      p.a=p.fa;
+      if(p.flee<=0)reattachPed(p);
+    }else{
+      if(!p.road){reattachPed(p);if(!p.road){peds.splice(i,1);continue;}}
+      const r=p.road;
+      const pdd=p.d;
+      p.d+=p.rdir*p.sp*dt;
+      // 横断歩道で時々反対側へ渡る
+      for(const cd of r.cross){
+        const passed=p.rdir>0?(cd>pdd&&cd<=p.d):(cd<pdd&&cd>=p.d);
+        if(passed&&Math.random()<.35&&r.kind!=='arcade'){p.toff=-p.off;break;}
+      }
+      // 交差点で曲がる
+      let switched=false;
+      for(const j of r.junc){
+        const passed=p.rdir>0?(j.d>pdd&&j.d<=p.d):(j.d<pdd&&j.d>=p.d);
+        if(!passed)continue;
+        if(Math.random()<.45){
+          p.road=j.road;p.d=clamp(j.od,0,j.road.pl.len);p.rdir=Math.random()<.5?1:-1;
+          p.off=p.toff=pedOffFor(j.road,Math.random()<.5?1:-1);
+          switched=true;
+        }
+        break;
+      }
+      if(!switched&&(p.d<0||p.d>r.pl.len)){
+        const endD=clamp(p.d,0,r.pl.len);
+        let took=false;
+        for(const j of r.junc){
+          if(Math.abs(j.d-endD)>40)continue;
+          p.road=j.road;p.d=clamp(j.od,0,j.road.pl.len);p.rdir=Math.random()<.5?1:-1;
+          p.off=p.toff=pedOffFor(j.road,Math.random()<.5?1:-1);
+          took=true;break;
+        }
+        if(!took){p.rdir*=-1;p.d=endD;}
+      }
+      p.off+=(p.toff-p.off)*Math.min(1,dt*1.1);
+      const q=plAt(p.road.pl,clamp(p.d,0,p.road.pl.len));
+      p.x=q.x+Math.sin(q.a)*p.off;
+      p.y=q.y-Math.cos(q.a)*p.off;
+      if(Math.abs(p.toff-p.off)>1.2) // 横断中は道路と直交方向を向く
+        p.a=q.a+((p.toff>p.off)?-Math.PI/2:Math.PI/2);
+      else
+        p.a=q.a+(p.rdir<0?Math.PI:0);
     }
-    const nx=p.x+Math.cos(a)*sp*dt,ny=p.y+Math.sin(a)*sp*dt;
-    if(blockedAt(nx,ny,2,false)){p.a+=Math.PI*(0.7+Math.random()*.6);}
-    else{p.x=nx;p.y=ny;}
     // 轢かれ判定
     if(S.mode==='car'&&Math.abs(S.pcar.v)>60&&hyp(S.pcar.x-p.x,S.pcar.y-p.y)<9){
       p.down=4;p.flee=0;
@@ -1263,7 +1414,12 @@ function hospital(){
 function updTrains(dt){
   for(const tr of TRAINS){
     if(tr.dwell>0){tr.dwell-=dt;continue;}
+    const pdt=tr.d;
     tr.d+=tr.dir*tr.sp*dt;
+    if(tr.stops)for(const sd of tr.stops){ // 電停で停車
+      const passed=tr.dir>0?(sd>pdt&&sd<=tr.d):(sd<pdt&&sd>=tr.d);
+      if(passed){tr.d=sd;tr.dwell=2.4;break;}
+    }
     if(tr.loop){
       if(tr.d>tr.pl.len)tr.d-=tr.pl.len;
       if(tr.d<0)tr.d+=tr.pl.len;

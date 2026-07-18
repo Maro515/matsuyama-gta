@@ -188,8 +188,28 @@ function plAt(pl,d){
 
 /* ---------- 疑似3D投影（GTA2風・真上カメラのパース） ---------- */
 const V={cx:W/2,cy:H/2,k:0}; // k>0で立体表示（1/カメラ高）、0で平面（マップ用）
-function LX(x,y,h){return x+(x-V.cx)*h*V.k;}
-function LY(x,y,h){return y+(y-V.cy)*h*V.k;}
+let P3D=null; // 三人称カメラ（非null時はLX/LYが透視投影になる）
+function proj3(x,y,h){
+  const dx=x-P3D.cx,dy=y-P3D.cy,dz=h-P3D.camH;
+  const fwd=dx*P3D.fx+dy*P3D.fy;
+  const lat=dx*P3D.rx+dy*P3D.ry;
+  const zd=fwd*P3D.cp-dz*P3D.sp;
+  if(zd<10)return null;
+  const s=P3D.f/zd;
+  return[cw/2+lat*s,P3D.hy-(fwd*P3D.sp+dz*P3D.cp)*s,zd,s];
+}
+function LX(x,y,h){
+  if(P3D){const p=proj3(x,y,h);return p?p[0]:-99999;}
+  return x+(x-V.cx)*h*V.k;
+}
+function LY(x,y,h){
+  if(P3D){const p=proj3(x,y,h);return p?p[1]:-99999;}
+  return y+(y-V.cy)*h*V.k;
+}
+function PSC(x,y,h){ // 透視時の見かけスケール（トップダウンでは1）
+  if(!P3D)return 1;
+  const p=proj3(x,y,h);return p?p[3]:0;
+}
 const _shadeCache=new Map();
 function shade(hex,f){
   const key=hex+'|'+f;
@@ -229,9 +249,11 @@ function box(c,x0,y0,x1,y1,h0,h1,col,roofCol){ // 汎用角柱（ランドマー
   if(V.cy>y1)face(D0,C0,D1,C1,0.8);
   if(V.cx<x0)face(A0,D0,A1,D1,1.07);
   if(V.cx>x1)face(B0,C0,B1,C1,0.7);
-  c.fillStyle=roofCol||shade(col,1.12);
-  c.beginPath();c.moveTo(A1[0],A1[1]);c.lineTo(B1[0],B1[1]);c.lineTo(C1[0],C1[1]);c.lineTo(D1[0],D1[1]);c.closePath();c.fill();
-  c.strokeStyle='rgba(30,32,36,.35)';c.lineWidth=1;c.stroke();
+  if(!P3D||P3D.camH>h1){ // カメラより低い箱のみ屋根を描く
+    c.fillStyle=roofCol||shade(col,1.12);
+    c.beginPath();c.moveTo(A1[0],A1[1]);c.lineTo(B1[0],B1[1]);c.lineTo(C1[0],C1[1]);c.lineTo(D1[0],D1[1]);c.closePath();c.fill();
+    c.strokeStyle='rgba(30,32,36,.35)';c.lineWidth=1;c.stroke();
+  }
   return [A1,B1,C1,D1];
 }
 function slab(c,x0,y0,x1,y1,h,col){ // 持ち出し屋根スラブ
@@ -578,6 +600,7 @@ const S={
   bustT:0,time:36,  // 昼スタート(DAYLEN=360の0.1)
   district:'',muted:false,
   camX:5880,camY:3560,camZ:1.1,camRot:0,chase:true,
+  view:'tps',tpsYaw:-Math.PI/2,
   shake:0,dmgFlash:0,slowmo:0,radio:0,skidOn:0,
   weaM:'clear',weaT:45,rainI:0,cloudI:0,flash:0,
 };
@@ -627,13 +650,13 @@ const GIGSPOTS=[['松山市駅前',5885,3560],['道後温泉本館',7420,2230],[
 const SAVEKEY='matsuyama-gta-save';
 function save(){
   try{localStorage.setItem(SAVEKEY,JSON.stringify({
-    m:S.money,mi:S.mIdx,mk:MIKANS.filter(o=>o.got).map(o=>o.id),mu:S.muted,g:S.gigsDone}));}catch(e){}
+    m:S.money,mi:S.mIdx,mk:MIKANS.filter(o=>o.got).map(o=>o.id),mu:S.muted,g:S.gigsDone,v:S.view}));}catch(e){}
 }
 function load(){
   try{
     const d=JSON.parse(localStorage.getItem(SAVEKEY));
     if(!d)return;
-    S.money=d.m??5000;S.mIdx=d.mi??0;S.muted=!!d.mu;S.gigsDone=d.g||0;
+    S.money=d.m??5000;S.mIdx=d.mi??0;S.muted=!!d.mu;S.gigsDone=d.g||0;S.view=d.v||'tps';
     (d.mk||[]).forEach(id=>{if(MIKANS[id])MIKANS[id].got=true;});
     S.mikan=MIKANS.filter(o=>o.got).length;
   }catch(e){}
@@ -752,7 +775,7 @@ addEventListener('keydown',e=>{
   if(e.code==='KeyB'){S.muted=!S.muted;save();updMuteBtn();}
   if(e.code==='KeyN')S.time+=40;
   if(e.code==='KeyX')abortMission();
-  if(e.code==='KeyC'){S.chase=!S.chase;toast(S.chase?'📷 チェイスカメラ（車の向きに追従）':'📷 ノースアップ固定');}
+  if(e.code==='KeyC'){S.view=S.view==='tps'?'top':'tps';toast(S.view==='tps'?'📷 三人称ビュー（GTA5風）':'📷 トップダウンビュー');save();}
   if(e.code==='KeyR'){S.radio=(S.radio+1)%3;toast('📻 '+['ラジオ OFF','FM句碑（アルペジオ）','道後FM（アンビエント）'][S.radio]);}
   if(e.code==='Escape'){if(bigmapOpen)toggleMap();else togglePause();}
 });
@@ -788,7 +811,7 @@ if(isTouch)document.getElementById('touchui').style.display='block';
   bind('btnBrake',()=>{k.brake=1;k.down=1;},()=>{k.brake=0;k.down=0;});
   bind('btnHorn',()=>{horn();scarePeds(S.px,S.py,160);});
   bind('btnMap',()=>toggleMap());
-  bind('btnCam',()=>{S.chase=!S.chase;toast(S.chase?'📷 チェイスカメラ':'📷 ノースアップ');});
+  bind('btnCam',()=>{S.view=S.view==='tps'?'top':'tps';toast(S.view==='tps'?'📷 三人称ビュー':'📷 トップダウン');save();});
   bind('btnRadio',()=>{S.radio=(S.radio+1)%3;toast('📻 '+['ラジオ OFF','FM句碑','道後FM'][S.radio]);});
 }
 function inputVec(){
@@ -832,7 +855,7 @@ function addPart(x,y,type,n){
   for(let i=0;i<(n||1);i++){
     if(parts.length>280)parts.shift();
     const a=Math.random()*TAU,sp=type==='spark'?60+Math.random()*120:10+Math.random()*30;
-    parts.push({x,y,vx:Math.cos(a)*sp,vy:Math.sin(a)*sp-(type==='steam'?26:8),
+    parts.push({x,y,h:3,vx:Math.cos(a)*sp,vy:Math.sin(a)*sp-(type==='steam'?26:8),
       life:type==='steam'?2.2:type==='smoke'?1.6:type==='boom'?1.1:.7,
       max:2.2,type,r:type==='boom'?10+Math.random()*14:3+Math.random()*5});
   }
@@ -843,7 +866,13 @@ function updPlayer(dt){
   const inp=inputVec();
   if(S.mode==='foot'){
     const sp=(k.sprint?245:155)*(hillAt(S.px,S.py)?0.55:1);
-    let vx=inp.x,vy=inp.y;const L=hyp(vx,vy);
+    let vx=inp.x,vy=inp.y;
+    if(S.view==='tps'){ // 三人称ではカメラ相対の移動
+      const fx2=Math.cos(S.tpsYaw),fy2=Math.sin(S.tpsYaw);
+      vx=inp.x*(-fy2)-inp.y*fx2;
+      vy=inp.x*fx2-inp.y*fy2;
+    }
+    const L=hyp(vx,vy);
     if(L>1){vx/=L;vy/=L;}
     if(S.knock>0){S.knock-=dt;vx=vy=0;}
     if(L>0.1&&S.knock<=0){
@@ -895,6 +924,8 @@ function updPlayer(dt){
     if(c.hp<40&&Math.random()<dt*6)addPart(c.x,c.y,'smoke',1);
     if(c.hp<=0)explodeCar();
   }
+  // TPSカメラのヨー追従
+  S.tpsYaw+=angDiff(S.tpsYaw,S.pa)*clamp(dt*(S.mode==='car'?4.2:3.2),0,1);
   // HP回復
   S.hp=clamp(S.hp+dt*1.2,0,100);
   // みかん回収
@@ -1197,6 +1228,8 @@ function updParts(dt){
   for(let i=parts.length-1;i>=0;i--){
     const p=parts[i];
     p.life-=dt;p.x+=p.vx*dt;p.y+=p.vy*dt;
+    if(p.type==='steam')p.h+=30*dt;
+    else if(p.type==='smoke'||p.type==='boom')p.h+=22*dt;
     p.vx*=1-dt;p.vy*=1-dt;
     if(p.type==='steam'||p.type==='smoke')p.r+=dt*9;
     if(p.life<=0)parts.splice(i,1);
@@ -1498,6 +1531,7 @@ function bld3D(c,b){
   if(V.cy>y1)face(x0,y1,x1,y1,b.cS);
   if(V.cx<x0)face(x0,y0,x0,y1,b.cW);
   if(V.cx>x1)face(x1,y0,x1,y1,b.cE);
+  if(P3D&&P3D.camH<=h)return; // カメラより高いビルは屋根なし（見上げ）
   const A1=P(x0,y0,h),B1=P(x1,y0,h),C1=P(x1,y1,h),D1=P(x0,y1,h);
   c.fillStyle=b.cR;
   c.beginPath();c.moveTo(A1[0],A1[1]);c.lineTo(B1[0],B1[1]);c.lineTo(C1[0],C1[1]);c.lineTo(D1[0],D1[1]);c.closePath();c.fill();
@@ -1552,6 +1586,11 @@ function drawLandmark(c,l,tsec,mini){
     case 'castle':{
       // 勝山山頂(H=42)の石垣＋三層天守
       const H=42;
+      if(P3D){ // 三人称では城山の丘を立体で下支え
+        box(c,x-150,y-70,x+150,y+110,0,16,'#7fa66b','#8db477');
+        box(c,x-105,y-45,x+105,y+80,16,30,'#8db477','#9cc286');
+        box(c,x-66,y-22,x+66,y+52,30,H,'#9cc286','#abcf95');
+      }
       const roof=(x0,y0,x1,y1,h,col)=>{ // 白漆喰の縁取り付き瓦屋根
         slab(c,x0,y0,x1,y1,h,col);
         c.strokeStyle='rgba(238,236,225,.75)';c.lineWidth=1.6;
@@ -1585,12 +1624,13 @@ function drawLandmark(c,l,tsec,mini){
       c.fillStyle='#c43c3c';c.beginPath();c.arc(tp[0],tp[1],5,0,TAU);c.fill();
       c.fillStyle='#fff';
       c.beginPath();c.moveTo(tp[0]-3,tp[1]-6);c.lineTo(tp[0]+6,tp[1]-9);c.lineTo(tp[0]+1,tp[1]-3);c.closePath();c.fill();
-      if(!mini&&Math.random()<.2)addPart(x+34,y-22,'steam',1);
+      if(!mini&&Math.random()<.09)addPart(x+34,y-22,'steam',1);
       break;}
     case 'depart':{
       box(c,x-80,y-63,x+80,y+63,0,44,'#a9a3b4','#8f89a0');
       slab(c,x-56,y+56,x+18,y+74,10,'rgba(125,120,144,.95)');
-      const bc=P(x+40,y-4,44),wc=P(x+40,y-4,58),R=34;
+      const ps=PSC(x+40,y-4,58)||1;
+      const bc=P(x+40,y-4,44),wc=P(x+40,y-4,58),R=34*ps;
       c.strokeStyle='#c8c8d2';c.lineWidth=3;
       c.beginPath();c.moveTo(bc[0]-10,bc[1]);c.lineTo(wc[0],wc[1]);c.moveTo(bc[0]+10,bc[1]);c.lineTo(wc[0],wc[1]);c.stroke();
       c.strokeStyle='#f0f0f4';c.lineWidth=3.5;
@@ -1601,7 +1641,7 @@ function drawLandmark(c,l,tsec,mini){
         c.strokeStyle='#f0f0f4';
         c.beginPath();c.moveTo(wc[0],wc[1]);c.lineTo(wc[0]+Math.cos(a)*R,wc[1]+Math.sin(a)*R);c.stroke();
         c.fillStyle=i%2?'#ff9d2e':'#fff';
-        c.beginPath();c.arc(wc[0]+Math.cos(a)*R,wc[1]+Math.sin(a)*R,5,0,TAU);c.fill();
+        c.beginPath();c.arc(wc[0]+Math.cos(a)*R,wc[1]+Math.sin(a)*R,5*ps,0,TAU);c.fill();
       }
       break;}
     case 'station':{
@@ -1617,12 +1657,12 @@ function drawLandmark(c,l,tsec,mini){
       break;}
     case 'pref':{
       box(c,x-64,y-36,x+64,y+36,0,26,'#d5cfbe');
-      const dc=P(x,y-4,34);
+      const dc=P(x,y-4,34),dps=PSC(x,y-4,34)||1;
       c.strokeStyle='#f0ece0';c.lineWidth=3;
-      c.beginPath();c.arc(dc[0],dc[1],16,0,TAU);c.stroke();
-      c.fillStyle='#63a07e';c.beginPath();c.arc(dc[0],dc[1],14,0,TAU);c.fill();
-      c.fillStyle='#7fb896';c.beginPath();c.arc(dc[0]-3,dc[1]-3,8,0,TAU);c.fill();
-      c.fillStyle='#f0ece0';c.beginPath();c.arc(dc[0],dc[1],2.5,0,TAU);c.fill();
+      c.beginPath();c.arc(dc[0],dc[1],16*dps,0,TAU);c.stroke();
+      c.fillStyle='#63a07e';c.beginPath();c.arc(dc[0],dc[1],14*dps,0,TAU);c.fill();
+      c.fillStyle='#7fb896';c.beginPath();c.arc(dc[0]-3*dps,dc[1]-3*dps,8*dps,0,TAU);c.fill();
+      c.fillStyle='#f0ece0';c.beginPath();c.arc(dc[0],dc[1],2.5*dps,0,TAU);c.fill();
       break;}
     case 'office':{
       box(c,x-60,y-36,x+60,y+36,0,30,'#c2c6cc');
@@ -1667,21 +1707,33 @@ function drawLandmark(c,l,tsec,mini){
       box(c,x-38,y-22,x+38,y+22,0,10,'#8a6a42');
       slab(c,x-46,y-30,x+46,y+28,11,'#4a5a46');
       const gy=y+52;
+      const pA0=P(x-20,gy+16,0),pB0=P(x+20,gy+16,0);
       const pA1=P(x-20,gy+16,14),pB1=P(x+20,gy+16,14);
       c.strokeStyle='#c43c3c';c.lineWidth=5;
-      c.beginPath();c.moveTo(x-20,gy+16);c.lineTo(pA1[0],pA1[1]);c.stroke();
-      c.beginPath();c.moveTo(x+20,gy+16);c.lineTo(pB1[0],pB1[1]);c.stroke();
+      c.beginPath();c.moveTo(pA0[0],pA0[1]);c.lineTo(pA1[0],pA1[1]);c.stroke();
+      c.beginPath();c.moveTo(pB0[0],pB0[1]);c.lineTo(pB1[0],pB1[1]);c.stroke();
       const kA=P(x-28,gy+16,14),kB=P(x+28,gy+16,14);
       c.lineWidth=7;
       c.beginPath();c.moveTo(kA[0],kA[1]);c.lineTo(kB[0],kB[1]);c.stroke();
       break;}
     case 'campus':{
       const s=l.solid;
-      c.fillStyle='#adbf96';c.fillRect(s[0],s[1],s[2]-s[0],s[3]-s[1]);
+      if(!P3D){c.fillStyle='#adbf96';c.fillRect(s[0],s[1],s[2]-s[0],s[3]-s[1]);}
       box(c,s[0]+14,s[1]+14,s[0]+(s[2]-s[0])/2-8,s[3]-14,0,20,'#b0a48c');
       box(c,s[0]+(s[2]-s[0])/2+8,s[1]+14,s[2]-14,s[1]+(s[3]-s[1])/2,0,16,'#b8ac94');
       break;}
     case 'stadium':{
+      if(P3D){ // 三人称ではスタンドを箱で簡略表現（フィールドは地面レイヤー）
+        box(c,x-130,y-96,x+130,y+96,0,15,'#9aa2aa','#8d959c');
+        for(const dxy of [[-130,-95],[130,-95],[-130,95],[130,95]]){
+          const bx=x+dxy[0],by=y+dxy[1];
+          const b0=P(bx,by,0),tp2=P(bx,by,34);
+          c.strokeStyle='#8b9098';c.lineWidth=2.5;
+          c.beginPath();c.moveTo(b0[0],b0[1]);c.lineTo(tp2[0],tp2[1]);c.stroke();
+          c.fillStyle='#f0f2e8';c.fillRect(tp2[0]-5,tp2[1]-4,10,6);
+        }
+        break;
+      }
       c.fillStyle='#7ba263';c.beginPath();c.ellipse(x,y,124,86,0,0,TAU);c.fill();
       c.fillStyle='#c8a878';
       c.beginPath();c.moveTo(x,y+46);c.lineTo(x-42,y);c.lineTo(x,y-46);c.lineTo(x+42,y);c.closePath();c.fill();
@@ -1708,6 +1760,7 @@ function drawLandmark(c,l,tsec,mini){
       slab(c,x-13,y-13,x+13,y+13,31,'#5a6a52');
       break;}
     case 'airport':{
+      if(!P3D){ // 滑走路は三人称では地面レイヤーが描く
       c.save();c.translate(897,4548);c.rotate(Math.atan2(4785-4310,1005-790));
       c.fillStyle='#54575c';c.fillRect(-290,-34,580,68);
       c.strokeStyle='#fff';c.lineWidth=4;c.setLineDash([26,22]);
@@ -1715,6 +1768,7 @@ function drawLandmark(c,l,tsec,mini){
       c.strokeStyle='rgba(240,240,240,.7)';c.lineWidth=2;
       c.strokeRect(-290,-34,580,68);
       c.restore();
+      }
       box(c,1006,4388,1184,4498,0,18,'#dfe3e8','#c6ccd2');
       slab(c,1000,4382,1190,4412,20,'#8894a0');
       box(c,1160,4352,1186,4378,0,34,'#c8ccd2');
@@ -1731,14 +1785,20 @@ function drawLandmark(c,l,tsec,mini){
     case 'bigport':{
       box(c,x-66,y-44,x+66,y+44,0,16,'#e2dfd6');
       slab(c,x-70,y-48,x+70,y-26,18,'#c05028');
-      c.fillStyle='#f0f0ee';c.beginPath();
-      c.moveTo(x-40,y-92);c.lineTo(x+52,y-92);c.lineTo(x+70,y-76);c.lineTo(x-40,y-76);c.closePath();c.fill();
-      c.fillStyle='#e07030';c.fillRect(x-40,y-90,92,5);
-      const fb=P(x+6,y-84,10);
-      c.fillStyle='#fafaf8';c.fillRect(fb[0]-26,fb[1]-6,52,12);
-      c.fillStyle='#e07030';c.fillRect(fb[0]+20,fb[1]-5,6,10);
+      if(!P3D){
+        c.fillStyle='#f0f0ee';c.beginPath();
+        c.moveTo(x-40,y-92);c.lineTo(x+52,y-92);c.lineTo(x+70,y-76);c.lineTo(x-40,y-76);c.closePath();c.fill();
+        c.fillStyle='#e07030';c.fillRect(x-40,y-90,92,5);
+        const fb=P(x+6,y-84,10);
+        c.fillStyle='#fafaf8';c.fillRect(fb[0]-26,fb[1]-6,52,12);
+        c.fillStyle='#e07030';c.fillRect(fb[0]+20,fb[1]-5,6,10);
+      }else{
+        box(c,x-40,y-92,x+66,y-76,0,10,'#f0f0ee','#fafaf8'); // 停泊フェリー
+        box(c,x-20,y-90,x+40,y-78,10,18,'#e8e8e4','#e07030');
+      }
       break;}
     case 'garden':{
+      if(P3D)break; // 地面レイヤーが描く
       c.fillStyle='#b6cf94';c.fillRect(x-40,y-30,80,60);
       c.strokeStyle='#8aa870';c.lineWidth=3;c.strokeRect(x-40,y-30,80,60);
       c.fillStyle='#6fb2d8';c.beginPath();c.ellipse(x+8,y+4,18,10,0,0,TAU);c.fill();
@@ -2285,6 +2345,476 @@ function renderBigmap(){
 }
 
 /* =========================================================
+   三人称視点レンダラ（GTA5風チェイスビュー）
+   地面: トップダウン描画をMode-7方式で透視変換
+   立体物: 透視投影＋奥行きソートで描画
+   ========================================================= */
+const GS3=0.45,GW3=1280;
+const gndCv=document.createElement('canvas');gndCv.width=GW3;gndCv.height=GW3;
+function drawGroundLM(c){ // 三人称時に地面レイヤーへ描くランドマークの平面部分
+  c.save();c.translate(897,4548);c.rotate(Math.atan2(4785-4310,1005-790));
+  c.fillStyle='#54575c';c.fillRect(-290,-34,580,68);
+  c.strokeStyle='#fff';c.lineWidth=4;c.setLineDash([26,22]);
+  c.beginPath();c.moveTo(-270,0);c.lineTo(270,0);c.stroke();c.setLineDash([]);
+  c.restore();
+  c.fillStyle='#7ba263';c.beginPath();c.ellipse(5155,5200,124,86,0,0,TAU);c.fill();
+  c.fillStyle='#c8a878';
+  c.beginPath();c.moveTo(5155,5246);c.lineTo(5113,5200);c.lineTo(5155,5154);c.lineTo(5197,5200);c.closePath();c.fill();
+  c.fillStyle='#b6cf94';c.fillRect(5660,2960,80,60);
+  c.fillStyle='#6fb2d8';c.beginPath();c.ellipse(5708,2994,18,10,0,0,TAU);c.fill();
+  for(const l of LMS)if(l.t==='campus'){
+    const s=l.solid;
+    c.fillStyle='#adbf96';c.fillRect(s[0],s[1],s[2]-s[0],s[3]-s[1]);
+  }
+}
+function renderGround3D(){
+  const g=gndCv.getContext('2d');
+  const saveP=P3D;P3D=null;
+  const pk=V.k;V.k=0;
+  g.setTransform(1,0,0,1,0,0);
+  g.fillStyle='#c9c5b4';g.fillRect(0,0,GW3,GW3);
+  g.save();
+  g.translate(GW3/2,GW3*.8);
+  g.rotate(-saveP.yaw-Math.PI/2);
+  g.scale(GS3,GS3);
+  g.translate(-saveP.cx,-saveP.cy);
+  drawTerrain(g,false);
+  drawRails(g);
+  drawRoads(g,false);
+  g.lineCap='round';
+  for(const sk of SKIDS){
+    g.strokeStyle='rgba(28,30,34,'+(clamp(sk.ttl/7,0,1)*.4)+')';
+    g.lineWidth=3.4;
+    g.beginPath();g.moveTo(sk.x1,sk.y1);g.lineTo(sk.x2,sk.y2);g.stroke();
+  }
+  drawGroundLM(g);
+  drawFerryBoats(g);
+  // ミッションリング
+  const mp=missionMarkerPos();
+  if(mp){
+    const pulse=6+Math.sin(tSec*4)*3;
+    g.strokeStyle=S.active?'rgba(80,210,255,.9)':'rgba(255,211,77,.9)';
+    g.lineWidth=5;
+    g.beginPath();g.arc(mp[0],mp[1],26+pulse,0,TAU);g.stroke();
+    g.fillStyle=S.active?'rgba(80,210,255,.25)':'rgba(255,211,77,.25)';
+    g.beginPath();g.arc(mp[0],mp[1],26+pulse,0,TAU);g.fill();
+  }
+  // 落ち影（近傍のみ）
+  g.fillStyle='rgba(24,30,40,.2)';
+  for(const b of buildings){
+    const bx=(b.x0+b.x1)/2,by=(b.y0+b.y1)/2;
+    if(hyp(bx-saveP.cx,by-saveP.cy)>1450)continue;
+    boxShadow(g,b.x0,b.y0,b.x1,b.y1,b.hW*.9);
+  }
+  for(const l of LMS){
+    if(!l.solid||hyp(l.x-saveP.cx,l.y-saveP.cy)>1450)continue;
+    boxShadow(g,l.solid[0],l.solid[1],l.solid[2],l.solid[3],LMH[l.t]||14);
+  }
+  for(const t of TREES){
+    if(hyp(t[0]-saveP.cx,t[1]-saveP.cy)>1200)continue;
+    g.beginPath();g.ellipse(t[0]+SHX*13,t[1]+SHY*13,t[2],t[2]*.75,0,0,TAU);g.fill();
+  }
+  g.restore();
+  V.k=pk;P3D=saveP;
+}
+function skyCol(){
+  const n=NIGHT/0.58;
+  const dusk=clamp(1-Math.abs(NIGHT-.26)/.15,0,1);
+  const mix=(a,b,t)=>[lerp(a[0],b[0],t),lerp(a[1],b[1],t),lerp(a[2],b[2],t)];
+  let top=mix([108,166,214],[10,16,36],n);
+  let hor=mix([206,223,233],[30,44,70],n);
+  if(dusk>0){top=mix(top,[214,120,72],dusk*.5);hor=mix(hor,[255,172,92],dusk*.75);}
+  return[top.map(Math.round),hor.map(Math.round)];
+}
+function boxObj(c,x,y,a,hl,hw,h0,h1,colS,colT){
+  const ca=Math.cos(a),sa=Math.sin(a);
+  const cor=(lx,ly)=>[x+lx*ca-ly*sa,y+lx*sa+ly*ca];
+  const bs=[cor(hl,-hw),cor(hl,hw),cor(-hl,hw),cor(-hl,-hw)];
+  const P0=[],P1=[];
+  for(let i=0;i<4;i++){
+    P0.push(proj3(bs[i][0],bs[i][1],h0));P1.push(proj3(bs[i][0],bs[i][1],h1));
+    if(!P0[i]||!P1[i])return null;
+  }
+  const order=[[0,1],[1,2],[2,3],[3,0]].map(w=>{
+    const mx=(bs[w[0]][0]+bs[w[1]][0])/2,my=(bs[w[0]][1]+bs[w[1]][1])/2;
+    return[(mx-P3D.cx)*P3D.fx+(my-P3D.cy)*P3D.fy,w];
+  }).sort((A,B)=>B[0]-A[0]);
+  for(const o of order){
+    const w=o[1];
+    c.fillStyle=shade(colS,w[0]%2?.8:.92);
+    c.beginPath();
+    c.moveTo(P0[w[0]][0],P0[w[0]][1]);c.lineTo(P0[w[1]][0],P0[w[1]][1]);
+    c.lineTo(P1[w[1]][0],P1[w[1]][1]);c.lineTo(P1[w[0]][0],P1[w[0]][1]);
+    c.closePath();c.fill();
+  }
+  if(P3D.camH>h1){
+    c.fillStyle=colT;
+    c.beginPath();c.moveTo(P1[0][0],P1[0][1]);
+    for(let i=1;i<4;i++)c.lineTo(P1[i][0],P1[i][1]);
+    c.closePath();c.fill();
+  }
+  return{bs,P0,P1};
+}
+function bldTPSsafe(c,b){
+  const cs=[[b.x0,b.y0],[b.x1,b.y0],[b.x1,b.y1],[b.x0,b.y1]];
+  for(const p of cs){if(!proj3(p[0],p[1],0)||!proj3(p[0],p[1],b.hW))return;}
+  bld3D(c,b);
+}
+function vehTPS(c,car,isPolice){
+  const t=CARTYPES[car.type];
+  const sh=proj3(car.x+SHX*5,car.y+SHY*5,0);
+  if(!sh)return;
+  c.save();c.translate(sh[0],sh[1]);c.rotate(car.a-P3D.yaw);
+  c.fillStyle='rgba(22,28,36,.28)';
+  c.beginPath();c.ellipse(0,0,Math.min((t.l/2+3)*sh[3],130),Math.min((t.w/2+2)*sh[3]*.7,60),0,0,TAU);c.fill();
+  c.restore();
+  if(!boxObj(c,car.x,car.y,car.a,t.l/2,t.w/2,0,8,car.color,shade(car.color,1.05)))return;
+  boxObj(c,car.x-Math.cos(car.a)*t.l*.12,car.y-Math.sin(car.a)*t.l*.12,car.a,t.l*.3,t.w*.37,8,14,'#8fb2c9',shade(car.color,1.15));
+  if(isPolice){
+    const fl=Math.floor(tSec*6)%2;
+    boxObj(c,car.x,car.y,car.a,4,t.w*.3,14,17,fl?'#ff3838':'#3878ff','#e8e8e8');
+  }
+  if(car.type==='taxi')boxObj(c,car.x,car.y,car.a,3.5,3.5,14,17,'#ffb02e','#fff2c8');
+  // テール／ヘッドライト
+  const ca=Math.cos(car.a),sa=Math.sin(car.a);
+  const rvis=((P3D.cx-car.x)*(-ca)+(P3D.cy-car.y)*(-sa))>0;
+  if(rvis){
+    const rp=proj3(car.x-ca*t.l/2,car.y-sa*t.l/2,5);
+    if(rp){
+      const s=rp[3],k=car.brakeL?1.5:1;
+      c.fillStyle=car.brakeL?'#ff4030':'#a03028';
+      c.beginPath();
+      c.ellipse(rp[0]-t.w*.32*s,rp[1],2.4*s*k,1.7*s*k,0,0,TAU);
+      c.ellipse(rp[0]+t.w*.32*s,rp[1],2.4*s*k,1.7*s*k,0,0,TAU);
+      c.fill();
+    }
+  }else{
+    const fp=proj3(car.x+ca*t.l/2,car.y+sa*t.l/2,5);
+    if(fp){
+      const s=fp[3];
+      c.fillStyle=NIGHT>0.15?'#fff3c0':'#e8e0b8';
+      c.beginPath();
+      c.ellipse(fp[0]-t.w*.32*s,fp[1],2.2*s,1.6*s,0,0,TAU);
+      c.ellipse(fp[0]+t.w*.32*s,fp[1],2.2*s,1.6*s,0,0,TAU);
+      c.fill();
+    }
+  }
+}
+function pedTPS(c,p){
+  const g0=proj3(p.x,p.y,0);
+  if(!g0)return;
+  const s=g0[3];
+  c.fillStyle='rgba(20,25,30,.3)';
+  c.beginPath();c.ellipse(g0[0]+SHX*3*s,g0[1],4.5*s,2.2*s,0,0,TAU);c.fill();
+  if(p.down>0){
+    c.fillStyle=p.c;c.beginPath();c.ellipse(g0[0],g0[1]-2*s,8*s,3*s,0,0,TAU);c.fill();
+    c.fillStyle='#e8c8a0';c.beginPath();c.arc(g0[0]+7*s,g0[1]-2*s,2.8*s,0,TAU);c.fill();
+    return;
+  }
+  const bob=Math.sin(p.t*9)*.8*s;
+  const b1=proj3(p.x,p.y,4.5),hd=proj3(p.x,p.y,9.5);
+  if(!b1||!hd)return;
+  c.fillStyle=p.c;
+  c.beginPath();c.ellipse(b1[0],b1[1]+bob,3.4*s,5*s,0,0,TAU);c.fill();
+  c.fillStyle='#e8c8a0';
+  c.beginPath();c.arc(hd[0],hd[1]+bob,2.3*s,0,TAU);c.fill();
+  if(p.say){
+    const fs=clamp(11*s*2.2,9,17);
+    c.font='600 '+fs+'px sans-serif';c.textAlign='center';
+    const tp=proj3(p.x,p.y,15);
+    if(tp){
+      c.lineWidth=fs*.3;c.strokeStyle='rgba(20,26,34,.8)';
+      c.strokeText(p.say.txt,tp[0],tp[1]);
+      c.fillStyle='#fff';c.fillText(p.say.txt,tp[0],tp[1]);
+    }
+  }
+}
+function footTPS(c){
+  const g0=proj3(S.px,S.py,0);
+  if(!g0)return;
+  const s=g0[3];
+  c.fillStyle='rgba(20,25,30,.35)';
+  c.beginPath();c.ellipse(g0[0]+SHX*3*s,g0[1],5*s,2.5*s,0,0,TAU);c.fill();
+  const b1=proj3(S.px,S.py,5),hd=proj3(S.px,S.py,10.5);
+  if(!b1||!hd)return;
+  c.fillStyle='#2e6e46';
+  c.beginPath();c.ellipse(b1[0],b1[1],4*s,5.6*s,0,0,TAU);c.fill();
+  c.fillStyle='#e8c8a0';
+  c.beginPath();c.arc(hd[0],hd[1],2.6*s,0,TAU);c.fill();
+  c.fillStyle='#ff9d2e';
+  c.beginPath();c.arc(hd[0],hd[1]-2.2*s,2.2*s,0,TAU);c.fill();
+}
+function treeTPS(c,t){
+  const g0=proj3(t[0],t[1],0),tp=proj3(t[0],t[1],13);
+  if(!g0||!tp)return;
+  c.strokeStyle='#6b5236';c.lineWidth=Math.max(1.5,2.4*g0[3]);
+  c.beginPath();c.moveTo(g0[0],g0[1]);c.lineTo(tp[0],tp[1]);c.stroke();
+  const r=t[2]*tp[3]*1.15;
+  c.fillStyle='#44693c';c.beginPath();c.arc(tp[0],tp[1],r,0,TAU);c.fill();
+  c.fillStyle='#5d8551';c.beginPath();c.arc(tp[0]-r*.28,tp[1]-r*.28,r*.6,0,TAU);c.fill();
+}
+function lampTPS(c,lp){
+  const g0=proj3(lp[0],lp[1],0),tp=proj3(lp[0],lp[1],15);
+  if(!g0||!tp)return;
+  c.strokeStyle='#6f7276';c.lineWidth=Math.max(1,1.8*g0[3]);
+  c.beginPath();c.moveTo(g0[0],g0[1]);c.lineTo(tp[0],tp[1]);c.stroke();
+  c.fillStyle=NIGHT>0.15?'#ffe9a0':'#dfe3e6';
+  c.beginPath();c.arc(tp[0],tp[1],Math.max(1.4,2.4*tp[3]),0,TAU);c.fill();
+}
+function mikanTPS(c,m){
+  const p=proj3(m.x,m.y,5);
+  if(!p)return;
+  const b=1+Math.sin(tSec*3+m.id)*.15;
+  const r=Math.min(4.5*p[3]*b,22);
+  c.fillStyle='#ff9d2e';
+  c.beginPath();c.arc(p[0],p[1],r,0,TAU);c.fill();
+  c.fillStyle='#4e8a3c';c.fillRect(p[0]-1,p[1]-r-3,2,Math.min(3*p[3],8));
+}
+function trainTPS(c,o){
+  const p=o.p,tr=o.tr,ci=o.ci;
+  let col='#e8862c',top='#f8f0e0';
+  if(tr.type==='botchan'){col=ci===0?'#22221f':'#5a4632';top=ci===0?'#3c3c38':'#8a734f';}
+  else if(tr.type==='jr'){col='#eceef0';top='#c8ced4';}
+  boxObj(c,p.x,p.y,p.a,24,9,0,14,col,top);
+}
+function partTPS(c,p){
+  const pr=proj3(p.x,p.y,p.h||2);
+  if(!pr)return;
+  const a=clamp(p.life/p.max,0,1),r=clamp(p.r*pr[3],1,46);
+  if(p.type==='steam')c.fillStyle='rgba(255,255,255,'+(a*.5)+')';
+  else if(p.type==='smoke')c.fillStyle='rgba(70,70,74,'+(a*.55)+')';
+  else if(p.type==='boom')c.fillStyle='rgba(255,'+((120+Math.random()*80)|0)+',30,'+a+')';
+  else{c.fillStyle='rgba(255,225,100,'+a+')';c.fillRect(pr[0]-r*.4,pr[1]-r*.4,r*.8,r*.8);return;}
+  c.beginPath();c.arc(pr[0],pr[1],r,0,TAU);c.fill();
+}
+function planeTPS(c){
+  const P2=PLANE;
+  const g0=proj3(P2.x,P2.y,0);
+  if(g0){
+    c.fillStyle='rgba(20,25,30,.2)';
+    c.beginPath();c.ellipse(g0[0],g0[1],30*g0[3],8*g0[3],0,0,TAU);c.fill();
+  }
+  const p=proj3(P2.x,P2.y,14+P2.alt*90);
+  if(!p)return;
+  c.save();c.translate(p[0],p[1]);c.rotate(P2.a-P3D.yaw-Math.PI/2+Math.PI/2);
+  c.scale(p[3],p[3]);planeShape(c);c.restore();
+}
+function markerTPS(c,mp){
+  const p=proj3(mp[0],mp[1],26+Math.sin(tSec*4)*4);
+  if(!p)return;
+  const fs=clamp(24*p[3]*2,12,46);
+  c.font='900 '+fs+'px sans-serif';c.textAlign='center';
+  c.fillStyle=S.active?'#50d2ff':'#ffd34d';
+  c.strokeStyle='rgba(0,0,0,.6)';c.lineWidth=fs*.12;
+  c.strokeText(S.active?'▼':'M',p[0],p[1]);
+  c.fillText(S.active?'▼':'M',p[0],p[1]);
+}
+function arcadeTPS(c,r){
+  c.fillStyle='rgba(226,238,242,.38)';
+  c.strokeStyle='rgba(120,116,104,.55)';c.lineWidth=1.5;
+  for(let i=1;i<r.pts.length;i++){
+    const ax=r.pts[i-1][0],ay=r.pts[i-1][1],bx=r.pts[i][0],by=r.pts[i][1];
+    const L=hyp(bx-ax,by-ay)||1;
+    const px=-(by-ay)/L*(r.w/2),py=(bx-ax)/L*(r.w/2);
+    const q=[proj3(ax+px,ay+py,13),proj3(bx+px,by+py,13),proj3(bx-px,by-py,13),proj3(ax-px,ay-py,13)];
+    if(!q[0]||!q[1]||!q[2]||!q[3])continue;
+    c.beginPath();c.moveTo(q[0][0],q[0][1]);
+    for(let j=1;j<4;j++)c.lineTo(q[j][0],q[j][1]);
+    c.closePath();c.fill();c.stroke();
+  }
+}
+function renderTPS(){
+  if(cw<2||ch<2){resize();if(cw<2||ch<2)return;}
+  const c=ctx;
+  {
+    const ph=(S.time/360)%1;
+    NIGHT=Math.pow(.5-.5*Math.cos(ph*TAU),1.4)*.58;
+    const th=2.45+Math.sin(ph*TAU)*.75;
+    const sl=.5+NIGHT*.85;
+    SHX=Math.cos(th)*sl;SHY=Math.sin(th)*sl;
+  }
+  // カメラ
+  const spd=S.mode==='car'?Math.abs(S.pcar.v):0;
+  const behind=(S.mode==='car'?128:82)+spd*.22;
+  const camH=(S.mode==='car'?54:42)+spd*.05;
+  const yaw=S.tpsYaw;
+  const fx=Math.cos(yaw),fy=Math.sin(yaw);
+  const pitch=.33,cp=Math.cos(pitch),sp=Math.sin(pitch);
+  const f=ch*.95;
+  const shy2=(Math.random()-.5)*S.shake;
+  P3D={cx:S.px-fx*behind,cy:S.py-fy*behind,camH,yaw,fx,fy,rx:-fy,ry:fx,cp,sp,f,
+    hy:ch*.62+shy2,pitch};
+  P3D.horY=P3D.hy-f*Math.tan(pitch);
+  S.camRot=-(yaw+Math.PI/2); // ミニマップ用
+  V.cx=P3D.cx;V.cy=P3D.cy;   // box()面判定はカメラ位置基準
+  c.setTransform(dpr,0,0,dpr,0,0);
+  // 空
+  const sk2=skyCol();
+  const ctop='rgb('+sk2[0]+')',chor='rgb('+sk2[1]+')';
+  const skyG=c.createLinearGradient(0,0,0,P3D.horY);
+  skyG.addColorStop(0,ctop);skyG.addColorStop(1,chor);
+  c.fillStyle=skyG;c.fillRect(0,0,cw,Math.max(0,P3D.horY+2));
+  // 雲
+  const cla=clamp(.55-NIGHT,.06,.55);
+  c.fillStyle='rgba(255,255,255,'+cla+')';
+  for(let i=0;i<3;i++){
+    const cx2=((-yaw*380+i*(cw/2+180)+tSec*7)%(cw+440)+cw+440)%(cw+440)-220;
+    const cy2=P3D.horY*(.3+i*.16);
+    c.beginPath();c.ellipse(cx2,cy2,95+i*35,13+i*4,0,0,TAU);c.fill();
+  }
+  // 地面
+  c.fillStyle='#c9c5b4';c.fillRect(0,Math.max(0,P3D.horY),cw,ch-Math.max(0,P3D.horY));
+  renderGround3D();
+  const y0s=Math.max(0,Math.ceil(P3D.horY)+1);
+  for(let sy2=y0s;sy2<ch;sy2+=2){
+    const r=(P3D.hy-sy2)/f;
+    const den=sp-r*cp;
+    if(den<=0.0002)continue;
+    const dF=camH*(cp+r*sp)/den;
+    const zd=dF*cp+camH*sp;
+    const halfW=cw/2*zd/f;
+    const srcY=GW3*.8-dF*GS3;
+    if(srcY<0||srcY>=GW3-1)continue;
+    c.drawImage(gndCv,GW3/2-halfW*GS3,srcY,halfW*2*GS3,1.6,0,sy2,cw,2);
+  }
+  // 遠景フォグ
+  const fogG=c.createLinearGradient(0,P3D.horY,0,P3D.horY+ch*.22);
+  fogG.addColorStop(0,'rgba('+sk2[1]+',.95)');
+  fogG.addColorStop(1,'rgba('+sk2[1]+',0)');
+  c.fillStyle=fogG;c.fillRect(0,Math.max(0,P3D.horY-1),cw,ch*.22+2);
+  // 立体物（奥→手前）
+  const items=[];
+  const addI=(x,y,t,o)=>{
+    const dx=x-P3D.cx,dy=y-P3D.cy;
+    const fwd=dx*fx+dy*fy;
+    if(fwd<28||fwd>1150)return;
+    const lat=dx*P3D.rx+dy*P3D.ry;
+    if(Math.abs(lat)>fwd*1.05+330)return;
+    items.push([fwd,t,o]);
+  };
+  for(const b of buildings)addI((b.x0+b.x1)/2,(b.y0+b.y1)/2,0,b);
+  for(const t of TREES)addI(t[0],t[1],1,t);
+  for(const l of LMS)addI(l.x,l.y,2,l);
+  for(const r of ROADS)if(r.kind==='arcade'){const m=plAt(r.pl,r.pl.len/2);addI(m.x,m.y,3,r);}
+  for(const lp of LAMPS)addI(lp[0],lp[1],4,lp);
+  for(const car of parked)addI(car.x,car.y,5,car);
+  for(const car of traffic)addI(car.x,car.y,5,car);
+  for(const car of polices)addI(car.x,car.y,6,car);
+  for(const p of peds)addI(p.x,p.y,7,p);
+  for(const tr of TRAINS)for(let ci=0;ci<tr.cars;ci++){
+    const d=clamp(tr.d-ci*50*tr.dir,0,tr.pl.len);
+    const p=plAt(tr.pl,d);
+    addI(p.x,p.y,8,{p,tr,ci});
+  }
+  for(const m of MIKANS)if(!m.got)addI(m.x,m.y,9,m);
+  for(const p of parts)addI(p.x,p.y,10,p);
+  if(S.mode==='car')addI(S.pcar.x,S.pcar.y,5,S.pcar);
+  else addI(S.px,S.py,11,null);
+  const mp=missionMarkerPos();
+  if(mp)addI(mp[0],mp[1],12,mp);
+  if(PLANE.st!==0)addI(PLANE.x,PLANE.y,13,PLANE);
+  items.sort((a,b)=>b[0]-a[0]);
+  for(const it of items){
+    switch(it[1]){
+      case 0:bldTPSsafe(c,it[2]);break;
+      case 1:treeTPS(c,it[2]);break;
+      case 2:drawLandmark(c,it[2],tSec,false);break;
+      case 3:arcadeTPS(c,it[2]);break;
+      case 4:lampTPS(c,it[2]);break;
+      case 5:vehTPS(c,it[2],false);break;
+      case 6:vehTPS(c,it[2],true);break;
+      case 7:pedTPS(c,it[2]);break;
+      case 8:trainTPS(c,it[2]);break;
+      case 9:mikanTPS(c,it[2]);break;
+      case 10:partTPS(c,it[2]);break;
+      case 11:footTPS(c);break;
+      case 12:markerTPS(c,it[2]);break;
+      case 13:planeTPS(c);break;
+    }
+  }
+  // 主要ランドマークの名前ラベル
+  c.textAlign='center';
+  for(const l of LMS){
+    if(l.s<2)continue;
+    const p=proj3(l.x,l.y,66);
+    if(!p||p[2]>1050)continue;
+    const fs=clamp(15*p[3]*2.4,10,19);
+    c.font='700 '+fs+'px sans-serif';
+    c.lineWidth=fs*.26;c.strokeStyle='rgba(20,26,34,.85)';
+    c.strokeText(l.n,p[0],p[1]);
+    c.fillStyle='#fff';c.fillText(l.n,p[0],p[1]);
+  }
+  // 大気・天候
+  const dusk=clamp(1-Math.abs(NIGHT-.26)/.15,0,1)*.2;
+  if(dusk>0.01){
+    c.globalCompositeOperation='multiply';
+    c.fillStyle='rgba(255,168,92,'+dusk+')';c.fillRect(0,0,cw,ch);
+    c.globalCompositeOperation='source-over';
+  }
+  if(S.cloudI>0.02){c.fillStyle='rgba(88,96,110,'+(S.cloudI*.13)+')';c.fillRect(0,0,cw,ch);}
+  if(S.rainI>0.02){
+    c.fillStyle='rgba(60,72,92,'+(S.rainI*.13)+')';c.fillRect(0,0,cw,ch);
+    c.strokeStyle='rgba(200,215,235,'+(S.rainI*.42)+')';c.lineWidth=1.2;
+    c.beginPath();
+    const n=Math.floor(130*S.rainI);
+    for(let i=0;i<n;i++){
+      const rx=Math.random()*cw,ry=Math.random()*ch;
+      c.moveTo(rx,ry);c.lineTo(rx-3,ry+15);
+    }
+    c.stroke();
+  }
+  if(S.flash>0){c.fillStyle='rgba(255,255,255,'+(S.flash*.8)+')';c.fillRect(0,0,cw,ch);}
+  // 夜の灯り
+  if(NIGHT>0.04){
+    const lc=lightCv;
+    lc.width=cw;lc.height=ch;
+    const g=lc.getContext('2d');
+    g.fillStyle='rgba(12,16,44,'+NIGHT+')';g.fillRect(0,0,cw,ch);
+    g.globalCompositeOperation='destination-out';
+    const glowT=(wx,wy,h,r,a)=>{
+      const p=proj3(wx,wy,h);
+      if(!p)return;
+      const rr2=r*p[3];
+      const gr=g.createRadialGradient(p[0],p[1],0,p[0],p[1],rr2);
+      gr.addColorStop(0,'rgba(0,0,0,'+a+')');gr.addColorStop(1,'rgba(0,0,0,0)');
+      g.fillStyle=gr;g.fillRect(p[0]-rr2,p[1]-rr2,rr2*2,rr2*2);
+    };
+    glowT(S.px,S.py,4,110,.85);
+    if(S.mode==='car')glowT(S.px+Math.cos(S.pa)*95,S.py+Math.sin(S.pa)*95,2,130,.9);
+    for(const car of traffic)glowT(car.x+Math.cos(car.a)*50,car.y+Math.sin(car.a)*50,2,80,.7);
+    for(const car of polices)glowT(car.x,car.y,4,110,.8);
+    for(const lp of LAMPS){
+      const dx=lp[0]-P3D.cx,dy=lp[1]-P3D.cy;
+      if(dx*fx+dy*fy<0||hyp(dx,dy)>900)continue;
+      glowT(lp[0],lp[1],4,64,.55);
+    }
+    glowT(7434,2155,10,170,.8);glowT(5965,3715,10,170,.7);glowT(6230,3300,8,120,.6);
+    glowT(4670,3070,8,120,.6);glowT(7352,2292,8,100,.6);
+    c.drawImage(lc,0,0);
+  }
+  // ビネット・被弾・目的地矢印
+  if(!vigCv)buildVig();
+  c.drawImage(vigCv,0,0,cw,ch);
+  if(S.dmgFlash>0){c.fillStyle='rgba(200,30,30,'+(S.dmgFlash*.3)+')';c.fillRect(0,0,cw,ch);}
+  if(mp){
+    const pr=proj3(mp[0],mp[1],10);
+    if(!pr||pr[0]<-20||pr[0]>cw+20||pr[1]<-20||pr[1]>ch+20){
+      const dx=mp[0]-S.px,dy=mp[1]-S.py;
+      const fwd=dx*fx+dy*fy,lat=dx*P3D.rx+dy*P3D.ry;
+      const a2=Math.atan2(lat,fwd);
+      const ex=cw/2+Math.sin(a2)*Math.min(cw*.36,220),ey=ch*.5-Math.cos(a2)*110;
+      c.save();c.translate(ex,ey);c.rotate(a2-Math.PI/2);
+      c.fillStyle=S.active?'rgba(80,210,255,.92)':'rgba(255,211,77,.92)';
+      c.beginPath();c.moveTo(15,0);c.lineTo(-8,-9);c.lineTo(-4,0);c.lineTo(-8,9);c.closePath();c.fill();
+      c.strokeStyle='rgba(0,0,0,.6)';c.lineWidth=1.5;c.stroke();
+      c.restore();
+    }
+  }
+  P3D=null; // トップダウン系関数への影響を残さない
+  renderMinimap();
+}
+
+/* =========================================================
    HUD
    ========================================================= */
 let toastT=null;
@@ -2410,6 +2940,7 @@ function frame(ts){
   }
   updateAudio(dt);
   if(bigmapOpen){renderBigmap();}
+  else if(S.view==='tps')renderTPS();
   else render();
   updSpeedUI();
 }

@@ -407,6 +407,14 @@ const LMS=[
  {n:'大街道',x:6232,y:3290,t:'label',s:1},
  {n:'銀天街',x:6062,y:3545,t:'label',s:1},
  {n:'ロープウェイ乗り場',x:6338,y:2892,t:'rope',s:1,solid:[6310,2868,6366,2916]},
+ {n:'松山三越',x:6169,y:3028,t:'mitsukoshi',s:1,solid:[6100,2992,6238,3064]},
+ {n:'坂の上の雲ミュージアム',x:6060,y:3039,t:'sakakumo',s:1,solid:[6020,3010,6100,3068]},
+ {n:'愛媛県美術館',x:5625,y:2985,t:'artmuseum',s:1,solid:[5585,2950,5665,3020]},
+ {n:'伊予銀行本店',x:5960,y:3242,t:'iyogin',s:1,solid:[5910,3212,6010,3272]},
+ {n:'フジグラン松山',x:4840,y:3290,t:'fujigran',s:2,solid:[4740,3230,4940,3350]},
+ {n:'南海放送鉄塔',x:5505,y:2450,t:'radiotower',s:1,solid:[5485,2432,5525,2468]},
+ {n:'松山東高',x:6880,y:3344,t:'school',s:1,solid:[6800,3310,6960,3378]},
+ {n:'市立小学校',x:5250,y:4050,t:'school',s:1,solid:[5170,4020,5330,4080]},
  {n:'堀江港',x:4482,y:340,t:'label',s:1},
 ];
 // エリア名ポップアップ用
@@ -526,7 +534,9 @@ const ZONES=[
 ];
 ZONES[1].pal[3]='#aba29a'; // 全角文字混入ガード
 const _ov=[];
-for(const z of ZONES){
+const SGC=['#d43c3c','#2456a8','#e8a020','#3f8a52','#7a3ca8'];
+for(let zi=0;zi<ZONES.length;zi++){
+  const z=ZONES[zi];
   let placed=0,tries=0;
   while(placed<z.n&&tries<z.n*14){
     tries++;
@@ -546,8 +556,15 @@ for(const z of ZONES){
     if(bad)continue;
     const col=z.pal[(rng()*z.pal.length)|0];
     const hgt=Math.round(lerp(z.hg[0],z.hg[1],rng()));
-    const bld={x0:x-w2,y0:y-h2,x1:x+w2,y1:y+h2,c:col,hgt,seed:buildings.length,
-      hW:8+hgt*7+(buildings.length%3)*2,
+    const sd=buildings.length;
+    let kind='office';
+    if(hgt<=1)kind='house';
+    else if(zi===6&&hgt>=3)kind='hotel';
+    else if((zi===2||zi===3||zi===4||zi>=9)&&hgt>=3&&sd%2===0)kind='mansion';
+    else if(hgt<=4&&sd%3===0)kind='shop';
+    const bld={x0:x-w2,y0:y-h2,x1:x+w2,y1:y+h2,c:col,hgt,seed:sd,kind,
+      sg:kind==='shop'?SGC[sd%5]:null,
+      hW:8+hgt*7+(sd%3)*2,
       cN:shade(col,.96),cS:shade(col,.8),cW:shade(col,1.07),cE:shade(col,.7),
       cR:shade(col,1.1),cRd:shade(col,.88)};
     buildings.push(bld);gridAdd(bldGrid,bld.x0,bld.y0,bld.x1,bld.y1,bld);
@@ -1876,6 +1893,14 @@ function bld3D(c,b){
     quad(B(u0,0),B(u0+.14,0),B(u0+.14,gt*.68),B(u0,gt*.68),'rgba(24,27,33,.5)');
     if(b.seed%4===0)
       quad(B(.06,gt*.85),B(.94,gt*.85),B(.94,gt*1.04),B(.06,gt*1.04),['#b8483a','#3c6ea8','#3f8a52'][b.seed%3]);
+    if(b.kind==='mansion'){ // バルコニー帯
+      for(let f2=1;f2<=fl;f2++){
+        const bt=(f2-0.18)/(fl+0.55);
+        quad(B(.05,bt),B(.95,bt),B(.95,bt+.055),B(.05,bt+.055),'rgba(255,255,255,.3)');
+      }
+      c.fillStyle=col;
+      return;
+    }
     c.lineWidth=2.1;c.setLineDash([4,5]);
     for(let f=1;f<=fl;f++){
       const t=(f-0.32)/(fl+0.55);
@@ -1895,6 +1920,18 @@ function bld3D(c,b){
   if(V.cy>y1)face(x0,y1,x1,y1,b.cS);
   if(V.cx<x0)face(x0,y0,x0,y1,b.cW);
   if(V.cx>x1)face(x1,y0,x1,y1,b.cE);
+  if(P3D&&b.sg)boxObj(c,x0-.9,y0-.9,0,.9,.45,h*.3,Math.max(h*.8,h*.3+3),b.sg,shade(b.sg,1.15)); // 袖看板
+  if(P3D){ // 屋上看板（見上げでも見える）
+    const mx2=(x0+x1)/2;
+    if(b.kind==='hotel'){
+      boxObj(c,mx2,y0+2,0,5.5,.5,h+1,h+7,'#f0f0ec','#e8e8e4');
+      const tp2=proj3(mx2,y0+2,h+4);
+      if(tp2){c.fillStyle='#c43c3c';c.font='700 '+clamp(6*tp2[3],7,20)+'px sans-serif';c.textAlign='center';c.fillText('湯',tp2[0],tp2[1]+2);}
+    }else if(b.kind==='office'&&b.hgt>=5&&b.seed%4===0){
+      const bc2=SGC[b.seed%4];
+      boxObj(c,mx2,y0+1.5,0,5,.4,h+1,h+6,bc2,shade(bc2,1.1));
+    }
+  }
   if(P3D&&P3D.camH<=h)return; // カメラより高いビルは屋根なし（見上げ）
   if(b.hgt<=1){ // 郊外住宅: 軒の出のある瓦屋根＋棟
     const o=3;
@@ -2195,6 +2232,82 @@ function drawLandmark(c,l,tsec,mini){
       c.fillStyle='#e86830';c.fillRect(gx-6,gy-4,12,10);
       c.strokeStyle='#3c3832';c.beginPath();c.moveTo(gx,gy-4);c.lineTo(gx,gy-8);c.stroke();
       break;}
+    case 'mitsukoshi':{
+      box(c,x-69,y-36,x+69,y+36,0,30,'#e8e0cc','#dcd4c0');
+      slab(c,x-71,y-38,x+71,y+38,31,'#3f5a48');
+      const sp2=P(x,y-36,22),ps=PSC(x,y-36,22)||1;
+      c.fillStyle='#2e4a3a';
+      c.fillRect(sp2[0]-26*ps,sp2[1]-5*ps,52*ps,10*ps);
+      c.fillStyle='#f0e8d0';c.font='700 '+clamp(9*ps,8,22)+'px serif';c.textAlign='center';
+      c.fillText('三越',sp2[0],sp2[1]+3*ps);
+      break;}
+    case 'sakakumo':{ // 三角形の建物
+      const pts=[[x-34,y+26],[x+34,y+26],[x,y-30]],H2=16;
+      const order=[0,1,2].map(i2=>{
+        const p1=pts[i2],p2=pts[(i2+1)%3];
+        return[hyp((p1[0]+p2[0])/2-V.cx,(p1[1]+p2[1])/2-V.cy),i2];
+      }).sort((a,b2)=>b2[0]-a[0]);
+      for(const o2 of order){
+        const p1=pts[o2[1]],p2=pts[(o2[1]+1)%3];
+        const q0=P(p1[0],p1[1],0),q1=P(p2[0],p2[1],0),q2=P(p2[0],p2[1],H2),q3=P(p1[0],p1[1],H2);
+        c.fillStyle=shade('#8a949c',.82+o2[1]*.09);
+        c.beginPath();c.moveTo(q0[0],q0[1]);c.lineTo(q1[0],q1[1]);c.lineTo(q2[0],q2[1]);c.lineTo(q3[0],q3[1]);c.closePath();c.fill();
+      }
+      if(!P3D||P3D.camH>H2){
+        const t0=P(pts[0][0],pts[0][1],H2),t1=P(pts[1][0],pts[1][1],H2),t2=P(pts[2][0],pts[2][1],H2);
+        c.fillStyle='#9aa4ac';
+        c.beginPath();c.moveTo(t0[0],t0[1]);c.lineTo(t1[0],t1[1]);c.lineTo(t2[0],t2[1]);c.closePath();c.fill();
+        c.strokeStyle='rgba(35,38,42,.4)';c.lineWidth=1;c.stroke();
+      }
+      break;}
+    case 'artmuseum':{
+      box(c,x-40,y-35,x+14,y+35,0,14,'#6e7278','#7c8086');
+      box(c,x+4,y-20,x+40,y+30,0,11,'#c8ccd0','#d4d8da');
+      break;}
+    case 'iyogin':{
+      box(c,x-50,y-30,x+50,y+30,0,34,'#dce0dc','#d0d4d0');
+      slab(c,x-52,y-32,x+52,y+32,35,'#1e7a48');
+      const sp2=P(x,y-30,26),ps=PSC(x,y-30,26)||1;
+      c.fillStyle='#1e7a48';
+      c.fillRect(sp2[0]-30*ps,sp2[1]-4.5*ps,60*ps,9*ps);
+      c.fillStyle='#fff';c.font='700 '+clamp(7*ps,7,18)+'px sans-serif';c.textAlign='center';
+      c.fillText('伊予銀行',sp2[0],sp2[1]+2.5*ps);
+      break;}
+    case 'fujigran':{
+      box(c,x-100,y-60,x+100,y+60,0,16,'#f0f0ec','#e2e2de');
+      box(c,x+72,y-58,x+96,y-42,0,26,'#d43c3c','#c83434');
+      const sp2=P(x+84,y-50,20),ps=PSC(x+84,y-50,20)||1;
+      c.fillStyle='#fff';c.font='700 '+clamp(8*ps,8,20)+'px sans-serif';c.textAlign='center';
+      c.fillText('フジ',sp2[0],sp2[1]+3*ps);
+      break;}
+    case 'radiotower':{
+      box(c,x-20,y-16,x+20,y+16,0,10,'#c8ccd0','#d4d8da');
+      const T=68;
+      const leg=(lx,ly)=>{
+        const g0=P(x+lx,y+ly,10),g1=P(x+lx*.15,y+ly*.15,T);
+        c.beginPath();c.moveTo(g0[0],g0[1]);c.lineTo(g1[0],g1[1]);c.stroke();
+      };
+      c.strokeStyle='#c04030';c.lineWidth=Math.max(1.2,1.6*(PSC(x,y,40)||1));
+      leg(-9,-7);leg(9,-7);leg(-9,7);leg(9,7);
+      c.strokeStyle='rgba(180,60,45,.7)';c.lineWidth=1;
+      for(let hh=22;hh<T;hh+=15){
+        const a1=P(x-9*(1-hh/T*.85),y-7*(1-hh/T*.85),hh),b1=P(x+9*(1-hh/T*.85),y-7*(1-hh/T*.85),hh);
+        const c1=P(x-9*(1-hh/T*.85),y+7*(1-hh/T*.85),hh),d1=P(x+9*(1-hh/T*.85),y+7*(1-hh/T*.85),hh);
+        c.beginPath();c.moveTo(a1[0],a1[1]);c.lineTo(b1[0],b1[1]);c.moveTo(c1[0],c1[1]);c.lineTo(d1[0],d1[1]);c.stroke();
+      }
+      const tip=P(x,y,T+8),beacon=P(x,y,T+4);
+      c.strokeStyle='#c04030';c.beginPath();c.moveTo(P(x,y,T)[0],P(x,y,T)[1]);c.lineTo(tip[0],tip[1]);c.stroke();
+      c.fillStyle=NIGHT>0.1?'#ff5040':'#c04030';
+      c.beginPath();c.arc(beacon[0],beacon[1],NIGHT>0.1?3:2,0,TAU);c.fill();
+      break;}
+    case 'school':{
+      box(c,x-80,y-30,x+80,y+30,0,14,'#e6e0d0','#d8d2c2');
+      slab(c,x-82,y-32,x+82,y+32,15,'#b8b0a0');
+      const ck=P(x,y-30,11),ps=PSC(x,y-30,11)||1;
+      c.fillStyle='#fff';c.beginPath();c.arc(ck[0],ck[1],3.2*ps,0,TAU);c.fill();
+      c.strokeStyle='#444';c.lineWidth=Math.max(1,.5*ps);
+      c.beginPath();c.moveTo(ck[0],ck[1]);c.lineTo(ck[0],ck[1]-2.2*ps);c.moveTo(ck[0],ck[1]);c.lineTo(ck[0]+1.6*ps,ck[1]);c.stroke();
+      break;}
     case 'beach':break;
     case 'label':break;
   }
@@ -2385,7 +2498,7 @@ function drawLabels(c,zoom,x0,y0,x1,y1){
   }
 }
 /* ---------- メイン描画 ---------- */
-const LMH={depart:44,pref:26,office:30,hospital:36,police:28,onsen:20,retro:13,temple:14,campus:18,station:20,villa:13,rope:11,port:12,bigport:16};
+const LMH={depart:44,pref:26,office:30,hospital:36,police:28,onsen:20,retro:13,temple:14,campus:18,station:20,villa:13,rope:11,port:12,bigport:16,mitsukoshi:30,sakakumo:16,artmuseum:14,iyogin:34,fujigran:16,radiotower:10,school:14};
 let tSec=0;
 function render(){
   if(cw<2||ch<2){resize();if(cw<2||ch<2)return;}
@@ -2795,6 +2908,21 @@ function drawGroundLM(c){ // 三人称時に地面レイヤーへ描くランド
     const s=l.solid;
     c.fillStyle='#adbf96';c.fillRect(s[0],s[1],s[2]-s[0],s[3]-s[1]);
   }
+  // フジグラン駐車場（区画線付き）
+  c.fillStyle='#9a9c98';c.fillRect(4950,3240,110,110);
+  c.strokeStyle='rgba(240,240,240,.75)';c.lineWidth=1.2;
+  c.beginPath();
+  for(let xx=4958;xx<=5050;xx+=11){c.moveTo(xx,3246);c.lineTo(xx,3266);c.moveTo(xx,3324);c.lineTo(xx,3344);}
+  c.moveTo(4958,3246);c.lineTo(5050,3246);c.moveTo(4958,3344);c.lineTo(5050,3344);
+  c.stroke();
+  // 校庭（土のグラウンド＋トラック）
+  const yard=(x0,y0,x1,y1)=>{
+    c.fillStyle='#ccb894';c.fillRect(x0,y0,x1-x0,y1-y0);
+    c.strokeStyle='rgba(255,255,255,.5)';c.lineWidth=1.4;
+    c.beginPath();c.ellipse((x0+x1)/2,(y0+y1)/2,(x1-x0)*.38,(y1-y0)*.3,0,0,TAU);c.stroke();
+  };
+  yard(6800,3384,6960,3474);
+  yard(5170,4086,5330,4185);
 }
 function paintGround(cv2,scale){ // 地面レイヤーを指定解像度で描く
   const g=cv2.getContext('2d');

@@ -111,8 +111,58 @@ G3.dyn = (function () {
     plateAtlas();
     plateQuads(t);
     compactCar(t);
+    // 窓ガラスは少し透かす（中の運転手が見える）
+    t.traverse(m => { if (m.isMesh && !Array.isArray(m.material) && /^Glass/.test(m.material.name || '') && !m.material.transparent) { m.material.transparent = true; m.material.opacity = 0.62; } });
     return (carTemplates[type] = t);
   }
+  /* 運転手: 歩行者の人形を座った姿勢で一度だけ固めた形（部位の色は歩行者と同じユニフォーム）。日本の車は右ハンドル */
+  let drvGeo;
+  function driverGeometry() {
+    if (drvGeo !== undefined) return drvGeo;
+    drvGeo = null;
+    const src = G3.glb.human;
+    if (!src || !pedGeometry(src)) return null;
+    const o = makeHuman(false);
+    let body = null;
+    o.traverse(c => { if (c.isSkinnedMesh) body = c; });
+    const act = o.userData.acts.sit;
+    if (!body || !act) { scene.remove(o); return null; }
+    act.play(); o.userData.mixer.update(0.4);
+    o.position.set(0, 0, 0); o.rotation.set(0, 0, 0); o.scale.setScalar(1);
+    o.updateMatrixWorld(true);
+    const g = pedGeo.clone(), pos = g.attributes.position, v = new THREE.Vector3();
+    for (let i = 0; i < pos.count; i++) {
+      v.fromBufferAttribute(pos, i);
+      body.applyBoneTransform(i, v);
+      v.applyMatrix4(body.matrixWorld);
+      pos.setXYZ(i, v.x, v.y, v.z);
+    }
+    g.deleteAttribute('skinIndex'); g.deleteAttribute('skinWeight');
+    g.computeVertexNormals(); g.computeBoundingSphere();
+    // 頭の中心（肌の頂点のうち上の方）
+    let top = -1e9; for (let i = 0; i < pos.count; i++) top = Math.max(top, pos.getY(i));
+    const part = g.attributes.part, h = new THREE.Vector3(); let n = 0;
+    for (let i = 0; i < pos.count; i++) if (part.getX(i) === 3 && pos.getY(i) > top - 0.26) { h.x += pos.getX(i); h.y += pos.getY(i); h.z += pos.getZ(i); n++; }
+    if (n) h.multiplyScalar(1 / n);
+    g.userData.head = h;
+    scene.remove(o);
+    act.stop();
+    return (drvGeo = g);
+  }
+  // 運転席の頭の位置（車のモデル座標 m）: 前ガラスの下端から少し後ろ・窓の高さの中ほど・右側
+  const carSeat = {};
+  function seatOf(type) {
+    if (carSeat[type] !== undefined) return carSeat[type];
+    const node = G3.glbNode('vehicles', type);
+    if (!node || type === 'bike') return (carSeat[type] = null);
+    node.updateMatrixWorld(true);
+    const inv = new THREE.Matrix4().copy(node.matrixWorld).invert(), gb = new THREE.Box3();
+    node.traverse(c => { if (c.isMesh && /^Glass/.test(c.material.name)) { const b = new THREE.Box3().setFromObject(c); b.applyMatrix4(inv); gb.union(b); } });
+    if (gb.isEmpty()) return (carSeat[type] = null);
+    const x = Math.max(gb.min.x + 0.3, gb.max.x - 1.15), y = type === 'bus' ? 2.1 : gb.min.y + (gb.max.y - gb.min.y) * 0.5, z = gb.max.z * 0.42;
+    return (carSeat[type] = new THREE.Vector3(x, y, z));
+  }
+  const DRV_SHIRT = ['#e8e8e4', '#3a4a6a', '#2a2c30', '#7a8a9a', '#c8b8a0', '#5a6a4a', '#d8d4c8', '#344050'];
   function makeCar(type) {
     const o = carTemplate(type).clone(true);
     o.scale.setScalar(U);
@@ -151,6 +201,18 @@ G3.dyn = (function () {
       blob.position.y = 0.03;
       blob.renderOrder = 1;
       o.add(blob);
+    }
+    const seat = seatOf(type), dg = seat && driverGeometry();
+    if (dg) {
+      const dm = new THREE.Mesh(dg, pedMaterial());
+      dm.position.copy(seat).sub(dg.userData.head);
+      dm.castShadow = false; dm.receiveShadow = false; dm.visible = false;
+      const cols = dm.material.userData.cols, sk = ['#e8c8a0', '#f0d4b0', '#d8b088', '#c89870'];
+      cols[0].set(DRV_SHIRT[(Math.random() * DRV_SHIRT.length) | 0]); cols[1].set('#2e3440'); cols[2].set('#2a2522');
+      cols[3].set(sk[(Math.random() * 4) | 0]); cols[4].set('#151515'); cols[5].set(['#2c2620', '#141414', '#4a3826', '#6e6258'][(Math.random() * 4) | 0]);
+      if (type === 'taxi' || type === 'bus' || type === 'police') cols[0].set(type === 'police' ? '#2c3e66' : type === 'bus' ? '#4a5a78' : '#f0f0ec');   // 制服
+      o.add(dm);
+      ud.driver = dm;
     }
     if (type === 'bike') {
       // 乗り手（座り姿勢）
@@ -303,6 +365,13 @@ G3.dyn = (function () {
     // 遠くの車はホイールとナンバーを省く（画面上で数画素。描画回数を減らす）
     const cdx = car.x - G3.camera.position.x, cdz = car.y - G3.camera.position.z, far = cdx * cdx + cdz * cdz > 450 * 450 && !isPlayer;
     if (ud.far !== far) { ud.far = far; for (const w of ud.wheels) w.o.visible = !far; if (ud.plate) ud.plate.visible = !far; }
+    // 運転手は走っている車（通行車・パトカー・自分の車）にだけ。遠くは省く
+    if (ud.driver) {
+      const drive = (isPlayer || police || !!car.road) && cdx * cdx + cdz * cdz < 320 * 320;
+      ud.driver.visible = drive;
+      if (drive && isPlayer && !ud.pDressed) { const c = ud.driver.material.userData.cols; c[0].set('#2e6e46'); c[1].set('#33404e'); ud.pDressed = true; }
+      else if (!isPlayer && ud.pDressed) { const c = ud.driver.material.userData.cols; c[0].set(DRV_SHIRT[(Math.random() * DRV_SHIRT.length) | 0]); c[1].set('#2e3440'); ud.pDressed = false; }
+    }
     if (!far) for (const w of ud.wheels) {
       w.o.rotation.set(0, w.front ? steer : 0, ud.spin, 'YXZ');
       w.o.rotation.order = 'YXZ';

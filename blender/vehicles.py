@@ -117,6 +117,76 @@ def glass_quad(name, a, b, W, belt, top, taper, m, inset=0.06, off=0.01, outward
     return o
 
 
+def poly_inset(poly, d):
+    """凸多角形を重心へ向けて d だけ縮める。"""
+    cx = sum(p[0] for p in poly) / len(poly)
+    cz = sum(p[1] for p in poly) / len(poly)
+    out = []
+    for (x, z) in poly:
+        dx, dz = cx - x, cz - z
+        L = math.hypot(dx, dz) or 1.0
+        out.append((x + dx / L * d, z + dz / L * d))
+    return out
+
+
+def slab_cutter(name, a, b, W, belt, top, taper, inset, outward, depth, m):
+    """前後ガラスの裏をくり抜く板（ガラス面から外へ 6cm・内へ depth）。"""
+    ya = taper_y(a[1], W, belt, top, taper) - inset
+    yb = taper_y(b[1], W, belt, top, taper) - inset
+    dx, dz = b[0] - a[0], b[1] - a[1]
+    L = math.hypot(dx, dz)
+    nx, nz = dz / L, -dx / L
+    if nx * outward[0] + nz * outward[1] < 0:
+        nx, nz = -nx, -nz
+    ux, uz = dx / L, dz / L
+    a2 = (a[0] + ux * 0.03, a[1] + uz * 0.03)
+    b2 = (b[0] - ux * 0.03, b[1] - uz * 0.03)
+    bm = bmesh.new()
+    vs = []
+    for (px, pz), yy in ((a2, ya), (b2, yb)):
+        for sg in (-1, 1):
+            for off in (0.06, -depth):
+                vs.append(bm.verts.new((px + nx * off, sg * yy, pz + nz * off)))
+    bmesh.ops.convex_hull(bm, input=vs)
+    return mesh_from_bm(name, bm, [m])
+
+
+def hollow_cabin(body, sp, W, belt, top, taper, M, wsh=None, rgl=None, wsh_depth=0.28, rgl_depth=0.28):
+    """窓の形で車体をくり抜いて車内を空にする（切り口は内装色）。窓越しに運転手と座席が見える。
+    sp: 側面ガラスの多角形(XZ)、wsh/rgl: ((x,z)下端, (x,z)上端, 外向き, ガラスの内寄せ)"""
+    cuts = [prism('cab_cut', poly_inset(sp, 0.025), -W / 2 - 0.3, W / 2 + 0.3, M['interior'], axis='Y')]
+    if wsh:
+        cuts.append(slab_cutter('wsh_cut', wsh[0], wsh[1], W, belt, top, taper, wsh[3] + 0.025, wsh[2], wsh_depth, M['interior']))
+    if rgl:
+        cuts.append(slab_cutter('rgl_cut', rgl[0], rgl[1], W, belt, top, taper, rgl[3] + 0.025, rgl[2], rgl_depth, M['interior']))
+    for c in cuts:
+        c.hide_render = True
+        bo = add_mod(body, 'BOOLEAN', operation='DIFFERENCE', object=c, solver='EXACT')
+        try:
+            bo.material_mode = 'TRANSFER'
+        except Exception:
+            pass
+    bake(body)
+    for c in cuts:
+        bpy.data.objects.remove(c, do_unlink=True)
+
+
+def cabin_seats(sp, wsh, rgl, W, M, wheel_z=None):
+    """前席の背もたれ・ヘッドレストとハンドル。運転席の頭の位置はゲーム側（20_dyn seatOf）と同じ求め方"""
+    xs = [p[0] for p in sp] + [wsh[0][0], wsh[1][0]] + ([rgl[0][0], rgl[1][0]] if rgl else [])
+    gmin, gmax = min(xs), max(xs)
+    zs = [p[1] for p in sp]
+    zmid = (min(zs) + max(zs)) / 2
+    xh = max(gmin + 0.3, gmax - 1.15)
+    parts = []
+    for sg in (1, -1):
+        y = sg * W * 0.2
+        parts.append(box('seat', (0.12, 0.46, 0.62), (xh - 0.26, y, zmid - 0.42), M['interior'], bevel=0.03))
+        parts.append(box('hrest', (0.1, 0.26, 0.18), (xh - 0.27, y, zmid + 0.02), M['interior'], bevel=0.03))
+    parts.append(cyl('steer', 0.17, 0.035, (xh + 0.42, -W * 0.2, wheel_z if wheel_z else zmid - 0.2), M['black'], verts=16, axis='X'))
+    return parts
+
+
 def wheel(name, x, y, r, w, M, dual=False):
     parts = []
     t = cyl(name + '_tire', r, w, (0, 0, 0), M['tire'], verts=28, axis='Y')
@@ -208,6 +278,9 @@ def sedan(name='sedan', taxi=False, police=False):
         split_paint(body, 0.74, white, (-1.28, 1.1))
     gl = M['glass']
     side_poly = [(-1.22, 1.03), (0.98, 1.03), (0.33, 1.40), (-0.68, 1.41)]
+    wsh, rgl = ((1.03, 1.03), (0.34, 1.41), (1, 1), 0.06), ((-1.28, 1.04), (-0.70, 1.41), (-1, 1), 0.06)
+    hollow_cabin(body, side_poly, W, belt, top, 0.17, M, wsh, rgl)
+    parts += cabin_seats(side_poly, wsh, rgl, W, M)
     parts += [glass_side('gls', side_poly, W, belt, top, 0.17, gl, 1), glass_side('gls', side_poly, W, belt, top, 0.17, gl, -1)]
     parts.append(glass_quad('wsh', (1.03, 1.03), (0.34, 1.41), W, belt, top, 0.17, gl, outward=(1, 1)))
     parts.append(glass_quad('rgl', (-1.28, 1.04), (-0.70, 1.41), W, belt, top, 0.17, gl, outward=(-1, 1)))
@@ -250,6 +323,9 @@ def kei(name='kei'):
     parts = [body]
     gl = M['glass']
     sp = [(-1.55, 1.05), (1.08, 1.05), (0.56, 1.68), (-1.52, 1.69)]
+    wsh, rgl = ((1.12, 1.05), (0.57, 1.69), (1, 1), 0.06), ((-1.71, 1.1), (-1.66, 1.62), (-1, 0), 0.06)
+    hollow_cabin(body, sp, W, belt, top, 0.06, M, wsh, rgl)
+    parts += cabin_seats(sp, wsh, rgl, W, M)
     parts += [glass_side('gls', sp, W, belt, top, 0.06, gl, 1), glass_side('gls', sp, W, belt, top, 0.06, gl, -1)]
     parts.append(glass_quad('wsh', (1.12, 1.05), (0.57, 1.69), W, belt, top, 0.06, gl, outward=(1, 1)))
     parts.append(glass_quad('rgl', (-1.71, 1.1), (-1.66, 1.62), W, belt, top, 0.06, gl, outward=(-1, 0)))
@@ -279,6 +355,9 @@ def sports(name='sports'):
     parts = [body]
     gl = M['glass']
     sp = [(-1.05, 0.92), (0.8, 0.92), (0.07, 1.2), (-0.5, 1.21)]
+    wsh, rgl = ((0.83, 0.92), (0.07, 1.21), (1, 1), 0.06), ((-1.55, 0.98), (-0.56, 1.22), (-1, 1), 0.06)
+    hollow_cabin(body, sp, W, belt, top, 0.22, M, wsh, rgl)
+    parts += cabin_seats(sp, wsh, rgl, W, M)
     parts += [glass_side('gls', sp, W, belt, top, 0.22, gl, 1), glass_side('gls', sp, W, belt, top, 0.22, gl, -1)]
     parts.append(glass_quad('wsh', (0.83, 0.92), (0.07, 1.21), W, belt, top, 0.22, gl, outward=(1, 1)))
     parts.append(glass_quad('rgl', (-1.55, 0.98), (-0.56, 1.22), W, belt, top, 0.22, gl, outward=(-1, 1)))
@@ -310,6 +389,9 @@ def truck(name='truck'):
     gl = M['glass']
     parts.append(glass_quad('wsh', (3.08, 1.3), (2.94, 2.08), W, 1.4, 2.28, 0.04, gl, inset=0.1, outward=(1, 0)))
     sp = [(2.1, 1.35), (2.9, 1.35), (2.86, 2.0), (2.1, 2.05)]
+    wsh = ((3.08, 1.3), (2.94, 2.08), (1, 0), 0.1)
+    hollow_cabin(cab, sp, W, 1.4, 2.28, 0.04, M, wsh, None, wsh_depth=0.3)
+    parts += cabin_seats(sp, wsh, None, W, M)
     parts += [glass_side('gls', sp, W, 1.4, 2.28, 0.04, gl, 1), glass_side('gls', sp, W, 1.4, 2.28, 0.04, gl, -1)]
     parts.append(box('grille', (0.05, 1.3, 0.35), (3.1, 0, 0.85), M['trim'], bevel=0.02))
     parts.append(box('bumper', (0.14, 1.95, 0.22), (3.1, 0, 0.5), mat('Bumper', '#bcbfc2', metal=0.6, rough=0.35), bevel=0.03))
@@ -343,6 +425,15 @@ def bus(name='bus'):
     split_paint(body, 1.25, cream)
     parts = [body]
     gl = M['glass']
+    # 車内（窓の帯をくり抜き、座席の列）
+    bsp = [(-4.9, 1.35), (4.4, 1.35), (4.4, 2.6), (-4.9, 2.6)]
+    wsh, rgl = ((5.25, 1.1), (5.2, 2.65), (1, 0), 0.08), ((-5.25, 1.9), (-5.25, 2.7), (-1, 0), 0.25)
+    hollow_cabin(body, bsp, W, 3.0, 3.08, 0.01, M, wsh, rgl, wsh_depth=0.9, rgl_depth=0.42)
+    parts += cabin_seats(bsp, wsh, rgl, W, M)
+    for i in range(10):
+        x = -4.45 + 0.82 * i
+        for y in (0.88, 0.42, -0.42, -0.88):
+            parts.append(box('bseat', (0.1, 0.42, 0.5), (x, y, 1.62), M['interior'], bevel=0.03))
     # 側窓帯
     for s in (1, -1):
         parts.append(glass_side('gls', [(-4.9, 1.35), (4.4, 1.35), (4.4, 2.6), (-4.9, 2.6)], W, 3.0, 3.08, 0.01, gl, s))
@@ -415,6 +506,9 @@ def minivan(name='minivan'):
     parts = [body]
     gl = M['glass']
     sp = [(-2.1, 1.13), (1.3, 1.13), (0.6, 1.75), (-2.05, 1.77)]
+    wsh, rgl = ((1.40, 1.13), (0.58, 1.77), (1, 1), 0.06), ((-2.34, 1.16), (-2.29, 1.70), (-1, 0), 0.06)
+    hollow_cabin(body, sp, W, belt, top, 0.07, M, wsh, rgl)
+    parts += cabin_seats(sp, wsh, rgl, W, M)
     parts += [glass_side('gls', sp, W, belt, top, 0.07, gl, 1), glass_side('gls', sp, W, belt, top, 0.07, gl, -1)]
     parts.append(glass_quad('wsh', (1.40, 1.13), (0.58, 1.77), W, belt, top, 0.07, gl, outward=(1, 1)))
     parts.append(glass_quad('rgl', (-2.34, 1.16), (-2.29, 1.70), W, belt, top, 0.07, gl, outward=(-1, 0)))
@@ -445,6 +539,9 @@ def keitruck(name='keitruck'):
     gl = M['glass']
     parts.append(glass_quad('wsh', (1.42, 1.1), (1.13, 1.72), W, 1.05, 1.80, 0.05, gl, outward=(1, 1)))
     sp = [(0.55, 1.12), (1.3, 1.12), (1.1, 1.68), (0.55, 1.7)]
+    wsh, rgl = ((1.42, 1.1), (1.13, 1.72), (1, 1), 0.06), ((0.37, 1.2), (0.39, 1.62), (-1, 0), 0.06)
+    hollow_cabin(cab, sp, W, 1.05, 1.80, 0.05, M, wsh, rgl, rgl_depth=0.22)
+    parts += cabin_seats(sp, wsh, rgl, W, M)
     parts += [glass_side('gls', sp, W, 1.05, 1.80, 0.05, gl, 1), glass_side('gls', sp, W, 1.05, 1.80, 0.05, gl, -1)]
     parts.append(glass_quad('rgl', (0.37, 1.2), (0.39, 1.62), W, 1.05, 1.80, 0.05, gl, outward=(-1, 0)))
     parts += lamp_pair('head', 1.68, 0.8, 0.5, 0.08, 0.26, 0.14, M['head'])
@@ -479,6 +576,9 @@ def van(name='van'):
     gl = M['glass']
     parts.append(glass_quad('wsh', (2.12, 1.14), (1.79, 1.95), W, belt, top, 0.04, gl, outward=(1, 1)))
     sp = [(1.0, 1.16), (2.0, 1.16), (1.75, 1.9), (1.0, 1.92)]
+    wsh = ((2.12, 1.14), (1.79, 1.95), (1, 1), 0.06)
+    hollow_cabin(body, sp, W, belt, top, 0.04, M, wsh, None)
+    parts += cabin_seats(sp, wsh, ((1.0, 1.16), (1.0, 1.9)), W, M)
     parts += [glass_side('gls', sp, W, belt, top, 0.04, gl, 1), glass_side('gls', sp, W, belt, top, 0.04, gl, -1)]
     parts.append(glass_quad('rgl', (-2.36, 1.3), (-2.32, 1.9), W, belt, top, 0.04, gl, outward=(-1, 0)))
     parts += door_lines([2.05, 0.95, -0.6], 0.38, 1.95, W, belt, M)

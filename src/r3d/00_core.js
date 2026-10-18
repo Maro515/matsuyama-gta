@@ -249,7 +249,7 @@ const R3 = { ok: false, state: 'idle' };
     const day = G3.day = clamp((sy + 0.1) / 0.38, 0, 1);
     const dusk = clamp(1 - Math.abs(sy - 0.04) / 0.2, 0, 1);
     const cloud = S.cloudI, wet = S.rainI;
-    G3.wet = lerp(G3.wet, wet, Math.min(1, dt * 0.2));
+    G3.wet = lerp(G3.wet, wet, Math.min(1, dt * (wet > G3.wet ? 0.2 : 0.035)));   // 雨が上がってもしばらく路面は濡れたまま
 
     // 空シェーダー
     const u = sky.material.uniforms;

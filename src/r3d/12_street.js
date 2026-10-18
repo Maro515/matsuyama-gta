@@ -1053,6 +1053,7 @@ G3.street = (function () {
         const C0 = wallPt(b, f, tc, 0.32), N = [[0, -1], [1, 0], [0, 1], [-1, 0]][f];
         const tx = -N[1], ty = N[0];   // 壁に沿う向き（表から見て右）
         const g0 = heightAt(C0.x, C0.y);
+        G3.refl.add(C0.x + N[0] * 0.4, C0.y + N[1] * 0.4, g0 + z0 + hgt / 2, w / 2, hgt / 2, SHOP_NAMES[idx][2], 0.45, N[0], N[1]);
         const P = (s, zz, o) => [C0.x + tx * s * w / 2 + N[0] * o, g0 + zz, C0.y + ty * s * w / 2 + N[1] * o];
         const u0 = (idx % COLS) / COLS, u1 = u0 + 1 / COLS, v1 = 1 - ((idx / COLS) | 0) / ROWS, v0 = v1 - 1 / ROWS;
         // 表から見て左下→右下→右上→左上（右手は -tx 側になるので s を反転）
@@ -1634,8 +1635,10 @@ G3.street = (function () {
       const P = [Lc(0, 0), Lc(W, 0), Lc(W, D), Lc(0, D)].map(V);
       const nyv = (P[1][2] - P[0][2]) * (P[3][0] - P[0][0]) - (P[1][0] - P[0][0]) * (P[3][2] - P[0][2]);
       gb.quad(nyv > 0 ? P : [P[0], P[3], P[2], P[1]], [[0, 0], [1, 0], [1, 1], [0, 1]]);
+      G3.refl.paved([Lc(0, 0), Lc(W, 0), Lc(W, D), Lc(0, D)]);
       const cc = Lc(W / 2, 15), rot = -cc.a;
       put('gs_canopy', cc.x, cc.y, rot, 0);
+      for (const u of [-9, 9]) { const pp = Lc(W / 2 + u, 15); G3.refl.add(pp.x, pp.y, heightAt(pp.x, pp.y) + 4.8 * U, 3 * U, 0.3 * U, 0xffffff, 0.6); }   // キャノピーの照明
       if (typeof addCollider === 'function') for (const u of [-10, 10]) { const pp = Lc(W / 2 + u, 15); addCollider({ x: pp.x, y: pp.y, r: 0.8 }); }
       for (const vv of [9, 21]) { const pp = Lc(W / 2, vv); put('gs_pump', pp.x, pp.y, rot, 0); }
       const of = Lc(W - 8, D - 9);
@@ -1748,6 +1751,7 @@ G3.street = (function () {
       const Lc = (u, vv) => at(r, d + u, sg * (o0 + vv));
       const V = q => [q.x, heightAt(q.x, q.y) + 0.07, q.y];
       flatQuad(gb, [Lc(0, 0), Lc(W, 0), Lc(W, D), Lc(0, D)].map(V));
+      G3.refl.paved([Lc(0, 0), Lc(W, 0), Lc(W, D), Lc(0, D)]);
       const st = Lc(W / 2, D - 16);
       put('konbini', st.x, st.y, roadFace(r, sg, d + W / 2, st), 0);
       // 駐車枠（店の前）
@@ -3259,6 +3263,12 @@ G3.street = (function () {
     roofs();
     boats();
     cranes();
+    // 雨の夜の映り込み: 街灯の灯具（ポールから 2.15m・高さ 6.4m）とコンビニの明るい店先（flush で lists は空になる）
+    for (const M of lists.xlamp || []) { const e = M.elements; G3.refl.add(e[12] + e[0] * 2.15, e[14] + e[2] * 2.15, e[13] + 6.4 * U, 0.7, 0.3, 0xfff0d2, 1.25); }
+    for (const M of lists.konbini || []) {
+      const e = M.elements, fx = e[0] / U, fz = e[2] / U;
+      G3.refl.add(e[12] + fx * 6.2 * U, e[14] + fz * 6.2 * U, e[13] + 1.4 * U, 7 * U, 1.1 * U, 0xf2f8ff, 0.45, fx, fz);
+    }
     flush(scene);
     freeKeyPoints();
     extraAmb();

@@ -1759,6 +1759,7 @@ G3.world = (function () {
       else if (s.fs === 2) { px = b.x1 - 3; pz = b.y1; ox = 0; oz = 1; }
       else if (s.fs === 1) { px = b.x1; pz = b.y0 + 3; ox = 1; oz = 0; }
       else { px = b.x0; pz = b.y1 - 3; ox = -1; oz = 0; }
+      G3.refl.add(px + ox * 2.1, pz + oz * 2.1, (s.sh0 + s.sh1) / 2, 1.4, (s.sh1 - s.sh0) / 2, SIGNS[s.si][1], 0.55);
       const d0 = 0.4, d1 = 3.8, t = 0.35;
       const tx = -oz * t, tz = ox * t;
       const P = (d, h, s2) => [px + ox * d + tx * s2, h, pz + oz * d + tz * s2];
@@ -2026,6 +2027,11 @@ G3.world = (function () {
     };
     // 街灯: アームを道路側へ
     const lamps = LAMPS.map(l => { const r = roadAngleAt(l[0], l[1]); return M4(l[0], heightAt(l[0], l[1]) + CURB, l[1], -r.toRoad, U); });
+    // 雨の夜の映り込み: 灯具はポールから道路側へ 2.15m・高さ 6.4m（nature_props.street_lamp）
+    for (const l of LAMPS) {
+      const r = roadAngleAt(l[0], l[1]), c = Math.cos(r.toRoad), s = Math.sin(r.toRoad);
+      G3.refl.add(l[0] + c * 2.15 * U, l[1] + s * 2.15 * U, heightAt(l[0], l[1]) + CURB + 6.4 * U, 0.7, 0.3, 0xfff0d2, 1.25);
+    }
     // 当たり判定（見た目どおりに止まる）
     LAMPS.forEach((l, i) => addCollider({ x: l[0], y: l[1], r: 0.5, brk: 95, bid: 'lamp#' + i }));
     for (const p of POLES) addCollider({ x: p.x, y: p.y, r: 0.55 });
@@ -2047,6 +2053,8 @@ G3.world = (function () {
       const r = roadAngleAt(v.x, v.y);
       const k = v.c === '#d43c3c' ? 'red' : v.c === '#2456a8' ? 'blue' : 'white';
       vm[k].push(M4(v.x, heightAt(v.x, v.y) + CURB, v.y, -r.toRoad, U));
+      const c = Math.cos(r.toRoad), s = Math.sin(r.toRoad);
+      G3.refl.add(v.x + c * 0.45 * U, v.y + s * 0.45 * U, heightAt(v.x, v.y) + CURB + 1.25 * U, 1.1, 1.1, 0xeaf4ff, 0.8, c, s);
     }
     for (const k in vm) add('vending_' + k, vm[k], () => simpleBox(k === 'red' ? 0xc8282a : k === 'blue' ? 0x2456a8 : 0xeeeeee, 2.6, 4.6, 2));
     // バス停
@@ -2098,6 +2106,8 @@ G3.world = (function () {
         }
       });
       anim.signals.push({ sg, lamps });
+      // 灯器はアームの 3.8〜4.6m・高さ 5.75m（色は現示に合わせてシェーダー側で変える）
+      G3.refl.add(sg.x - Math.sin(sg.a) * 4.2 * U, sg.y + Math.cos(sg.a) * 4.2 * U, heightAt(sg.x, sg.y) + CURB + 5.75 * U, 1.0, 0.4, 0xffffff, 1.5, 0, 0, sg.g + 1);
       scene.add(o);
     }
     // マンホール
@@ -2339,6 +2349,7 @@ G3.world = (function () {
   /* ---------- 毎フレーム ---------- */
   function update(dt) {
     if (G3.street) G3.street.update(dt);
+    G3.refl.update(dt);
     if ((treeT -= dt) <= 0) {
       treeT = 0.3;
       const c = G3.camera.position;
@@ -2376,9 +2387,14 @@ G3.world = (function () {
     const tb = performance.now() / 1000;
     for (const m of anim.glow) m.emissiveIntensity = night * m.userData.glowK * (m.userData.blink === undefined ? 1 : ((tb + m.userData.blink) % 4 < 0.8 ? 1 : 0.04));
     for (const m of nightMats.keys()) m.emissiveIntensity = 0.05 + night * (m.name.startsWith('Lamp') ? 6 : 1.4);
-    WM.lampGlow.opacity = night * 0.85;
     const wet = G3.wet;
-    for (const m of anim.wet) { m.roughness = lerp(0.88, 0.32, wet); m.envMapIntensity = 1 + wet * 1.5; }
+    // 濡れた路面は光を散らさずに映す: 光だまりは弱く、映り込みの筋（14_wet.js）が主役になる
+    WM.lampGlow.opacity = night * 0.85 * (1 - 0.4 * wet);
+    for (const m of anim.wet) {
+      m.roughness = lerp(0.88, 0.32, wet); m.envMapIntensity = 1 + wet * 1.5;
+      const c0 = m.userData.dryCol || (m.userData.dryCol = m.color.clone());
+      m.color.copy(c0).multiplyScalar(1 - 0.3 * wet);   // 水を含むと色が沈む
+    }
   }
 
   function build() {
@@ -2404,6 +2420,7 @@ G3.world = (function () {
     buildYuzuki(scene); lapw('buildYuzuki');
     buildProps(scene); lapw('buildProps');
     if (G3.street) G3.street.build(scene); lapw('street');
+    G3.refl.build(scene); lapw('refl');
   }
   return { build, update, updEnv, WM, anim, canvasTex };
 })();

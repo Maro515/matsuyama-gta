@@ -1570,6 +1570,81 @@ def build_stage8():
     return [tetrapod(), lighthouse('lighthouse_red', '#c82a22', 'NightGlow_RedBlink'), lighthouse('lighthouse_white', '#f2f0ea', 'NightGlow_LightBlink')]
 
 
+
+# ======================================================================
+# 第9段: アーケード（入口の看板・吊り看板・フラッグ・店頭ワゴン）
+# ======================================================================
+def arcade_gate(name, width, title, sub, bg, fg):
+    """アーケード入口の看板アーチ（夜は看板が光る）。+X がアーケードの外向き、Y が幅方向。"""
+    m = M()
+    frame = mat('SP_ArcFrame', '#5c6066', metal=0.6, rough=0.4)
+    board = mat('NightGlow_Light_' + name, bg, rough=0.4, emit='#ffffff', estr=0.0)
+    ink = mat('SP_ArcInk_' + name, fg, rough=0.35)
+    hw = width / 2
+    p = []
+    for s in (-1, 1):
+        p.append(box('post', (0.45, 0.45, 5.6), (0, s * (hw - 0.35), 2.8), frame))
+    p.append(box('beam', (0.6, width, 0.3), (0, 0, 5.75), frame))
+    p.append(box('board', (0.5, width * 0.62, 1.15), (0, 0, 4.85), board))
+    p.append(box('trim', (0.55, width * 0.64, 0.08), (0, 0, 5.46), frame))
+    p.append(box('trim', (0.55, width * 0.64, 0.08), (0, 0, 4.24), frame))
+    for f, x in (('+X', 0.26), ('-X', -0.26)):
+        p.append(text3d('t', title, 0.62, (x, 0, 5.0), f, ink))
+        p.append(text3d('s', sub, 0.2, (x, 0, 4.45), f, ink))
+    return join(p, name, smooth_angle=30)
+
+
+HANG = [('hang_sign_a', 'くすり', '#2a6ab0', '#ffffff'), ('hang_sign_b', 'めがね', '#f2efe6', '#2a2a2a'), ('hang_sign_c', '珈琲', '#4a2e1e', '#f0d8a8'),
+        ('hang_sign_d', '書店', '#1e5a3a', '#ffffff'), ('hang_sign_e', '時計・宝石', '#14141a', '#e8c860'), ('hang_sign_f', 'うどん', '#f2efe6', '#b02020'),
+        ('hang_sign_g', 'みかん', '#f08a1c', '#ffffff'), ('hang_sign_h', '靴', '#b02828', '#ffffff')]
+
+
+def hang_sign(name, label, bg, fg):
+    """アーケードの屋根から吊った店の看板（両面）。板は Y 方向に長く、+X/-X の面に文字。"""
+    m = M()
+    b = mat('SP_Hang_' + name, bg, rough=0.45)
+    ink = mat('SP_HangInk_' + name, fg, rough=0.4)
+    p = [box('board', (0.07, 1.5, 0.5), (0, 0, 2.95), b)]
+    for y in (-0.6, 0.6):
+        p.append(cyl('rod', 0.012, 2.0, (0, y, 4.2), m['steel'], verts=5))
+    for f, x in (('+X', 0.04), ('-X', -0.04)):
+        p.append(text3d('t', label, 0.26 if len(label) <= 3 else 0.19, (x, 0, 2.95), f, ink))
+    return join(p, name, smooth_angle=30)
+
+
+def arcade_flag():
+    """屋根の梁から下げたフラッグ（2枚）。"""
+    m = M()
+    cols = [mat('SP_FlagA', '#e86a1a', rough=0.8), mat('SP_FlagB', '#2a78c8', rough=0.8)]
+    p = [cyl('bar', 0.02, 1.6, (0, 0, 4.6), m['steel'], verts=6, axis='Y')]
+    for k, y in enumerate((-0.42, 0.42)):
+        p.append(box('flag', (0.02, 0.5, 1.3), (0, y, 3.9), cols[k]))
+        p.append(text3d('t', 'SALE' if k == 0 else 'みかん祭', 0.12, (0.015, y, 4.1), '+X', m['signw']))
+    return join(p, 'arcade_flag', smooth_angle=30)
+
+
+def shop_wagon():
+    """店頭のワゴン（商品の箱を山盛り）。長手 Y。"""
+    m = M()
+    frame = mat('SP_WagonFrame', '#b8bcc0', metal=0.6, rough=0.4)
+    p = [box('basket', (0.62, 1.2, 0.32), (0, 0, 0.7), frame), box('base', (0.5, 1.1, 0.04), (0, 0, 0.3), frame)]
+    for (x, y) in ((-0.25, -0.5), (0.25, -0.5), (-0.25, 0.5), (0.25, 0.5)):
+        p.append(cyl('leg', 0.015, 0.54, (x, y, 0.27), frame, verts=5))
+    rr = random.Random(7)
+    cols = ['#e86a1a', '#f2d24a', '#3a8ad8', '#d84a6a', '#5ab04a', '#f2f2ea']
+    for i in range(10):
+        c = mat('SP_Goods%d' % (i % 6), cols[i % 6], rough=0.6)
+        p.append(box('g', (0.18, 0.2, 0.12 + rr.random() * 0.08), (-0.18 + (i % 3) * 0.18, -0.45 + (i // 3) * 0.3, 0.9), c))
+    return join(p, 'shop_wagon', smooth_angle=30)
+
+
+def build_stage9():
+    return [arcade_gate('arcade_gate_okaido', 12.0, '大街道', 'OKAIDO SHOPPING STREET', '#1e3c78', '#ffffff'),
+            arcade_gate('arcade_gate_gintengai', 10.4, '銀天街', 'GINTENGAI', '#7a1e1e', '#f2d27a'),
+            arcade_gate('arcade_gate_dogo', 9.6, '道後ハイカラ通り', 'DOGO HAIKARA-DORI', '#2a221c', '#f2e6c8')] + \
+           [hang_sign(*h) for h in HANG] + [arcade_flag(), shop_wagon()]
+
+
 def layout_preview(roots, path, cols=7, gap=2.2, big=()):
     small = [o for o in roots if o.name not in big]
     for i, o in enumerate(small):
@@ -1592,7 +1667,8 @@ if __name__ == '__main__':
     roots6 = build_stage6()
     roots7 = build_stage7()
     roots8 = build_stage8()
-    roots = roots1 + roots2 + roots3 + roots5 + roots6 + roots7 + roots8
+    roots9 = build_stage9()
+    roots = roots1 + roots2 + roots3 + roots5 + roots6 + roots7 + roots8 + roots9
     export_glb(os.path.join(ASSETS, 'glb', 'street.glb'), roots)
     only = argv_after()
     def away():
@@ -1606,6 +1682,11 @@ if __name__ == '__main__':
             continue
         away()
         layout_preview(grp, os.path.join(PREV, 'street%s.png' % tag), **kw)
+    if only and '9' in only:
+        away()
+        for i, o in enumerate(roots9):
+            o.location = ((i % 6) * 4.5 - 11, (i // 6) * 14 - 6, 0)
+        preview(os.path.join(PREV, 'street9.png'), target=(0, 2, 3), dist=34, elev=14, azim=-60, lens=45, res=(1400, 800), samples=48)
     if only and '8' in only:
         away()
         for i, o in enumerate(roots8):

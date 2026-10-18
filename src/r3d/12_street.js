@@ -2279,7 +2279,7 @@ G3.street = (function () {
     return G3.lmMat(m);
   }
   // 種類ごとの描画距離（これより遠いチャンクは描かない）。大物は常に描く。
-  const FAR = { guide_gantry: 1e9, tram_stop: 2200, karakuri_clock: 1e9, container_a: 2400, container_b: 2400, container_c: 2400, container_d: 2400, lighthouse_red: 3000, lighthouse_white: 3000, tetrapod: 650, wcont_a: 700, wcont_b: 700, wcont_c: 700, gs_canopy: 1600, gs_sign: 1600, fishing_boat: 1800,
+  const FAR = { guide_gantry: 1e9, tram_stop: 2200, karakuri_clock: 1e9, arcade_gate_okaido: 1600, arcade_gate_gintengai: 1600, arcade_gate_dogo: 1600, container_a: 2400, container_b: 2400, container_c: 2400, container_d: 2400, lighthouse_red: 3000, lighthouse_white: 3000, tetrapod: 650, wcont_a: 700, wcont_b: 700, wcont_c: 700, gs_canopy: 1600, gs_sign: 1600, fishing_boat: 1800,
     catenary_pole: 1100, park_toilet: 1000, solar_panel: 900, tv_antenna: 700, bus_shelter: 1000,
     guardrail: 1300, guard_pipe: 1000, hedge_planter: 1200, block_wall: 1000, awning_red: 1100, awning_green: 1100, awning_blue: 1100, awning_orange: 1100,
     sign_speed: 900, sign_stop: 900, curve_mirror: 900, parking_sign: 1200, clock_pole: 1400, map_board: 900 };
@@ -2386,6 +2386,46 @@ G3.street = (function () {
     }
   }
 
+
+  /* ---------- アーケード（大街道・銀天街・道後ハイカラ通り）: 入口の看板・吊り看板・フラッグ・中央のベンチと植え込み・店頭ワゴン ---------- */
+  const ARC_GATE = { '大街道': 'arcade_gate_okaido', '銀天街': 'arcade_gate_gintengai', '道後商店街': 'arcade_gate_dogo' };
+  function arcades() {
+    const rr = mulberry32(9501);
+    const arcs = ROADS.filter(r => r.kind === 'arcade');
+    let ng = 0, nh = 0, nw = 0;
+    for (const r of arcs) {
+      // 入口の看板（ほかのアーケードとつながる端には付けない）
+      for (const end of [0, 1]) {
+        const ep = r.pts[end ? r.pts.length - 1 : 0];
+        if (arcs.some(o => o !== r && [o.pts[0], o.pts[o.pts.length - 1]].some(q => hyp(q[0] - ep[0], q[1] - ep[1]) < 12))) continue;
+        const d = end ? r.pl.len - 2.5 : 2.5, p = plAt(r.pl, d), out = p.a + (end ? 0 : Math.PI);
+        if (ARC_GATE[r.n]) { put(ARC_GATE[r.n], p.x, p.y, -out, 0); ng++; }
+      }
+      // 吊り看板（左右交互）とフラッグ（中央）
+      let k = (rr() * 8) | 0;
+      for (let d = 12; d < r.pl.len - 10; d += 17 + rr() * 4) {
+        const sg = (k % 2) ? 1 : -1, q = at(r, d, sg * (r.w / 2 - 3.2));
+        put('hang_sign_' + 'abcdefgh'[k % 8], q.x, q.y, -q.a, 0); k += 3; nh++;
+      }
+      for (let d = 20; d < r.pl.len - 14; d += 34) { const q = at(r, d, 0); put('arcade_flag', q.x, q.y, -q.a, 0); }
+      // 中央の植え込みとベンチ（外の店の方を向く）
+      for (let d = 28; d < r.pl.len - 20; d += 38) {
+        const q = at(r, d, 0);
+        if (!free(q.x, q.y, 4)) continue;
+        put('planter_box', q.x, q.y, -q.a, 0); take(q.x, q.y, 3);
+        for (const sg of [1, -1]) { const b = at(r, d, sg * 2.6); put('bench', b.x, b.y, -(q.a + sg * Math.PI / 2), 0); take(b.x, b.y, 2); }
+      }
+      // 店頭ワゴン（柱と重ならない所）
+      for (let d = 8; d < r.pl.len - 6; d += 11 + rr() * 9) {
+        if (rr() < 0.45) continue;
+        const sg = rr() < 0.5 ? 1 : -1, q = at(r, d, sg * (r.w / 2 - 1.1));
+        if (propHit(q.x, q.y, 1.6, false) || !free(q.x, q.y, 1.5)) continue;
+        put('shop_wagon', q.x, q.y, -(q.a + Math.PI / 2), 0.12); take(q.x, q.y, 1.5); nw++;
+      }
+    }
+    stats.arcade = { gates: ng, hang: nh, wagons: nw };
+  }
+
   /* ---------- 人の集まる場所（バス停・商店街・からくり時計） ---------- */
   let kclock = null;
   function extraAmb() {
@@ -2465,6 +2505,7 @@ G3.street = (function () {
     guideSigns(scene);
     signs();
     dogo(scene);
+    arcades();
     furniture(scene);
     ports();
     coastline(scene);

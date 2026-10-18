@@ -44,7 +44,7 @@ const R3 = { ok: false, state: 'idle' };
     TEX_LIST['fac_' + f] = ['tex/fac_' + f + '.jpg', 1];
     TEX_LIST['facm_' + f] = ['tex/fac_' + f + '_m.png', 0];
   }
-  const GLB_LIST = ['vehicles', 'human', 'trains', 'trees', 'props', 'landmarks', 'misc'];
+  const GLB_LIST = ['vehicles', 'human', 'trains', 'trees', 'props', 'street', 'landmarks', 'misc'];
   G3.tex = {}; G3.glb = {};
 
   function setLoad(frac, txt) {

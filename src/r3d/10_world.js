@@ -443,7 +443,7 @@ G3.world = (function () {
     if (s < len) out.push([s, len]);
     return out;
   }
-  G3.ribbon = ribbon; G3.subPts = subPts;
+  G3.ribbon = ribbon; G3.subPts = subPts; G3.minusIntervals = minusIntervals;
 
   /* ---------- 丘・山 ---------- */
   function buildHills(scene) {
@@ -581,6 +581,7 @@ G3.world = (function () {
     }
     return { cutsL, cutsR, mark };
   }
+  G3.roadCuts = roadCuts; G3.CURB = CURB; G3.SW = SW;
   function buildRoads(scene) {
     const flatY = (y) => (x, z) => heightAt(x, z) + y;
     const sorted = ROADS.slice().sort((a, b) => (a.kind === 'main') - (b.kind === 'main'));
@@ -1213,6 +1214,7 @@ G3.world = (function () {
     lmCache[n] = r;
     return r;
   }
+  G3.lmMat = lmMat;
   function buildLandmarks(scene) {
     for (const l of LMS) {
       const mp = LM_MAP[l.n];
@@ -1310,6 +1312,7 @@ G3.world = (function () {
     buildLandmarks(scene);
     buildTrees(scene);
     buildProps(scene);
+    if (G3.street) G3.street.build(scene);
   }
   return { build, update, updEnv, WM, anim, canvasTex };
 })();

@@ -841,6 +841,126 @@ G3.street = (function () {
     }
   }
 
+  /* ---------- 第4段: 路面標示（ダイヤマーク・止まれ・停止線・矢印・自転車ナビ） ---------- */
+  function markAtlas() {
+    // 4×2 セル（各128px）。キャンバス上方向 = 進行方向
+    return G3.world.canvasTex(512, 256, g => {
+      g.clearRect(0, 0, 512, 256);
+      const W = '#f2f2ee';
+      const cell = (i, fn) => { g.save(); g.translate((i % 4) * 128, ((i / 4) | 0) * 128); fn(); g.restore(); };
+      // 0: ダイヤマーク（横断歩道あり）
+      cell(0, () => { g.strokeStyle = W; g.lineWidth = 9; g.beginPath(); g.moveTo(64, 6); g.lineTo(110, 64); g.lineTo(64, 122); g.lineTo(18, 64); g.closePath(); g.stroke(); });
+      // 1: 止まれ（遠い側が「止」）
+      cell(1, () => {
+        g.fillStyle = W; g.textAlign = 'center'; g.textBaseline = 'middle';
+        g.font = 'bold 40px "Hiragino Sans","Hiragino Kaku Gothic ProN",sans-serif';
+        ['止', 'ま', 'れ'].forEach((c, i) => { g.save(); g.translate(64, 22 + i * 42); g.scale(1.6, 1.0); g.fillText(c, 0, 0); g.restore(); });
+      });
+      // 2: 直進矢印
+      cell(2, () => { g.fillStyle = W; g.fillRect(56, 40, 16, 84); g.beginPath(); g.moveTo(64, 4); g.lineTo(90, 44); g.lineTo(38, 44); g.closePath(); g.fill(); });
+      // 3: 直進・左折矢印
+      cell(3, () => {
+        g.fillStyle = W; g.fillRect(70, 40, 14, 84); g.beginPath(); g.moveTo(77, 4); g.lineTo(100, 44); g.lineTo(54, 44); g.closePath(); g.fill();
+        g.fillRect(40, 84, 34, 13); g.fillRect(40, 60, 13, 36); g.beginPath(); g.moveTo(46, 30); g.lineTo(66, 62); g.lineTo(26, 62); g.closePath(); g.fill();
+      });
+      // 4: 自転車ナビマーク（青い矢羽根＋自転車）
+      cell(4, () => {
+        g.fillStyle = '#1f5fbf';
+        g.beginPath(); g.moveTo(64, 6); g.lineTo(118, 50); g.lineTo(118, 74); g.lineTo(64, 30); g.lineTo(10, 74); g.lineTo(10, 50); g.closePath(); g.fill();
+        g.strokeStyle = W; g.lineWidth = 5;
+        g.beginPath(); g.arc(40, 104, 14, 0, TAU); g.stroke(); g.beginPath(); g.arc(88, 104, 14, 0, TAU); g.stroke();
+        g.beginPath(); g.moveTo(40, 104); g.lineTo(58, 82); g.lineTo(80, 82); g.lineTo(88, 104); g.moveTo(58, 82); g.lineTo(64, 104); g.lineTo(80, 82); g.stroke();
+      });
+      // 5: 白ベタ（停止線）
+      cell(5, () => { g.fillStyle = W; g.fillRect(0, 0, 128, 128); });
+    });
+  }
+  function roadMarks(scene) {
+    const gb = new G3.GB(false);
+    const decal = (x, y, h, hw, hl, ci) => {
+      const fx = Math.cos(h), fy = Math.sin(h), rx = -Math.sin(h), ry = Math.cos(h);
+      const u0 = (ci % 4) / 4 + 0.004, u1 = ((ci % 4) + 1) / 4 - 0.004;
+      const v1 = 1 - ((ci / 4) | 0) / 2 - 0.004, v0 = 1 - (((ci / 4) | 0) + 1) / 2 + 0.004;
+      const P = [[x - fx * hl - rx * hw, y - fy * hl - ry * hw], [x - fx * hl + rx * hw, y - fy * hl + ry * hw],
+        [x + fx * hl + rx * hw, y + fy * hl + ry * hw], [x + fx * hl - rx * hw, y + fy * hl - ry * hw]];
+      const UV = [[u0, v0], [u1, v0], [u1, v1], [u0, v1]];
+      const V = P.map(q => [q[0], heightAt(q[0], q[1]) + 0.075, q[1]]);
+      const ux = V[1][0] - V[0][0], uz = V[1][2] - V[0][2], vx = V[3][0] - V[0][0], vz = V[3][2] - V[0][2];
+      if (uz * vx - ux * vz > 0) gb.quad(V, UV);
+      else gb.quad([V[0], V[3], V[2], V[1]], [UV[0], UV[3], UV[2], UV[1]]);
+    };
+    let n = 0;
+    for (const r of ROADS) {
+      if (r.kind === 'arcade') continue;
+      // 車線: 幹線は片側2車線（境界 = w/4(+軌道1.5)）、生活道路は片側1車線
+      const edge = r.w / 2 - (r.kind === 'main' ? 1.6 : 1.0);
+      const inner0 = r.tram ? 4.2 : 0.7;
+      const bnd = r.w / 4 + (r.tram ? 1.5 : 0);
+      const lanes = r.kind === 'main' ? [[(inner0 + bnd) / 2, (bnd - inner0) / 2 - 0.6], [(bnd + edge) / 2, (edge - bnd) / 2 - 0.6]]
+        : [[(inner0 + edge) / 2, (edge - inner0) / 2 - 0.6]];
+      const all = [(inner0 + edge) / 2, (edge - inner0) / 2];
+      for (const j of r.junc) {
+        if (j.road.kind === 'arcade') continue;
+        const back0 = j.road.w / 2 + 4;
+        for (const dir of [1, -1]) {
+          const dStop = j.d - dir * back0;
+          if (dStop < 20 || dStop > r.pl.len - 20) continue;
+          if (r.junc.some(k => k !== j && Math.abs(k.d - dStop) < k.road.w / 2 + 6)) continue;
+          const lane = (d, o) => at(r, d, -dir * o);
+          const head = d => at(r, d, 0).a + (dir > 0 ? 0 : Math.PI);
+          const ps = lane(dStop, all[0]);
+          decal(ps.x, ps.y, head(dStop), all[1], 0.45, 5); n++;
+          if (r.kind === 'minor' && j.road.kind === 'main') {
+            const d = dStop - dir * 15, p = lane(d, lanes[0][0]);
+            decal(p.x, p.y, head(d), Math.min(lanes[0][1], 3.6), 11, 1); n++;
+          } else if (r.kind === 'main') {
+            for (const back of [16, 52]) {
+              const d = dStop - dir * back;
+              if (d < 10 || d > r.pl.len - 10) continue;
+              lanes.forEach((L, i) => { const p = lane(d, L[0]); decal(p.x, p.y, head(d), Math.min(2.3, L[1]), 6, i === 0 ? 2 : 3); n++; });
+            }
+          }
+        }
+      }
+      // 横断歩道の手前のダイヤマーク（約50m・30m手前）
+      for (const c of CROSSWALKS) {
+        const ri = roadInfo(c[0], c[1]);
+        if (!ri || ri.road !== r) continue;
+        const dc = dOnPl(r.pl, c[0], c[1]);
+        for (const dir of [1, -1]) for (const back of [75, 125]) {
+          const d = dc - dir * back;
+          if (d < 10 || d > r.pl.len - 10) continue;
+          if (r.junc.some(k => Math.abs(k.d - d) < k.road.w / 2 + 6)) continue;
+          for (const L of lanes) {
+            const p = at(r, d, -dir * L[0]);
+            decal(p.x, p.y, p.a + (dir > 0 ? 0 : Math.PI), Math.min(2.6, L[1]), 6.5, 0); n++;
+          }
+        }
+      }
+      // 自転車ナビマーク（中心部の幹線・左端）
+      if (r.kind === 'main') {
+        const cuts = G3.roadCuts(r);
+        for (const [a, b] of G3.minusIntervals(r.pl.len, cuts.mark)) {
+          for (let d = a + 10; d < b - 10; d += 25) {
+            const c0 = at(r, d, 0);
+            const z = zoneOf(c0.x, c0.y);
+            if (z !== 'center' && z !== 'dogo') continue;
+            for (const dir of [1, -1]) {
+              const p = at(r, d, -dir * (edge - 1.4));
+              decal(p.x, p.y, p.a + (dir > 0 ? 0 : Math.PI), 1.5, 1.8, 4); n++;
+            }
+          }
+        }
+      }
+    }
+    const mat = new THREE.MeshStandardMaterial({ map: markAtlas(), transparent: true, roughness: 0.75, depthWrite: false,
+      polygonOffset: true, polygonOffsetFactor: -4, polygonOffsetUnits: -120 });
+    const m = gb.mesh(mat, false);
+    m.castShadow = false; m.renderOrder = 1;
+    scene.add(m);
+    stats.road_marks = n;
+  }
+
   /* ---------- インスタンス化 ---------- */
   let blockMat = null;
   function streetMat(m) {
@@ -911,6 +1031,7 @@ G3.street = (function () {
     if (!G3.glb.street) return;
     seedOcc();
     tramStops();
+    roadMarks(scene);
     guideSigns(scene);
     signs();
     dogo(scene);

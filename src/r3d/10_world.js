@@ -1251,6 +1251,120 @@ G3.world = (function () {
     scene.add(im);
   }
 
+  /* ---------- 松山城の登城道（実際の4本: 東雲口・県庁裏・黒門口・古町口）2026-10-19 ----------
+     山の起伏に沿って、こう配の上限と曲がりの少なさで道を探す（つづら折りになる）。石畳＋急な所は石段の段、谷側に木の手すり。
+     道の上には城山の森の木を置かない（buildTrees が G3.trails を見る） */
+  const TRAIL_DEF = [
+    { n: '東雲口登城道', k: 'しののめぐち とじょうどう', e: 'Shinonome-guchi Tojodo', from: [6098, 2902], to: [5925, 2792] },
+    { n: '県庁裏登城道', k: 'けんちょううら とじょうどう', e: 'Kencho-ura Tojodo', from: [5940, 3004], to: [5834, 2832] },
+    { n: '黒門口登城道', k: 'くろもんぐち とじょうどう', e: 'Kuromon-guchi Tojodo', from: [5690, 2958], to: [5822, 2834] },
+    { n: '古町口登城道', k: 'こまちぐち とじょうどう', e: 'Komachi-guchi Tojodo', from: [5640, 2655], to: [5748, 2716] },
+  ];
+  function routeTrail(h, from, to) {
+    const C = 4, X0 = h.x - h.rx - 60, Y0 = h.y - h.ry - 60, NX = Math.ceil((2 * h.rx + 120) / C), NY = Math.ceil((2 * h.ry + 120) / C);
+    const c = CASTLE_DECK, rope = [[6338, 2892], [5945, 2762]];
+    const H = new Float32Array(NX * NY), ok = new Uint8Array(NX * NY);
+    for (let j = 0; j < NY; j++) for (let i = 0; i < NX; i++) {
+      const x = X0 + i * C, y = Y0 + j * C, k = j * NX + i;
+      H[k] = heightAt(x, y);
+      let good = !inWaterRaw(x, y) && !(x > c.x0 - 3 && x < c.x1 + 3 && y > c.y0 - 3 && y < c.y1 + 3) && seg(x, y, rope[0][0], rope[0][1], rope[1][0], rope[1][1]).d > 9;
+      if (good) for (const l of LMS) if (l.solid && x > l.solid[0] - 4 && x < l.solid[2] + 4 && y > l.solid[1] - 4 && y < l.solid[3] + 4) { good = false; break; }
+      ok[k] = good ? 1 : 0;
+    }
+    const cell = p => [clamp(Math.round((p[0] - X0) / C), 0, NX - 1), clamp(Math.round((p[1] - Y0) / C), 0, NY - 1)];
+    const [si, sj] = cell(from), [gi, gj] = cell(to);
+    ok[sj * NX + si] = 1; ok[gj * NX + gi] = 1;
+    // 状態 = マス×向き(8)。曲がると割増し、こう配 0.62 超は通れない
+    const D8 = [[1, 0], [1, 1], [0, 1], [-1, 1], [-1, 0], [-1, -1], [0, -1], [1, -1]];
+    const N = NX * NY * 8, dist = new Float32Array(N).fill(1e9), prev = new Int32Array(N).fill(-1);
+    const heap = [];
+    const push = (s, f, g) => { heap.push([f, s, g]); let i = heap.length - 1; while (i > 0) { const p = (i - 1) >> 1; if (heap[p][0] <= heap[i][0]) break; [heap[p], heap[i]] = [heap[i], heap[p]]; i = p; } };
+    const pop = () => { const top = heap[0], last = heap.pop(); if (heap.length) { heap[0] = last; let i = 0; for (;;) { const l = 2 * i + 1, r = l + 1; let m = i; if (l < heap.length && heap[l][0] < heap[m][0]) m = l; if (r < heap.length && heap[r][0] < heap[m][0]) m = r; if (m === i) break; [heap[m], heap[i]] = [heap[i], heap[m]]; i = m; } } return top; };
+    for (let dI = 0; dI < 8; dI++) { const s = (sj * NX + si) * 8 + dI; dist[s] = 0; push(s, 0, 0); }
+    let goal = -1;
+    while (heap.length) {
+      const [, s, d0] = pop();   // [優先度(費用＋残り距離), 状態, 費用]
+      if (d0 > dist[s]) continue;
+      const k = s >> 3, dI = s & 7, i = k % NX, j = (k / NX) | 0;
+      if (i === gi && j === gj) { goal = s; break; }
+      for (let nd = 0; nd < 8; nd++) {
+        const ni = i + D8[nd][0], nj = j + D8[nd][1];
+        if (ni < 0 || nj < 0 || ni >= NX || nj >= NY) continue;
+        const nk = nj * NX + ni;
+        if (!ok[nk]) continue;
+        const L = C * (nd & 1 ? Math.SQRT2 : 1), g = Math.abs(H[nk] - H[k]) / L;
+        if (g > 0.62) continue;
+        const turn = Math.min((nd - dI + 8) % 8, (dI - nd + 8) % 8);
+        const cost = L * (1 + 5 * g * g) + (turn ? 3 + turn * 2 : 0);
+        const ns = nk * 8 + nd;
+        if (d0 + cost < dist[ns]) { dist[ns] = d0 + cost; prev[ns] = s; push(ns, d0 + cost + Math.hypot(ni - gi, nj - gj) * C, d0 + cost); }
+      }
+    }
+    if (goal < 0) return null;
+    const pts = [];
+    for (let s = goal; s >= 0; s = prev[s]) { const k = s >> 3; pts.push([X0 + (k % NX) * C, Y0 + ((k / NX) | 0) * C]); }
+    pts.reverse();
+    pts[0] = from.slice(); pts[pts.length - 1] = to.slice();
+    // 同じ向きの点は間引く（曲がり角だけ残す）
+    const out = [pts[0]];
+    for (let i = 1; i < pts.length - 1; i++) {
+      const a = out[out.length - 1], b = pts[i], cc = pts[i + 1];
+      const cr = (b[0] - a[0]) * (cc[1] - b[1]) - (b[1] - a[1]) * (cc[0] - b[0]);
+      if (Math.abs(cr) > 1e-6) out.push(b);
+    }
+    out.push(pts[pts.length - 1]);
+    return out;
+  }
+  function onTrail(x, y, m) {
+    for (const t of G3.trails || []) { const P = t.pts; for (let i = 1; i < P.length; i++) if (seg(x, y, P[i - 1][0], P[i - 1][1], P[i][0], P[i][1]).d < 2.8 + m) return t; }
+    return null;
+  }
+  G3.onTrail = onTrail; G3.routeTrail = (...a) => routeTrail(...a);
+  function buildTrails(scene) {
+    const h = HILLS3.find(q => q.castle);
+    G3.trails = [];
+    if (!h) return;
+    const gb = new GB(true), gbR = new GB(true);
+    const CP = C('#a9a398'), CS = C('#6f6a62'), CW = C('#7a5638');
+    const W = 2.8;   // 半幅（道幅 2.2m）
+    for (const t of TRAIL_DEF) {
+      const pts = routeTrail(h, t.from, t.to);
+      if (!pts) continue;
+      const pl = buildPl(pts);
+      G3.trails.push(Object.assign({}, t, { pts, pl }));
+      // 2単位ごとに地形へ貼る帯。急な所（こう配 0.22 超）は 1.6 単位ごとに石段の段鼻
+      let prevL = null, prevR = null, lastStep = -9;
+      for (let d = 0; d <= pl.len + 0.01; d += 2) {
+        const p = plAt(pl, Math.min(d, pl.len)), nx = -Math.sin(p.a), ny = Math.cos(p.a);
+        const L = [p.x + nx * W, p.y + ny * W], R = [p.x - nx * W, p.y - ny * W];
+        const yL = heightAt(L[0], L[1]) + 0.14, yR = heightAt(R[0], R[1]) + 0.14;
+        const cur = [[L[0], yL, L[1]], [R[0], yR, R[1]]];
+        if (prevL) {
+          gb.quad([prevR, prevL, cur[0], cur[1]].map(q => q), [[0, 0], [1, 0], [1, 1], [0, 1]], CP);
+          const g = Math.abs((yL + yR) / 2 - (prevL[1] + prevR[1]) / 2) / 2;   // この2単位のこう配
+          if (g > 0.22 && d - lastStep >= 1.6) {   // 段鼻（濃い帯）と段の立ち上がり
+            lastStep = d;
+            const q0 = [L[0], yL + 0.01, L[1]], q1 = [R[0], yR + 0.01, R[1]];
+            const bx = Math.cos(p.a) * 0.35, bz = Math.sin(p.a) * 0.35;
+            gb.quad([q1, q0, [q0[0] + bx, q0[1], q0[2] + bz], [q1[0] + bx, q1[1], q1[2] + bz]], [[0, 0], [1, 0], [1, 1], [0, 1]], CS);
+          }
+        }
+        prevL = cur[0]; prevR = cur[1];
+        // 谷側（低い方）に木の手すり（急な所だけ）
+        if (d % 6 < 2 && Math.abs(yL - yR) < 3) {
+          const dh = heightAt(p.x + Math.cos(p.a) * 2, p.y + Math.sin(p.a) * 2) - heightAt(p.x, p.y);
+          if (Math.abs(dh) > 0.5) {
+            const side = yL < yR ? 1 : -1, px = p.x + nx * side * (W + 0.4), pz = p.y + ny * side * (W + 0.4), g0 = heightAt(px, pz);
+            gbR.box(px - 0.18, g0, pz - 0.18, px + 0.18, g0 + 2.6, pz + 0.18, CW, 4);
+          }
+        }
+      }
+    }
+    const m = gb.mesh(new THREE.MeshStandardMaterial({ map: G3.tex.concrete, vertexColors: true, roughness: 0.9, side: THREE.DoubleSide, polygonOffset: true, polygonOffsetFactor: -1, polygonOffsetUnits: -4 }), false);
+    m.receiveShadow = true; scene.add(m);
+    if (gbR.p.length) scene.add(gbR.mesh(new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.8 }), true));
+  }
+
   /* ---------- JR松山駅付近の高架橋（2024年9月に高架化）と高架駅 ---------- */
   // 向き a の直方体（中心 x,z・長さ方向の半長 hl・幅の半長 hw・高さ y0→y1、底面なし）
   function obox(gb, x, z, a, hl, hw, y0, y1, col) {
@@ -1747,8 +1861,9 @@ G3.world = (function () {
         const x = h.x + Math.cos(a) * h.rx * rr, z = h.y + Math.sin(a) * h.ry * rr;
         if (x > c.x0 - 26 && x < c.x1 + 26 && z > c.y0 - 26 && z < c.ry1 + 8) continue;
         if (!okAt(x, z, 2)) continue;
-        const k = rc();
-        (k < 0.45 ? groups.pine : k < 0.75 ? groups.broad_a : groups.broad_b).push(M4(x, heightAt(x, z), z, rc() * TAU, U * (0.75 + rc() * 0.5)));
+        const k = rc(), rot = rc() * TAU, sc = U * (0.75 + rc() * 0.5);
+        if (onTrail(x, z, 4)) continue;   // 登城道の上には木を置かない（乱数の消費は変えない）
+        (k < 0.45 ? groups.pine : k < 0.75 ? groups.broad_a : groups.broad_b).push(M4(x, heightAt(x, z), z, rot, sc));
       }
       let ns = 0;
       for (let x = c.x0 + 8; x < c.x1 - 6 && ns < 18; x += 13) for (let z = c.y0 + 8; z < c.y1 - 6 && ns < 18; z += 13) {
@@ -2192,6 +2307,7 @@ G3.world = (function () {
     buildViaduct(scene); lapw('buildViaduct');
     buildBuildings(scene); lapw('buildBuildings');
     buildLandmarks(scene); lapw('buildLandmarks');
+    buildTrails(scene); lapw('buildTrails');
     buildTrees(scene); lapw('buildTrees');
     buildEstates(scene); lapw('buildEstates');
     buildYuzuki(scene); lapw('buildYuzuki');

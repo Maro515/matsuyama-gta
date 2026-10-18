@@ -6592,9 +6592,44 @@ const TRAM_STOPS=[
     tr.stopL=L;tr.stops=L.map(o=>o.d);
   }
   TRAINS[1].stopL=TRAINS[0].stopL;TRAINS[1].stops=TRAINS[0].stops;
-  const st=(tr,pts)=>{tr.stops=pts.map(pt=>dOnPl(tr.pl,pt[0],pt[1])).sort((a,b)=>a-b);};
-  st(TRAINS[3],[[4700,3150],[3900,2830],[1800,1950],[1100,1150]]);
-  TRAINS[4].stops=[JR_EL.c];   // JR松山駅（高架ホームの中央）
+}
+/* ---------- 伊予鉄の郊外電車・JR の駅（実名・実際の並び） ----------
+   位置は実際のキロ程を、ゲーム内の線路の目印（町・浜・川・終点）に合わせて区間ごとに伸び縮みさせて決める。
+   [駅名, よみ, ローマ字, キロ程km（松山市駅／JR松山駅から。北は負）] */
+const RAIL_LINES=[
+ {ri:0,co:'iyo',ln:'高浜線',ends:['松山市','高浜'],st:[['大手町','おおてまち','Otemachi',0.9],['古町','こまち','Komachi',1.8],['衣山','きぬやま','Kinuyama',3.4],
+   ['西衣山','にしきぬやま','Nishi-Kinuyama',4.3],['山西','やまにし','Yamanishi',5.4],['三津','みつ','Mitsu',6.4],['港山','みなとやま','Minatoyama',7.4],['梅津寺','ばいしんじ','Baishinji',8.2]],
+   anc:()=>[[0,0],[6.4,dOnPl(RAILS[0].pl,1300,1750)],[8.2,dOnPl(RAILS[0].pl,1150,980)],[9.4,RAILS[0].pl.len]]},
+ {ri:1,co:'iyo',ln:'横河原線',ends:['松山市','いよ立花'],st:[['石手川公園','いしてがわこうえん','Ishitegawa-koen',0.8]],
+   anc:()=>[[0,0],[0.8,1830]]},   // 石手川の橋（ゲームでは d≈1884）のたもと
+ {ri:2,co:'iyo',ln:'郡中線',ends:['松山市','松前'],st:[['土橋','どばし','Dobashi',0.7],['土居田','どいだ','Doida',2.2],['余戸','ようご','Yogo',3.5],['鎌田','かまた','Kamata',4.2],
+   ['岡田','おかだ','Okada',5.6],['古泉','こいずみ','Koizumi',6.6]],
+   anc:()=>[[0,0],[4.9,2280],[7.1,RAILS[2].pl.len]]},   // 重信川の橋 ≈ 鎌田と岡田の間
+ {ri:3,co:'jr',ln:'予讃線',ends:['光洋台','鳥ノ木'],st:[['堀江','ほりえ','Horie',-9.5],['伊予和気','いよわけ','Iyo-Wake',-7.4],['三津浜','みつはま','Mitsuhama',-3.7],['松山','まつやま','Matsuyama',0,{elev:1}],
+   ['市坪','いちつぼ','Ichitsubo',3.5],['北伊予','きたいよ','Kita-Iyo',5.9],['南伊予','みなみいよ','Minami-Iyo',7.5],['伊予横田','いよよこた','Iyo-Yokota',8.6]],
+   anc:()=>[[-9.5,70],[0,JR_EL.c],[2.5,4419],[4.6,4856],[12,4856+7.4*290]]},   // 石手川・重信川の橋に合わせる
+];
+const RAIL_STATIONS=[];
+{
+  const riverNear=(pl,d,m)=>{const p=plAt(pl,d);for(const rv of RIVERS){const P=rv.pl.pts;for(let i=1;i<P.length;i++)if(seg(p.x,p.y,P[i-1][0],P[i-1][1],P[i][0],P[i][1]).d<rv.w/2+m)return true;}return false;};
+  for(const L of RAIL_LINES){
+    const pl=RAILS[L.ri].pl,A=L.anc();
+    const dOf=km=>{for(let i=1;i<A.length;i++){const [k0,d0]=A[i-1],[k1,d1]=A[i];if(km<=k1||i===A.length-1)return d0+(km-k0)/(k1-k0)*(d1-d0);}return 0;};
+    L.list=[];
+    for(const [n,k,e,km,opt] of L.st){
+      let d=dOf(km);
+      if(d<40||d>pl.len-40)continue;
+      // 川の上（橋）にホームが掛からないよう少しずらす
+      for(let s=0;s<8&&riverNear(pl,d,40);s++)d+=(s%2?-1:1)*(s+1)*14;
+      const p=plAt(pl,d),o={n,k,e,km,ri:L.ri,line:L,d,x:p.x,y:p.y,...(opt||{})};
+      L.list.push(o);RAIL_STATIONS.push(o);
+    }
+  }
+  // 停車駅（終点は折り返しで停まる。JR松山は高架ホームの中央）
+  TRAINS[3].stops=RAIL_LINES[0].list.map(s=>s.d);
+  TRAINS[4].stops=RAIL_LINES[3].list.map(s=>s.elev?JR_EL.c:s.d).sort((a,b)=>a-b);
+  TRAINS.push({pl:RAILS[1].pl,d:300,dir:1,sp:44,loop:false,type:'iyotetsu',cars:2,dwell:0,stops:RAIL_LINES[1].list.map(s=>s.d)});
+  TRAINS.push({pl:RAILS[2].pl,d:900,dir:-1,sp:46,loop:false,type:'iyotetsu',cars:2,dwell:0,stops:RAIL_LINES[2].list.map(s=>s.d)});
 }
 const FERRY={t:0,dir:1,ax:1120,ay:900,bx:760,by:1080};
 const PLANE={st:0,t:20,x:0,y:0,a:0,alt:0}; // st:0待機 1着陸 2停止 3離陸
@@ -9495,8 +9530,11 @@ function renderBigmap(){
   strokePl(c,RAILS[0].pl,26,'#e8862c');
   strokePl(c,RAILS[3].pl,26,'#607890');
   c.globalAlpha=1;c.restore();
-  // 電停
+  // 電停・駅
   for(const s of TRAM_STOPS){const p=w2m(s.x,s.y);c.fillStyle='#fff';c.strokeStyle='#e8862c';c.lineWidth=1.5;c.beginPath();c.arc(p[0],p[1],2.6,0,TAU);c.fill();c.stroke();}
+  c.font='600 9px sans-serif';c.textAlign='left';
+  for(const s of RAIL_STATIONS){const p=w2m(s.x,s.y);c.fillStyle='#fff';c.strokeStyle=s.line.co==='jr'?'#1a8ad0':'#e8862c';c.lineWidth=2;c.beginPath();c.arc(p[0],p[1],3.2,0,TAU);c.fill();c.stroke();
+    c.strokeStyle='rgba(10,14,20,.85)';c.lineWidth=2.5;c.strokeText(s.n,p[0]+5,p[1]+3);c.fillStyle='#e8eef4';c.fillText(s.n,p[0]+5,p[1]+3);}
   // 道路等ラベル
   for(const ml of MAPLABELS){
     const p=w2m(ml[0]==='国道196号'?930:ml[1],ml[2]);
@@ -12294,6 +12332,120 @@ G3.world = (function () {
     scene.add(im);
   }
 
+  /* ---------- 松山城の登城道（実際の4本: 東雲口・県庁裏・黒門口・古町口）2026-10-19 ----------
+     山の起伏に沿って、こう配の上限と曲がりの少なさで道を探す（つづら折りになる）。石畳＋急な所は石段の段、谷側に木の手すり。
+     道の上には城山の森の木を置かない（buildTrees が G3.trails を見る） */
+  const TRAIL_DEF = [
+    { n: '東雲口登城道', k: 'しののめぐち とじょうどう', e: 'Shinonome-guchi Tojodo', from: [6098, 2902], to: [5925, 2792] },
+    { n: '県庁裏登城道', k: 'けんちょううら とじょうどう', e: 'Kencho-ura Tojodo', from: [5940, 3004], to: [5834, 2832] },
+    { n: '黒門口登城道', k: 'くろもんぐち とじょうどう', e: 'Kuromon-guchi Tojodo', from: [5690, 2958], to: [5822, 2834] },
+    { n: '古町口登城道', k: 'こまちぐち とじょうどう', e: 'Komachi-guchi Tojodo', from: [5640, 2655], to: [5748, 2716] },
+  ];
+  function routeTrail(h, from, to) {
+    const C = 4, X0 = h.x - h.rx - 60, Y0 = h.y - h.ry - 60, NX = Math.ceil((2 * h.rx + 120) / C), NY = Math.ceil((2 * h.ry + 120) / C);
+    const c = CASTLE_DECK, rope = [[6338, 2892], [5945, 2762]];
+    const H = new Float32Array(NX * NY), ok = new Uint8Array(NX * NY);
+    for (let j = 0; j < NY; j++) for (let i = 0; i < NX; i++) {
+      const x = X0 + i * C, y = Y0 + j * C, k = j * NX + i;
+      H[k] = heightAt(x, y);
+      let good = !inWaterRaw(x, y) && !(x > c.x0 - 3 && x < c.x1 + 3 && y > c.y0 - 3 && y < c.y1 + 3) && seg(x, y, rope[0][0], rope[0][1], rope[1][0], rope[1][1]).d > 9;
+      if (good) for (const l of LMS) if (l.solid && x > l.solid[0] - 4 && x < l.solid[2] + 4 && y > l.solid[1] - 4 && y < l.solid[3] + 4) { good = false; break; }
+      ok[k] = good ? 1 : 0;
+    }
+    const cell = p => [clamp(Math.round((p[0] - X0) / C), 0, NX - 1), clamp(Math.round((p[1] - Y0) / C), 0, NY - 1)];
+    const [si, sj] = cell(from), [gi, gj] = cell(to);
+    ok[sj * NX + si] = 1; ok[gj * NX + gi] = 1;
+    // 状態 = マス×向き(8)。曲がると割増し、こう配 0.62 超は通れない
+    const D8 = [[1, 0], [1, 1], [0, 1], [-1, 1], [-1, 0], [-1, -1], [0, -1], [1, -1]];
+    const N = NX * NY * 8, dist = new Float32Array(N).fill(1e9), prev = new Int32Array(N).fill(-1);
+    const heap = [];
+    const push = (s, f, g) => { heap.push([f, s, g]); let i = heap.length - 1; while (i > 0) { const p = (i - 1) >> 1; if (heap[p][0] <= heap[i][0]) break; [heap[p], heap[i]] = [heap[i], heap[p]]; i = p; } };
+    const pop = () => { const top = heap[0], last = heap.pop(); if (heap.length) { heap[0] = last; let i = 0; for (;;) { const l = 2 * i + 1, r = l + 1; let m = i; if (l < heap.length && heap[l][0] < heap[m][0]) m = l; if (r < heap.length && heap[r][0] < heap[m][0]) m = r; if (m === i) break; [heap[m], heap[i]] = [heap[i], heap[m]]; i = m; } } return top; };
+    for (let dI = 0; dI < 8; dI++) { const s = (sj * NX + si) * 8 + dI; dist[s] = 0; push(s, 0, 0); }
+    let goal = -1;
+    while (heap.length) {
+      const [, s, d0] = pop();   // [優先度(費用＋残り距離), 状態, 費用]
+      if (d0 > dist[s]) continue;
+      const k = s >> 3, dI = s & 7, i = k % NX, j = (k / NX) | 0;
+      if (i === gi && j === gj) { goal = s; break; }
+      for (let nd = 0; nd < 8; nd++) {
+        const ni = i + D8[nd][0], nj = j + D8[nd][1];
+        if (ni < 0 || nj < 0 || ni >= NX || nj >= NY) continue;
+        const nk = nj * NX + ni;
+        if (!ok[nk]) continue;
+        const L = C * (nd & 1 ? Math.SQRT2 : 1), g = Math.abs(H[nk] - H[k]) / L;
+        if (g > 0.62) continue;
+        const turn = Math.min((nd - dI + 8) % 8, (dI - nd + 8) % 8);
+        const cost = L * (1 + 5 * g * g) + (turn ? 3 + turn * 2 : 0);
+        const ns = nk * 8 + nd;
+        if (d0 + cost < dist[ns]) { dist[ns] = d0 + cost; prev[ns] = s; push(ns, d0 + cost + Math.hypot(ni - gi, nj - gj) * C, d0 + cost); }
+      }
+    }
+    if (goal < 0) return null;
+    const pts = [];
+    for (let s = goal; s >= 0; s = prev[s]) { const k = s >> 3; pts.push([X0 + (k % NX) * C, Y0 + ((k / NX) | 0) * C]); }
+    pts.reverse();
+    pts[0] = from.slice(); pts[pts.length - 1] = to.slice();
+    // 同じ向きの点は間引く（曲がり角だけ残す）
+    const out = [pts[0]];
+    for (let i = 1; i < pts.length - 1; i++) {
+      const a = out[out.length - 1], b = pts[i], cc = pts[i + 1];
+      const cr = (b[0] - a[0]) * (cc[1] - b[1]) - (b[1] - a[1]) * (cc[0] - b[0]);
+      if (Math.abs(cr) > 1e-6) out.push(b);
+    }
+    out.push(pts[pts.length - 1]);
+    return out;
+  }
+  function onTrail(x, y, m) {
+    for (const t of G3.trails || []) { const P = t.pts; for (let i = 1; i < P.length; i++) if (seg(x, y, P[i - 1][0], P[i - 1][1], P[i][0], P[i][1]).d < 2.8 + m) return t; }
+    return null;
+  }
+  G3.onTrail = onTrail; G3.routeTrail = (...a) => routeTrail(...a);
+  function buildTrails(scene) {
+    const h = HILLS3.find(q => q.castle);
+    G3.trails = [];
+    if (!h) return;
+    const gb = new GB(true), gbR = new GB(true);
+    const CP = C('#a9a398'), CS = C('#6f6a62'), CW = C('#7a5638');
+    const W = 2.8;   // 半幅（道幅 2.2m）
+    for (const t of TRAIL_DEF) {
+      const pts = routeTrail(h, t.from, t.to);
+      if (!pts) continue;
+      const pl = buildPl(pts);
+      G3.trails.push(Object.assign({}, t, { pts, pl }));
+      // 2単位ごとに地形へ貼る帯。急な所（こう配 0.22 超）は 1.6 単位ごとに石段の段鼻
+      let prevL = null, prevR = null, lastStep = -9;
+      for (let d = 0; d <= pl.len + 0.01; d += 2) {
+        const p = plAt(pl, Math.min(d, pl.len)), nx = -Math.sin(p.a), ny = Math.cos(p.a);
+        const L = [p.x + nx * W, p.y + ny * W], R = [p.x - nx * W, p.y - ny * W];
+        const yL = heightAt(L[0], L[1]) + 0.14, yR = heightAt(R[0], R[1]) + 0.14;
+        const cur = [[L[0], yL, L[1]], [R[0], yR, R[1]]];
+        if (prevL) {
+          gb.quad([prevR, prevL, cur[0], cur[1]].map(q => q), [[0, 0], [1, 0], [1, 1], [0, 1]], CP);
+          const g = Math.abs((yL + yR) / 2 - (prevL[1] + prevR[1]) / 2) / 2;   // この2単位のこう配
+          if (g > 0.22 && d - lastStep >= 1.6) {   // 段鼻（濃い帯）と段の立ち上がり
+            lastStep = d;
+            const q0 = [L[0], yL + 0.01, L[1]], q1 = [R[0], yR + 0.01, R[1]];
+            const bx = Math.cos(p.a) * 0.35, bz = Math.sin(p.a) * 0.35;
+            gb.quad([q1, q0, [q0[0] + bx, q0[1], q0[2] + bz], [q1[0] + bx, q1[1], q1[2] + bz]], [[0, 0], [1, 0], [1, 1], [0, 1]], CS);
+          }
+        }
+        prevL = cur[0]; prevR = cur[1];
+        // 谷側（低い方）に木の手すり（急な所だけ）
+        if (d % 6 < 2 && Math.abs(yL - yR) < 3) {
+          const dh = heightAt(p.x + Math.cos(p.a) * 2, p.y + Math.sin(p.a) * 2) - heightAt(p.x, p.y);
+          if (Math.abs(dh) > 0.5) {
+            const side = yL < yR ? 1 : -1, px = p.x + nx * side * (W + 0.4), pz = p.y + ny * side * (W + 0.4), g0 = heightAt(px, pz);
+            gbR.box(px - 0.18, g0, pz - 0.18, px + 0.18, g0 + 2.6, pz + 0.18, CW, 4);
+          }
+        }
+      }
+    }
+    const m = gb.mesh(new THREE.MeshStandardMaterial({ map: G3.tex.concrete, vertexColors: true, roughness: 0.9, side: THREE.DoubleSide, polygonOffset: true, polygonOffsetFactor: -1, polygonOffsetUnits: -4 }), false);
+    m.receiveShadow = true; scene.add(m);
+    if (gbR.p.length) scene.add(gbR.mesh(new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.8 }), true));
+  }
+
   /* ---------- JR松山駅付近の高架橋（2024年9月に高架化）と高架駅 ---------- */
   // 向き a の直方体（中心 x,z・長さ方向の半長 hl・幅の半長 hw・高さ y0→y1、底面なし）
   function obox(gb, x, z, a, hl, hw, y0, y1, col) {
@@ -12790,8 +12942,9 @@ G3.world = (function () {
         const x = h.x + Math.cos(a) * h.rx * rr, z = h.y + Math.sin(a) * h.ry * rr;
         if (x > c.x0 - 26 && x < c.x1 + 26 && z > c.y0 - 26 && z < c.ry1 + 8) continue;
         if (!okAt(x, z, 2)) continue;
-        const k = rc();
-        (k < 0.45 ? groups.pine : k < 0.75 ? groups.broad_a : groups.broad_b).push(M4(x, heightAt(x, z), z, rc() * TAU, U * (0.75 + rc() * 0.5)));
+        const k = rc(), rot = rc() * TAU, sc = U * (0.75 + rc() * 0.5);
+        if (onTrail(x, z, 4)) continue;   // 登城道の上には木を置かない（乱数の消費は変えない）
+        (k < 0.45 ? groups.pine : k < 0.75 ? groups.broad_a : groups.broad_b).push(M4(x, heightAt(x, z), z, rot, sc));
       }
       let ns = 0;
       for (let x = c.x0 + 8; x < c.x1 - 6 && ns < 18; x += 13) for (let z = c.y0 + 8; z < c.y1 - 6 && ns < 18; z += 13) {
@@ -13235,6 +13388,7 @@ G3.world = (function () {
     buildViaduct(scene); lapw('buildViaduct');
     buildBuildings(scene); lapw('buildBuildings');
     buildLandmarks(scene); lapw('buildLandmarks');
+    buildTrails(scene); lapw('buildTrails');
     buildTrees(scene); lapw('buildTrees');
     buildEstates(scene); lapw('buildEstates');
     buildYuzuki(scene); lapw('buildYuzuki');
@@ -13767,13 +13921,14 @@ G3.street = (function () {
       g.textBaseline = 'middle';
       for (const k of keys) {
         const b = cells.get(k), [x, y] = cell[k];
+        const BAND = b.col || ORANGE, HD = b.hd || '伊予鉄道 市内電車';
         g.fillStyle = '#f7f6f0'; g.fillRect(x, y, CW, CH);
-        g.fillStyle = ORANGE; g.fillRect(x, y, CW, 17);
-        g.fillStyle = '#fff'; g.textAlign = 'left'; fit(g, '伊予鉄道 市内電車', 200, 11, 700, SANS); g.fillText('伊予鉄道 市内電車', x + 8, y + 9);
+        g.fillStyle = BAND; g.fillRect(x, y, CW, 17);
+        g.fillStyle = '#fff'; g.textAlign = 'left'; fit(g, HD, 200, 11, 700, SANS); g.fillText(HD, x + 8, y + 9);
         g.fillStyle = '#5a5a58'; g.textAlign = 'center'; fit(g, b.s.k, 280, 13, 600, SANS); g.fillText(b.s.k, x + CW / 2, y + 29);
         g.fillStyle = '#1a1a1a'; fit(g, b.s.n, 296, 44, 900, SANS); g.fillText(b.s.n, x + CW / 2, y + 58);
         g.fillStyle = '#3a3a3a'; fit(g, b.s.e, 280, 12, 600, 'Helvetica,Arial,sans-serif'); g.fillText(b.s.e, x + CW / 2, y + 85);
-        g.fillStyle = ORANGE; g.fillRect(x, y + 98, CW, 4);
+        g.fillStyle = BAND; g.fillRect(x, y + 98, CW, 4);
         g.fillStyle = '#2a2a2a'; g.font = `700 15px ${SANS}`;
         if (b.left) { g.textAlign = 'left'; fit(g, '◀ ' + b.left, 150, 15, 700, SANS); g.fillText('◀ ' + b.left, x + 8, y + 115); }
         if (b.right) { g.textAlign = 'right'; fit(g, b.right + ' ▶', 150, 15, 700, SANS); g.fillText(b.right + ' ▶', x + CW - 8, y + 115); }
@@ -13810,9 +13965,18 @@ G3.street = (function () {
     if (poles.p.length) scene.add(poles.mesh(new THREE.MeshStandardMaterial({ color: 0x2e6b4a, roughness: 0.45, metalness: 0.3 }), true));
     stats.tram_board = boards.length;
   }
+  // 電停・駅の名標（全部まとめて1枚のアトラス）。hd/col: 上の帯の文字と色（既定は伊予鉄 市内電車のオレンジ）
+  const boards = [], cells = new Map();
+  function addBoard(s, prev, next, x, z, h, nx, nz, a, extra, hd, col) {
+    const rx = nz, rz = -nx, fwd = rx * Math.cos(a) + rz * Math.sin(a);
+    const R = fwd >= 0 ? [prev, next] : [next, prev];
+    const tag = (hd || '') + '|' + s.n;
+    const key = tag + '|' + R[0] + '|' + R[1], keyB = tag + '|' + R[1] + '|' + R[0];
+    cells.set(key, { s, left: R[0], right: R[1], hd, col }); cells.set(keyB, { s, left: R[1], right: R[0], hd, col });
+    boards.push(Object.assign({ s, key, keyB, x, y: h, z, nx, nz }, extra));
+  }
   function tramStops(scene) {
     if (typeof TRAM_STOPS === 'undefined') return;
-    const boards = [];
     // 前後の電停（各路線の並び順。環状線は一周する）
     const nb = new Map();
     for (const [tr, loop] of [[TRAINS[0], true], [TRAINS[2], false]]) {
@@ -13824,15 +13988,7 @@ G3.street = (function () {
       });
     }
     // 名標の文字: 表から見て右手の側に「次」の電停（線路の向き a に沿って +方向）
-    const cells = new Map();
-    const board = (s, x, z, h, nx, nz, a, extra) => {
-      const n = nb.get(s) || {};
-      const rx = nz, rz = -nx, fwd = rx * Math.cos(a) + rz * Math.sin(a);
-      const R = fwd >= 0 ? [n.prev, n.next] : [n.next, n.prev];
-      const key = s.n + '|' + R[0] + '|' + R[1], keyB = s.n + '|' + R[1] + '|' + R[0];
-      cells.set(key, { s, left: R[0], right: R[1] }); cells.set(keyB, { s, left: R[1], right: R[0] });
-      boards.push(Object.assign({ s, key, keyB, x, y: h, z, nx, nz }, extra));
-    };
+    const board = (s, x, z, h, nx, nz, a, extra) => { const n = nb.get(s) || {}; addBoard(s, n.prev, n.next, x, z, h, nx, nz, a, extra); };
     for (const s of TRAM_STOPS) {
       for (const P of s.plats) {
         put('tram_stop', P.x, P.y, P.rot, 0.04);
@@ -13857,7 +14013,6 @@ G3.street = (function () {
         if (typeof addCollider === 'function') for (const k of [-0.85, 0.85]) addCollider({ x: x + Math.sin(q.a) * bw / 2 * k, y: y - Math.cos(q.a) * bw / 2 * k, r: 0.3 });
       }
     }
-    tramBoards(scene, boards, cells);
   }
 
   /* ---------- 第2段: 歩道の街具 ---------- */
@@ -15019,30 +15174,84 @@ G3.street = (function () {
 
   /* ---------- 第6段: 郊外駅のホーム ---------- */
   function stations() {
-    let n = 0;
-    for (const tr of [TRAINS[3], TRAINS[4]]) {
-      if (!tr || !tr.stops) continue;
-      for (const sd of tr.stops) {
-        const p = plAt(tr.pl, sd);
-        if (railLift(tr.pl, sd) > 3 || nearLM(p.x, p.y, 40) || zoneOf(p.x, p.y) === 'center') continue;
-        for (const sg of [1, -1]) {
-          const q = plAt(tr.pl, sd + sg * 8);
+    let n = 0, nbd = 0;
+    if (typeof RAIL_LINES === 'undefined') return;
+    for (const L of RAIL_LINES) {
+      const pl = RAILS[L.ri].pl, list = L.list || [];
+      const hd = L.co === 'jr' ? 'JR四国 ' + L.ln : '伊予鉄道 ' + L.ln, col = L.co === 'jr' ? '#1aa0d8' : '#ef7d16';
+      list.forEach((s, i) => {
+        if (s.elev || railLift(pl, s.d) > 3) return;   // JR松山駅は高架（buildViaduct）
+        const prev = i > 0 ? list[i - 1].n : L.ends[0], next = i < list.length - 1 ? list[i + 1].n : L.ends[1];
+        const fits = (d, sg) => {
+          const q = plAt(pl, d + sg * 8);
           const nx = -Math.sin(q.a), ny = Math.cos(q.a);
           const x = q.x + nx * sg * 9.4, y = q.y + ny * sg * 9.4;
-          let ok = true;
-          for (const k of [-36, 0, 36]) {
+          for (let k = -36; k <= 36; k += 12) {   // ホーム（75単位）の全長を見る
             const X = x + Math.cos(q.a) * k, Y = y + Math.sin(q.a) * k, ri = roadInfo(X, Y);
-            if (nearBld(X, Y, 1) || inWaterRaw(X, Y) || (ri && ri.d < ri.road.w / 2 + G3.SW + 1)) { ok = false; break; }
+            if (nearBld(X, Y, 1) || inWaterRaw(X, Y) || (ri && ri.d < ri.road.w / 2 + G3.SW + 1) || onAlley(X, Y, 1) || nearLM(X, Y, 4) || !free(X, Y, 3)) return null;
           }
-          if (!ok) continue;
-          put('platform', x, y, -(q.a + (sg > 0 ? 0 : Math.PI)), 0);
+          return { q, x, y };
+        };
+        // その場所に置けなければ線路に沿って少しずらす（電車の停車位置もいっしょに動かす）
+        let off = 0;
+        for (const o of [0, 18, -18, 36, -36, 54, -54, 72, -72]) {
+          const dd = s.d + o;
+          if (dd < 50 || dd > pl.len - 50) continue;
+          if (fits(dd, 1) || fits(dd, -1)) { off = o; break; }
+        }
+        if (off) {
+          for (const tr of TRAINS) if (tr.pl === pl && tr.stops) { const k2 = tr.stops.indexOf(s.d); if (k2 >= 0) tr.stops[k2] = s.d + off; }
+          s.d += off;
+          const p0 = plAt(pl, s.d); s.x = p0.x; s.y = p0.y;
+        }
+        if (!fits(s.d, 1) && !fits(s.d, -1)) {   // 道路が線路のすぐ脇を並走していてホームが置けない駅: 線路脇にポールの駅名標だけ
+          for (const sg of [1, -1]) {
+            const q = plAt(pl, s.d + sg * 14), nx = -Math.sin(q.a), ny = Math.cos(q.a);
+            const x = q.x + nx * sg * 6.4, y = q.y + ny * sg * 6.4;
+            if (inWaterRaw(x, y) || nearBld(x, y, 0.5) || !free(x, y, 1)) continue;
+            const g = heightAt(x, y);
+            addBoard(s, prev, next, x, y, g + U * 2.3, Math.cos(q.a + Math.PI / 2 * sg), Math.sin(q.a + Math.PI / 2 * sg), q.a, { w: 0.9 * U, h: 0.4 * U, t: 0.05 * U, pole: true, ground: g }, hd, col);
+            take(x, y, 2); nbd++;
+          }
+          return;
+        }
+        for (const sg of [1, -1]) {
+          const f = fits(s.d, sg);
+          if (!f) continue;
+          const { q, x, y } = f;
+          const rot = -(q.a + (sg > 0 ? 0 : Math.PI));
+          put('platform', x, y, rot, 0);
           if (typeof addCollider === 'function') addCollider({ x, y, hx: 37.5, hy: 3.75, a: q.a, m: 2 });
           take(x, y, 14);
           n++;
+          // 駅名標: ホームの「のりば」の板（モデル座標 (8,-0.9,2.9)m）を包む箱に、駅名・よみ・前後の駅
+          const al = -rot, ca = Math.cos(al), sa = Math.sin(al), lx = 8, ly = -0.9;
+          const wx = x + U * (lx * ca + ly * sa), wz = y + U * (lx * sa - ly * ca);
+          addBoard(s, prev, next, wx, wz, heightAt(x, y) + U * 2.9, sa, -ca, q.a, { w: 2.2 * U, h: 0.72 * U, t: 0.09 * U }, hd, col);
+          nbd++;
         }
-      }
+      });
     }
-    stats.platform_n = n;
+    stats.platform_n = n; stats.station_board = nbd;
+  }
+
+  /* ---------- 松山城の登城道の登り口（道標・石灯籠） ---------- */
+  function trailheads() {
+    let n = 0;
+    for (const t of G3.trails || []) {
+      const [x0, y0] = t.pts[0], [x1, y1] = t.pts[1], a = Math.atan2(y1 - y0, x1 - x0), nx = -Math.sin(a), ny = Math.cos(a);
+      // 道標（焦げ茶の板・本丸への矢印）は登り口の右手、石灯籠は左右に
+      const sx = x0 + nx * -4.2, sy = y0 + ny * -4.2, g = heightAt(sx, sy);
+      addBoard({ n: t.n.replace('登城道', ''), k: t.k, e: t.e }, null, '本丸', sx, sy, g + U * 2.3, Math.cos(a), Math.sin(a), a,
+        { w: 1.1 * U, h: 0.45 * U, t: 0.06 * U, pole: true, ground: g }, '松山城 登城道', '#5a3a22');
+      for (const sg of [1, -1]) {
+        const lx = x0 + nx * sg * 5.2 + Math.cos(a) * 2, ly = y0 + ny * sg * 5.2 + Math.sin(a) * 2;
+        if (free(lx, ly, 1) && !nearBld(lx, ly, 1)) { put('stone_lantern', lx, ly, -a, 0); take(lx, ly, 1.5); }
+      }
+      take(sx, sy, 2);
+      n++;
+    }
+    stats.trailheads = n;
   }
 
   /* ---------- 第6段: 野立て看板（郊外の幹線沿い・広告アトラスを貼る） ---------- */
@@ -16315,6 +16524,8 @@ G3.street = (function () {
     konbinis(scene);
     overpasses(scene);
     stations();
+    trailheads();
+    tramBoards(scene, boards, cells);   // 電停と駅の名標をまとめて
     powerLines(scene);
     billboards(scene);
     riverside();

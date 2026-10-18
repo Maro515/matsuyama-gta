@@ -519,13 +519,14 @@ G3.street = (function () {
       g.textBaseline = 'middle';
       for (const k of keys) {
         const b = cells.get(k), [x, y] = cell[k];
+        const BAND = b.col || ORANGE, HD = b.hd || '伊予鉄道 市内電車';
         g.fillStyle = '#f7f6f0'; g.fillRect(x, y, CW, CH);
-        g.fillStyle = ORANGE; g.fillRect(x, y, CW, 17);
-        g.fillStyle = '#fff'; g.textAlign = 'left'; fit(g, '伊予鉄道 市内電車', 200, 11, 700, SANS); g.fillText('伊予鉄道 市内電車', x + 8, y + 9);
+        g.fillStyle = BAND; g.fillRect(x, y, CW, 17);
+        g.fillStyle = '#fff'; g.textAlign = 'left'; fit(g, HD, 200, 11, 700, SANS); g.fillText(HD, x + 8, y + 9);
         g.fillStyle = '#5a5a58'; g.textAlign = 'center'; fit(g, b.s.k, 280, 13, 600, SANS); g.fillText(b.s.k, x + CW / 2, y + 29);
         g.fillStyle = '#1a1a1a'; fit(g, b.s.n, 296, 44, 900, SANS); g.fillText(b.s.n, x + CW / 2, y + 58);
         g.fillStyle = '#3a3a3a'; fit(g, b.s.e, 280, 12, 600, 'Helvetica,Arial,sans-serif'); g.fillText(b.s.e, x + CW / 2, y + 85);
-        g.fillStyle = ORANGE; g.fillRect(x, y + 98, CW, 4);
+        g.fillStyle = BAND; g.fillRect(x, y + 98, CW, 4);
         g.fillStyle = '#2a2a2a'; g.font = `700 15px ${SANS}`;
         if (b.left) { g.textAlign = 'left'; fit(g, '◀ ' + b.left, 150, 15, 700, SANS); g.fillText('◀ ' + b.left, x + 8, y + 115); }
         if (b.right) { g.textAlign = 'right'; fit(g, b.right + ' ▶', 150, 15, 700, SANS); g.fillText(b.right + ' ▶', x + CW - 8, y + 115); }
@@ -562,9 +563,18 @@ G3.street = (function () {
     if (poles.p.length) scene.add(poles.mesh(new THREE.MeshStandardMaterial({ color: 0x2e6b4a, roughness: 0.45, metalness: 0.3 }), true));
     stats.tram_board = boards.length;
   }
+  // 電停・駅の名標（全部まとめて1枚のアトラス）。hd/col: 上の帯の文字と色（既定は伊予鉄 市内電車のオレンジ）
+  const boards = [], cells = new Map();
+  function addBoard(s, prev, next, x, z, h, nx, nz, a, extra, hd, col) {
+    const rx = nz, rz = -nx, fwd = rx * Math.cos(a) + rz * Math.sin(a);
+    const R = fwd >= 0 ? [prev, next] : [next, prev];
+    const tag = (hd || '') + '|' + s.n;
+    const key = tag + '|' + R[0] + '|' + R[1], keyB = tag + '|' + R[1] + '|' + R[0];
+    cells.set(key, { s, left: R[0], right: R[1], hd, col }); cells.set(keyB, { s, left: R[1], right: R[0], hd, col });
+    boards.push(Object.assign({ s, key, keyB, x, y: h, z, nx, nz }, extra));
+  }
   function tramStops(scene) {
     if (typeof TRAM_STOPS === 'undefined') return;
-    const boards = [];
     // 前後の電停（各路線の並び順。環状線は一周する）
     const nb = new Map();
     for (const [tr, loop] of [[TRAINS[0], true], [TRAINS[2], false]]) {
@@ -576,15 +586,7 @@ G3.street = (function () {
       });
     }
     // 名標の文字: 表から見て右手の側に「次」の電停（線路の向き a に沿って +方向）
-    const cells = new Map();
-    const board = (s, x, z, h, nx, nz, a, extra) => {
-      const n = nb.get(s) || {};
-      const rx = nz, rz = -nx, fwd = rx * Math.cos(a) + rz * Math.sin(a);
-      const R = fwd >= 0 ? [n.prev, n.next] : [n.next, n.prev];
-      const key = s.n + '|' + R[0] + '|' + R[1], keyB = s.n + '|' + R[1] + '|' + R[0];
-      cells.set(key, { s, left: R[0], right: R[1] }); cells.set(keyB, { s, left: R[1], right: R[0] });
-      boards.push(Object.assign({ s, key, keyB, x, y: h, z, nx, nz }, extra));
-    };
+    const board = (s, x, z, h, nx, nz, a, extra) => { const n = nb.get(s) || {}; addBoard(s, n.prev, n.next, x, z, h, nx, nz, a, extra); };
     for (const s of TRAM_STOPS) {
       for (const P of s.plats) {
         put('tram_stop', P.x, P.y, P.rot, 0.04);
@@ -609,7 +611,6 @@ G3.street = (function () {
         if (typeof addCollider === 'function') for (const k of [-0.85, 0.85]) addCollider({ x: x + Math.sin(q.a) * bw / 2 * k, y: y - Math.cos(q.a) * bw / 2 * k, r: 0.3 });
       }
     }
-    tramBoards(scene, boards, cells);
   }
 
   /* ---------- 第2段: 歩道の街具 ---------- */
@@ -1771,30 +1772,84 @@ G3.street = (function () {
 
   /* ---------- 第6段: 郊外駅のホーム ---------- */
   function stations() {
-    let n = 0;
-    for (const tr of [TRAINS[3], TRAINS[4]]) {
-      if (!tr || !tr.stops) continue;
-      for (const sd of tr.stops) {
-        const p = plAt(tr.pl, sd);
-        if (railLift(tr.pl, sd) > 3 || nearLM(p.x, p.y, 40) || zoneOf(p.x, p.y) === 'center') continue;
-        for (const sg of [1, -1]) {
-          const q = plAt(tr.pl, sd + sg * 8);
+    let n = 0, nbd = 0;
+    if (typeof RAIL_LINES === 'undefined') return;
+    for (const L of RAIL_LINES) {
+      const pl = RAILS[L.ri].pl, list = L.list || [];
+      const hd = L.co === 'jr' ? 'JR四国 ' + L.ln : '伊予鉄道 ' + L.ln, col = L.co === 'jr' ? '#1aa0d8' : '#ef7d16';
+      list.forEach((s, i) => {
+        if (s.elev || railLift(pl, s.d) > 3) return;   // JR松山駅は高架（buildViaduct）
+        const prev = i > 0 ? list[i - 1].n : L.ends[0], next = i < list.length - 1 ? list[i + 1].n : L.ends[1];
+        const fits = (d, sg) => {
+          const q = plAt(pl, d + sg * 8);
           const nx = -Math.sin(q.a), ny = Math.cos(q.a);
           const x = q.x + nx * sg * 9.4, y = q.y + ny * sg * 9.4;
-          let ok = true;
-          for (const k of [-36, 0, 36]) {
+          for (let k = -36; k <= 36; k += 12) {   // ホーム（75単位）の全長を見る
             const X = x + Math.cos(q.a) * k, Y = y + Math.sin(q.a) * k, ri = roadInfo(X, Y);
-            if (nearBld(X, Y, 1) || inWaterRaw(X, Y) || (ri && ri.d < ri.road.w / 2 + G3.SW + 1)) { ok = false; break; }
+            if (nearBld(X, Y, 1) || inWaterRaw(X, Y) || (ri && ri.d < ri.road.w / 2 + G3.SW + 1) || onAlley(X, Y, 1) || nearLM(X, Y, 4) || !free(X, Y, 3)) return null;
           }
-          if (!ok) continue;
-          put('platform', x, y, -(q.a + (sg > 0 ? 0 : Math.PI)), 0);
+          return { q, x, y };
+        };
+        // その場所に置けなければ線路に沿って少しずらす（電車の停車位置もいっしょに動かす）
+        let off = 0;
+        for (const o of [0, 18, -18, 36, -36, 54, -54, 72, -72]) {
+          const dd = s.d + o;
+          if (dd < 50 || dd > pl.len - 50) continue;
+          if (fits(dd, 1) || fits(dd, -1)) { off = o; break; }
+        }
+        if (off) {
+          for (const tr of TRAINS) if (tr.pl === pl && tr.stops) { const k2 = tr.stops.indexOf(s.d); if (k2 >= 0) tr.stops[k2] = s.d + off; }
+          s.d += off;
+          const p0 = plAt(pl, s.d); s.x = p0.x; s.y = p0.y;
+        }
+        if (!fits(s.d, 1) && !fits(s.d, -1)) {   // 道路が線路のすぐ脇を並走していてホームが置けない駅: 線路脇にポールの駅名標だけ
+          for (const sg of [1, -1]) {
+            const q = plAt(pl, s.d + sg * 14), nx = -Math.sin(q.a), ny = Math.cos(q.a);
+            const x = q.x + nx * sg * 6.4, y = q.y + ny * sg * 6.4;
+            if (inWaterRaw(x, y) || nearBld(x, y, 0.5) || !free(x, y, 1)) continue;
+            const g = heightAt(x, y);
+            addBoard(s, prev, next, x, y, g + U * 2.3, Math.cos(q.a + Math.PI / 2 * sg), Math.sin(q.a + Math.PI / 2 * sg), q.a, { w: 0.9 * U, h: 0.4 * U, t: 0.05 * U, pole: true, ground: g }, hd, col);
+            take(x, y, 2); nbd++;
+          }
+          return;
+        }
+        for (const sg of [1, -1]) {
+          const f = fits(s.d, sg);
+          if (!f) continue;
+          const { q, x, y } = f;
+          const rot = -(q.a + (sg > 0 ? 0 : Math.PI));
+          put('platform', x, y, rot, 0);
           if (typeof addCollider === 'function') addCollider({ x, y, hx: 37.5, hy: 3.75, a: q.a, m: 2 });
           take(x, y, 14);
           n++;
+          // 駅名標: ホームの「のりば」の板（モデル座標 (8,-0.9,2.9)m）を包む箱に、駅名・よみ・前後の駅
+          const al = -rot, ca = Math.cos(al), sa = Math.sin(al), lx = 8, ly = -0.9;
+          const wx = x + U * (lx * ca + ly * sa), wz = y + U * (lx * sa - ly * ca);
+          addBoard(s, prev, next, wx, wz, heightAt(x, y) + U * 2.9, sa, -ca, q.a, { w: 2.2 * U, h: 0.72 * U, t: 0.09 * U }, hd, col);
+          nbd++;
         }
-      }
+      });
     }
-    stats.platform_n = n;
+    stats.platform_n = n; stats.station_board = nbd;
+  }
+
+  /* ---------- 松山城の登城道の登り口（道標・石灯籠） ---------- */
+  function trailheads() {
+    let n = 0;
+    for (const t of G3.trails || []) {
+      const [x0, y0] = t.pts[0], [x1, y1] = t.pts[1], a = Math.atan2(y1 - y0, x1 - x0), nx = -Math.sin(a), ny = Math.cos(a);
+      // 道標（焦げ茶の板・本丸への矢印）は登り口の右手、石灯籠は左右に
+      const sx = x0 + nx * -4.2, sy = y0 + ny * -4.2, g = heightAt(sx, sy);
+      addBoard({ n: t.n.replace('登城道', ''), k: t.k, e: t.e }, null, '本丸', sx, sy, g + U * 2.3, Math.cos(a), Math.sin(a), a,
+        { w: 1.1 * U, h: 0.45 * U, t: 0.06 * U, pole: true, ground: g }, '松山城 登城道', '#5a3a22');
+      for (const sg of [1, -1]) {
+        const lx = x0 + nx * sg * 5.2 + Math.cos(a) * 2, ly = y0 + ny * sg * 5.2 + Math.sin(a) * 2;
+        if (free(lx, ly, 1) && !nearBld(lx, ly, 1)) { put('stone_lantern', lx, ly, -a, 0); take(lx, ly, 1.5); }
+      }
+      take(sx, sy, 2);
+      n++;
+    }
+    stats.trailheads = n;
   }
 
   /* ---------- 第6段: 野立て看板（郊外の幹線沿い・広告アトラスを貼る） ---------- */
@@ -3067,6 +3122,8 @@ G3.street = (function () {
     konbinis(scene);
     overpasses(scene);
     stations();
+    trailheads();
+    tramBoards(scene, boards, cells);   // 電停と駅の名標をまとめて
     powerLines(scene);
     billboards(scene);
     riverside();

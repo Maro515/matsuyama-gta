@@ -1062,9 +1062,44 @@ const TRAM_STOPS=[
     tr.stopL=L;tr.stops=L.map(o=>o.d);
   }
   TRAINS[1].stopL=TRAINS[0].stopL;TRAINS[1].stops=TRAINS[0].stops;
-  const st=(tr,pts)=>{tr.stops=pts.map(pt=>dOnPl(tr.pl,pt[0],pt[1])).sort((a,b)=>a-b);};
-  st(TRAINS[3],[[4700,3150],[3900,2830],[1800,1950],[1100,1150]]);
-  TRAINS[4].stops=[JR_EL.c];   // JR松山駅（高架ホームの中央）
+}
+/* ---------- 伊予鉄の郊外電車・JR の駅（実名・実際の並び） ----------
+   位置は実際のキロ程を、ゲーム内の線路の目印（町・浜・川・終点）に合わせて区間ごとに伸び縮みさせて決める。
+   [駅名, よみ, ローマ字, キロ程km（松山市駅／JR松山駅から。北は負）] */
+const RAIL_LINES=[
+ {ri:0,co:'iyo',ln:'高浜線',ends:['松山市','高浜'],st:[['大手町','おおてまち','Otemachi',0.9],['古町','こまち','Komachi',1.8],['衣山','きぬやま','Kinuyama',3.4],
+   ['西衣山','にしきぬやま','Nishi-Kinuyama',4.3],['山西','やまにし','Yamanishi',5.4],['三津','みつ','Mitsu',6.4],['港山','みなとやま','Minatoyama',7.4],['梅津寺','ばいしんじ','Baishinji',8.2]],
+   anc:()=>[[0,0],[6.4,dOnPl(RAILS[0].pl,1300,1750)],[8.2,dOnPl(RAILS[0].pl,1150,980)],[9.4,RAILS[0].pl.len]]},
+ {ri:1,co:'iyo',ln:'横河原線',ends:['松山市','いよ立花'],st:[['石手川公園','いしてがわこうえん','Ishitegawa-koen',0.8]],
+   anc:()=>[[0,0],[0.8,1830]]},   // 石手川の橋（ゲームでは d≈1884）のたもと
+ {ri:2,co:'iyo',ln:'郡中線',ends:['松山市','松前'],st:[['土橋','どばし','Dobashi',0.7],['土居田','どいだ','Doida',2.2],['余戸','ようご','Yogo',3.5],['鎌田','かまた','Kamata',4.2],
+   ['岡田','おかだ','Okada',5.6],['古泉','こいずみ','Koizumi',6.6]],
+   anc:()=>[[0,0],[4.9,2280],[7.1,RAILS[2].pl.len]]},   // 重信川の橋 ≈ 鎌田と岡田の間
+ {ri:3,co:'jr',ln:'予讃線',ends:['光洋台','鳥ノ木'],st:[['堀江','ほりえ','Horie',-9.5],['伊予和気','いよわけ','Iyo-Wake',-7.4],['三津浜','みつはま','Mitsuhama',-3.7],['松山','まつやま','Matsuyama',0,{elev:1}],
+   ['市坪','いちつぼ','Ichitsubo',3.5],['北伊予','きたいよ','Kita-Iyo',5.9],['南伊予','みなみいよ','Minami-Iyo',7.5],['伊予横田','いよよこた','Iyo-Yokota',8.6]],
+   anc:()=>[[-9.5,70],[0,JR_EL.c],[2.5,4419],[4.6,4856],[12,4856+7.4*290]]},   // 石手川・重信川の橋に合わせる
+];
+const RAIL_STATIONS=[];
+{
+  const riverNear=(pl,d,m)=>{const p=plAt(pl,d);for(const rv of RIVERS){const P=rv.pl.pts;for(let i=1;i<P.length;i++)if(seg(p.x,p.y,P[i-1][0],P[i-1][1],P[i][0],P[i][1]).d<rv.w/2+m)return true;}return false;};
+  for(const L of RAIL_LINES){
+    const pl=RAILS[L.ri].pl,A=L.anc();
+    const dOf=km=>{for(let i=1;i<A.length;i++){const [k0,d0]=A[i-1],[k1,d1]=A[i];if(km<=k1||i===A.length-1)return d0+(km-k0)/(k1-k0)*(d1-d0);}return 0;};
+    L.list=[];
+    for(const [n,k,e,km,opt] of L.st){
+      let d=dOf(km);
+      if(d<40||d>pl.len-40)continue;
+      // 川の上（橋）にホームが掛からないよう少しずらす
+      for(let s=0;s<8&&riverNear(pl,d,40);s++)d+=(s%2?-1:1)*(s+1)*14;
+      const p=plAt(pl,d),o={n,k,e,km,ri:L.ri,line:L,d,x:p.x,y:p.y,...(opt||{})};
+      L.list.push(o);RAIL_STATIONS.push(o);
+    }
+  }
+  // 停車駅（終点は折り返しで停まる。JR松山は高架ホームの中央）
+  TRAINS[3].stops=RAIL_LINES[0].list.map(s=>s.d);
+  TRAINS[4].stops=RAIL_LINES[3].list.map(s=>s.elev?JR_EL.c:s.d).sort((a,b)=>a-b);
+  TRAINS.push({pl:RAILS[1].pl,d:300,dir:1,sp:44,loop:false,type:'iyotetsu',cars:2,dwell:0,stops:RAIL_LINES[1].list.map(s=>s.d)});
+  TRAINS.push({pl:RAILS[2].pl,d:900,dir:-1,sp:46,loop:false,type:'iyotetsu',cars:2,dwell:0,stops:RAIL_LINES[2].list.map(s=>s.d)});
 }
 const FERRY={t:0,dir:1,ax:1120,ay:900,bx:760,by:1080};
 const PLANE={st:0,t:20,x:0,y:0,a:0,alt:0}; // st:0待機 1着陸 2停止 3離陸
@@ -3965,8 +4000,11 @@ function renderBigmap(){
   strokePl(c,RAILS[0].pl,26,'#e8862c');
   strokePl(c,RAILS[3].pl,26,'#607890');
   c.globalAlpha=1;c.restore();
-  // 電停
+  // 電停・駅
   for(const s of TRAM_STOPS){const p=w2m(s.x,s.y);c.fillStyle='#fff';c.strokeStyle='#e8862c';c.lineWidth=1.5;c.beginPath();c.arc(p[0],p[1],2.6,0,TAU);c.fill();c.stroke();}
+  c.font='600 9px sans-serif';c.textAlign='left';
+  for(const s of RAIL_STATIONS){const p=w2m(s.x,s.y);c.fillStyle='#fff';c.strokeStyle=s.line.co==='jr'?'#1a8ad0':'#e8862c';c.lineWidth=2;c.beginPath();c.arc(p[0],p[1],3.2,0,TAU);c.fill();c.stroke();
+    c.strokeStyle='rgba(10,14,20,.85)';c.lineWidth=2.5;c.strokeText(s.n,p[0]+5,p[1]+3);c.fillStyle='#e8eef4';c.fillText(s.n,p[0]+5,p[1]+3);}
   // 道路等ラベル
   for(const ml of MAPLABELS){
     const p=w2m(ml[0]==='国道196号'?930:ml[1],ml[2]);

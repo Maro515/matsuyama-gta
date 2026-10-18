@@ -1093,6 +1093,8 @@ G3.world = (function () {
   G3.M4 = M4;
 
   /* ---------- 樹木 ---------- */
+  const treeChunks = [];
+  let treeT = 0;
   function buildTrees(scene) {
     const groups = { broad_a: [], broad_b: [], pine: [], street: [], mikan: [], far: [] };
     const r = mulberry32(99);
@@ -1124,11 +1126,24 @@ G3.world = (function () {
     const _p = new THREE.Vector3();
     for (const k in groups) groups[k] = groups[k].filter(M => { _p.setFromMatrixPosition(M); return !inWaterRaw(_p.x, _p.z); });
     for (const k in groups) for (const M of groups[k]) { _p.setFromMatrixPosition(M); addCollider({ x: _p.x, y: _p.z, r: k === 'mikan' ? 0.45 : 0.7 }); }
+    // 600単位のチャンクに分けて視錐台カリング＋距離で間引く
+    const TFAR = { mikan: 1300, street: 1600, broad_a: 2200, broad_b: 2200, pine: 2200, far: 1e9 };
     for (const k in groups) {
       if (!groups[k].length) continue;
       const node = glbNode('trees', 'tree_' + k) || fallbackTree(k);
-      const g = instanceNode(node, groups[k], { shadow: k !== 'far' });
-      scene.add(g);
+      const ch = new Map();
+      for (const M of groups[k]) {
+        const key = Math.floor(M.elements[12] / 600) + ',' + Math.floor(M.elements[14] / 600);
+        (ch.get(key) || ch.set(key, []).get(key)).push(M);
+      }
+      for (const mats of ch.values()) {
+        const g = instanceNode(node, mats, { shadow: k !== 'far' });
+        g.traverse(o => { if (o.isInstancedMesh) { o.computeBoundingSphere(); o.frustumCulled = true; } });
+        let cx = 0, cz = 0;
+        for (const M of mats) { cx += M.elements[12]; cz += M.elements[14]; }
+        treeChunks.push({ g, x: cx / mats.length, z: cz / mats.length, far: TFAR[k] + 450 });
+        scene.add(g);
+      }
     }
     // 樹冠の下の柔らかい接地影（AOの代わり）
     const blobs = [];
@@ -1438,6 +1453,11 @@ G3.world = (function () {
   /* ---------- 毎フレーム ---------- */
   function update(dt) {
     if (G3.street) G3.street.update(dt);
+    if ((treeT -= dt) <= 0) {
+      treeT = 0.3;
+      const c = G3.camera.position;
+      for (const k of treeChunks) { const dx = k.x - c.x, dz = k.z - c.z; k.g.visible = dx * dx + dz * dz < k.far * k.far; }
+    }
     for (const t of anim.water) { t.offset.x += dt * 0.004; t.offset.y += dt * 0.0025; }
     for (const w of anim.wheels) {
       w.wheel.rotation.x += dt * 0.06;

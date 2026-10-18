@@ -297,11 +297,11 @@ const R3 = { ok: false, state: 'idle' };
     let drag = false, lx = 0;
     const ov = document.getElementById('cv');
     ov.addEventListener('mousedown', e => { drag = true; lx = e.clientX; });
-    addEventListener('mouseup', () => { drag = false; cam.orbitHold = 1.2; });
+    addEventListener('mouseup', () => { drag = false; cam.orbitHold = 2.2; });
     addEventListener('mousemove', e => {
       if (!drag || !R3.ok) return;
-      cam.orbit += (e.clientX - lx) * 0.006;
-      lx = e.clientX; cam.orbitHold = 1.2;
+      cam.orbit += (e.clientX - lx) * 0.0032;
+      lx = e.clientX; cam.orbitHold = 2.2;
     });
   }
   function blockedCam(x, y) {
@@ -317,7 +317,7 @@ const R3 = { ok: false, state: 'idle' };
     const v = inCar ? Math.abs(pc.v) : 0;
     const gx = inCar ? pc.x : S.px, gy = inCar ? pc.y : S.py;
     const ph = heightAt(gx, gy);
-    if (cam.orbitHold > 0) cam.orbitHold -= dt; else cam.orbit *= Math.exp(-dt * 2.5);
+    if (cam.orbitHold > 0) cam.orbitHold -= dt; else cam.orbit *= Math.exp(-dt * 0.9);
     const yaw = S.tpsYaw + cam.orbit;
     const fx = Math.cos(yaw), fz = Math.sin(yaw);
     let dist, hgt, lead, lookH;
@@ -339,7 +339,7 @@ const R3 = { ok: false, state: 'idle' };
     const tx = gx - fx * dist, tz = gy - fz * dist;
     const ty = Math.max(ph + hgt, heightAt(tx, tz) + 2.5);
     const lx = gx + fx * lead, lz = gy + fz * lead, ly = ph + lookH;
-    const k = cam.init ? 1 - Math.exp(-dt * (S.view === 'top' ? 4 : 7)) : 1;
+    const k = cam.init ? 1 - Math.exp(-dt * (S.view === 'top' ? 3.5 : 5)) : 1;
     cam.x += (tx - cam.x) * k; cam.y += (ty - cam.y) * k; cam.z += (tz - cam.z) * k;
     cam.lx += (lx - cam.lx) * k; cam.ly += (ly - cam.ly) * k; cam.lz += (lz - cam.lz) * k;
     cam.init = true;

@@ -40,6 +40,11 @@ G3.street = (function () {
     stone_lantern: [[0, 0, 0.42, 3]], karakuri_clock: [[0, 0, 1.7, 3]], block_wall: [[1.0, 0, 1.0, 0.1, 3]], propane: [[0, 0, 0.2, 0.42, 3]],
     ac_unit: [[0, 0, 0.17, 0.42, 3]], gomi_station: [[0, 0, 0.5, 0.9, 3]], mooring_bollard: [[0, 0, 0.3, 3]], potted_plant: [[0, 0, 0.22, 3]],
     container_a: [[0, 0, 3.03, 1.22, 3]], container_b: [[0, 0, 3.03, 1.22, 3]], container_c: [[0, 0, 3.03, 1.22, 3]], container_d: [[0, 0, 3.03, 1.22, 3]],
+    crossing_post: [[0, 0, 0.12, 3], [0, -0.5, 0.2, 0.2, 3]], catenary_pole: [[0, 0, 0.18, 3]], slide: [[-0.4, 0, 1.4, 0.45, 3]],
+    swing: [[0, -1.3, 0.45, 0.06, 3], [0, 1.3, 0.45, 0.06, 3]], jungle_gym: [[0, 0, 0.92, 0.92, 3]], park_toilet: [[0, 0, 1.55, 2.05, 3]],
+    park_lamp: [[0, 0, 0.08, 3]], fountain: [[0, 0, 0.3, 3]], gs_pump: [[0, 0, 1.8, 0.5, 3]], gs_sign: [[0, 0, 0.25, 0.25, 3]],
+    gs_office: [[0, 0, 2.5, 3.5, 3]], traffic_cone: [[0, 0, 0.18, 3]], barricade: [[0, 0, 0.9, 0.2, 3]], koji_sign: [[0, 0, 0.2, 0.36, 3]],
+    bus_shelter: [[-0.7, 0, 0.05, 2.0, 3], [-0.15, -1.95, 0.6, 0.05, 3], [-0.15, 1.95, 0.6, 0.05, 3]],
     nobori_a: [[0, 0, 0.16, 3]], nobori_b: [[0, 0, 0.16, 3]], nobori_c: [[0, 0, 0.16, 3]], nobori_d: [[0, 0, 0.16, 3]], nobori_e: [[0, 0, 0.16, 3]],
   };
   function collide(name, x, y, rot, lift) {
@@ -53,6 +58,7 @@ G3.street = (function () {
       else addCollider({ x: wx, y: wy, hx: c[2] * U, hy: Math.max(0.3, c[3] * U), a: al, m: c[4] });
     }
   }
+  const putM = (name, M) => { (lists[name] || (lists[name] = [])).push(M); };
   const put = (name, x, y, rot, lift = 0, s = 1) => {
     (lists[name] || (lists[name] = [])).push(G3.M4(x, heightAt(x, y) + lift, y, rot, U * s));
     collide(name, x, y, rot, lift);
@@ -631,6 +637,8 @@ G3.street = (function () {
     for (const o of _ov) if (o !== b && x > o.x0 - m && x < o.x1 + m && y > o.y0 - m && y < o.y1 + m) return true;
     return false;
   };
+  // ランドマーク（モデルの敷地）の近くか
+  const nearLM = (x, y, m) => LMS.some(l => (l.solid ? (x > l.solid[0] - m && x < l.solid[2] + m && y > l.solid[1] - m && y < l.solid[3] + m) : hyp(l.x - x, l.y - y) < m));
   const clearOfRoad = (x, y, m) => { const ri = roadInfo(x, y); return !ri || ri.d > ri.road.w / 2 + G3.SW + m; };
 
   function buildingDetails() {
@@ -815,6 +823,7 @@ G3.street = (function () {
   }
 
   /* ---------- 第3段: 港（コンテナ・係船柱） ---------- */
+  const portCoast = [];
   function ports() {
     const rr = mulberry32(5307);
     const PORTS = [[1000, 1790, 230], [1330, 660, 230], [4482, 300, 160]];
@@ -833,6 +842,7 @@ G3.street = (function () {
           coast.push([x, y, nx, ny]);
         }
       }
+      portCoast.push(...coast);
       for (const [x, y, nx, ny] of coast) {
         const bx = x + nx * 2.2, by = y + ny * 2.2;
         if (nearBld(bx, by, 1) || !clearOfRoad(bx, by, -G3.SW) || !free(bx, by, 2)) continue;
@@ -988,6 +998,299 @@ G3.street = (function () {
     stats.road_marks = n;
   }
 
+  /* ---------- 第5段: 踏切（列車接近で遮断・警報灯点滅） ---------- */
+  const xings = [];
+  function crossings(scene) {
+    const post = G3.glbNode('street', 'crossing_post'), arm = G3.glbNode('street', 'crossing_arm');
+    if (!post || !arm) return;
+    for (const rl of RAILS) {
+      for (const r of ROADS) {
+        if (r.kind === 'arcade') continue;
+        const A = rl.pl.pts, B = r.pl.pts;
+        for (let i = 1; i < A.length; i++) for (let j = 1; j < B.length; j++) {
+          const p = A[i - 1], p2 = A[i], q = B[j - 1], q2 = B[j];
+          const rx = p2[0] - p[0], ry = p2[1] - p[1], sx = q2[0] - q[0], sy = q2[1] - q[1];
+          const den = rx * sy - ry * sx;
+          if (Math.abs(den) < 1e-6) continue;
+          const t = ((q[0] - p[0]) * sy - (q[1] - p[1]) * sx) / den, u = ((q[0] - p[0]) * ry - (q[1] - p[1]) * rx) / den;
+          if (t < 0 || t > 1 || u < 0 || u > 1) continue;
+          const dRail = rl.pl.cum[i - 1] + t * Math.hypot(rx, ry), dRoad = r.pl.cum[j - 1] + u * Math.hypot(sx, sy);
+          if (dRoad < 12 || dRoad > r.pl.len - 12) continue;
+          if (r.junc.some(k => Math.abs(k.d - dRoad) < k.road.w / 2 + 10)) continue;
+          const lamps = [], arms = [];
+          for (const dir of [1, -1]) {
+            const c = at(r, dRoad - dir * 11, -dir * (r.w / 2 + 1.3));
+            const o = post.clone(true);
+            o.position.set(c.x, heightAt(c.x, c.y) + G3.CURB, c.y);
+            o.rotation.y = -(c.a + (dir > 0 ? Math.PI : 0));
+            o.scale.setScalar(U);
+            const mats = {};
+            o.traverse(m => {
+              if (!m.isMesh) return;
+              m.castShadow = true;
+              if (/^Xing[LR]/.test(m.material.name)) { m.material = m.material.clone(); m.material.emissive.set(0xff2a1a); mats[m.material.name[4]] = m.material; }
+              else m.material = G3.lmMat(m.material);
+            });
+            const a = arm.clone(true);
+            a.traverse(m => { if (m.isMesh) { m.material = G3.lmMat(m.material); m.castShadow = true; } });
+            a.position.set(0, 0.9, 0.5);
+            a.rotation.x = 1.45;
+            o.add(a);
+            scene.add(o);
+            lamps.push(mats); arms.push(a);
+            if (typeof addCollider === 'function') addCollider({ x: c.x, y: c.y, r: 0.6 });
+            take(c.x, c.y, 3);
+          }
+          xings.push({ pl: rl.pl, d: dRail, lamps, arms, k: 0 });
+        }
+      }
+    }
+    stats.crossing = xings.length;
+  }
+  function updCrossings(dt) {
+    for (const x of xings) {
+      let near = false;
+      for (const tr of TRAINS) if (tr.pl === x.pl && Math.abs(tr.d - x.d) < 150) { near = true; break; }
+      x.k = clamp(x.k + (near ? dt * 0.8 : -dt * 0.6), 0, 1);
+      const ang = 1.45 * (1 - x.k);
+      for (const a of x.arms) a.rotation.x = ang;
+      const blink = near || x.k > 0.02 ? (Math.floor(tSec * 2.4) % 2) : -1;
+      for (const L of x.lamps) {
+        if (L.L) L.L.emissiveIntensity = blink === 0 ? 5 : 0.05;
+        if (L.R) L.R.emissiveIntensity = blink === 1 ? 5 : 0.05;
+      }
+    }
+  }
+
+  /* ---------- 第5段: 架線柱と架線 ---------- */
+  function catenary(scene) {
+    const wire = [];
+    for (const rl of RAILS) {
+      let prev = null;
+      for (let d = 20; d < rl.pl.len - 10; d += 45) {
+        const p = plAt(rl.pl, d);
+        const nx = -Math.sin(p.a), ny = Math.cos(p.a);
+        const x = p.x + nx * 6.8, y = p.y + ny * 6.8;
+        const top = heightAt(p.x, p.y) + 16.6;
+        if (prev) wire.push(prev[0], prev[1], prev[2], p.x, top, p.y);
+        prev = [p.x, top, p.y];
+        const ri = roadInfo(x, y);
+        if ((ri && ri.d < ri.road.w / 2 + G3.SW + 2) || inWaterRaw(x, y) || nearBld(x, y, 2) || xings.some(k => k.pl === rl.pl && Math.abs(k.d - d) < 18)) continue;
+        put('catenary_pole', x, y, -(p.a - Math.PI / 2), 0);
+      }
+    }
+    const wg = new THREE.BufferGeometry();
+    wg.setAttribute('position', new THREE.Float32BufferAttribute(wire, 3));
+    scene.add(new THREE.LineSegments(wg, new THREE.LineBasicMaterial({ color: 0x2a2c30, transparent: true, opacity: 0.8 })));
+  }
+
+  /* ---------- 第5段: 公園（遊具・トイレ・公園灯）と住宅地の児童公園 ---------- */
+  function playground(cx, cy, ang, big) {
+    const ca = Math.cos(ang), sa = Math.sin(ang);
+    const L = (u, v) => [cx + ca * u - sa * v, cy + sa * u + ca * v];
+    const items = [['slide', -10, -8, 0], ['swing', 10, -8, Math.PI / 2], ['jungle_gym', -10, 8, 0], ['sandbox', 10, 9, 0]];
+    if (big) items.push(['park_toilet', 0, 20, -Math.PI / 2], ['fountain', 0, -16, 0]);
+    for (const [nm, u, v, r0] of items) {
+      const [x, y] = L(u, v);
+      if (inWaterRaw(x, y) || nearBld(x, y, 2) || !free(x, y, 4)) continue;
+      put(nm, x, y, -(ang + r0), 0);
+      take(x, y, nm === 'park_toilet' ? 7 : 5);
+    }
+    for (const [u, v] of [[-18, -18], [18, 18], [18, -18], [-18, 18]]) {
+      const [x, y] = L(u, v);
+      if (!inWaterRaw(x, y) && !nearBld(x, y, 1) && free(x, y, 2)) { put('park_lamp', x, y, 0, 0); take(x, y, 1); }
+    }
+    for (const [u, v, r0] of [[0, -24, Math.PI / 2], [-24, 0, 0]]) {
+      const [x, y] = L(u, v);
+      if (!inWaterRaw(x, y) && !nearBld(x, y, 1) && free(x, y, 3)) { put('bench', x, y, -(ang + r0), 0); take(x, y, 2); }
+    }
+  }
+  function parks(scene) {
+    const rr = mulberry32(5508);
+    for (const pk of PARKS) {
+      for (let t = 0, done = 0; t < 300 && done < 1; t++) {
+        let x, y;
+        if (pk.k === 'rect') { x = lerp(pk.x0 + 40, pk.x1 - 40, rr()); y = lerp(pk.y0 + 40, pk.y1 - 40, rr()); }
+        else { const a = rr() * TAU, d = pk.r * (0.2 + rr() * 0.3); x = pk.x + Math.cos(a) * d; y = pk.y + Math.sin(a) * d; }
+        let ok = true;
+        for (const [dx, dy] of [[0, 0], [25, 25], [-25, 25], [25, -25], [-25, -25]]) {
+          const X = x + dx, Y = y + dy;
+          const ri = roadInfo(X, Y);
+          if (inWaterRaw(X, Y) || hillAt(X, Y) || nearBld(X, Y, 2) || propHit(X, Y, 3, false) || (ri && ri.d < ri.road.w / 2 + G3.SW + 3)) { ok = false; break; }
+        }
+        if (!ok) continue;
+        playground(x, y, rr() * TAU, true);
+        done++;
+      }
+      // 公園灯を散らす
+      for (let t = 0, n = 0; t < 200 && n < 14; t++) {
+        let x, y;
+        if (pk.k === 'rect') { x = lerp(pk.x0 + 10, pk.x1 - 10, rr()); y = lerp(pk.y0 + 10, pk.y1 - 10, rr()); }
+        else { const a = rr() * TAU, d = pk.r * Math.sqrt(rr()); x = pk.x + Math.cos(a) * d; y = pk.y + Math.sin(a) * d; }
+        const ri = roadInfo(x, y);
+        if (inWaterRaw(x, y) || hillAt(x, y) || nearBld(x, y, 2) || !free(x, y, 8) || propHit(x, y, 2, false) || (ri && ri.d < ri.road.w / 2 + G3.SW + 2)) continue;
+        put('park_lamp', x, y, 0, 0); take(x, y, 2); n++;
+      }
+    }
+    // 住宅地の児童公園（空き地に）
+    const gb = new G3.GB(false);
+    let n = 0;
+    for (let t = 0; t < 2500 && n < 14; t++) {
+      const x = 900 + rr() * 7400, y = 600 + rr() * 4600;
+      if (zoneOf(x, y) !== 'suburb') continue;
+      const ri = roadInfo(x, y);
+      if (!ri || ri.road.kind === 'arcade' || ri.d < ri.road.w / 2 + G3.SW + 30 || ri.d > 140) continue;
+      let ok = true;
+      for (const [dx, dy] of [[0, 0], [28, 28], [-28, 28], [28, -28], [-28, -28], [0, 30], [30, 0], [0, -30], [-30, 0]]) {
+        const X = x + dx, Y = y + dy, rq = roadInfo(X, Y);
+        if (inWaterRaw(X, Y) || hillAt(X, Y) || inPark(X, Y, 4) || nearBld(X, Y, 3) || !free(X, Y, 6) || propHit(X, Y, 3, false) || nearLM(X, Y, 90) ||
+          (rq && rq.d < rq.road.w / 2 + G3.SW + 4) || railDist(X, Y) < 20) { ok = false; break; }
+      }
+      if (!ok) continue;
+      const ang = Math.atan2(ri.y - y, ri.x - x);
+      const ca = Math.cos(ang), sa = Math.sin(ang), Rr = 30;
+      const P = [[-Rr, -Rr], [Rr, -Rr], [Rr, Rr], [-Rr, Rr]].map(([u, v]) => [x + ca * u - sa * v, heightAt(x, y) + 0.06, y + sa * u + ca * v]);
+      const nyv = (P[1][2] - P[0][2]) * (P[3][0] - P[0][0]) - (P[1][0] - P[0][0]) * (P[3][2] - P[0][2]);
+      gb.quad(nyv > 0 ? P : [P[0], P[3], P[2], P[1]], [[0, 0], [1, 0], [1, 1], [0, 1]]);
+      playground(x, y, ang, false);
+      take(x, y, 30);
+      n++;
+    }
+    const m = gb.mesh(new THREE.MeshStandardMaterial({ color: 0xb59d74, roughness: 0.95, polygonOffset: true, polygonOffsetFactor: -1, polygonOffsetUnits: -6 }), false);
+    m.castShadow = false;
+    scene.add(m);
+    stats.kids_park = n;
+  }
+
+  /* ---------- 第5段: 住宅の屋根（太陽光パネル・テレビアンテナ） ---------- */
+  function roofs() {
+    const rr = mulberry32(5509);
+    const q = new THREE.Quaternion(), q2 = new THREE.Quaternion(), e = new THREE.Euler(), v = new THREE.Vector3(), sc = new THREE.Vector3(U * 1.5, U, U * 1.5);
+    for (const b of buildings) {
+      if (b.noDraw || b.kind !== 'house') continue;
+      const x0 = b.x0, z0 = b.y0, x1 = b.x1, z1 = b.y1, o = 1.2, top = b.hW;
+      const longX = (x1 - x0) >= (z1 - z0), span = longX ? (z1 - z0) : (x1 - x0), rh = span * 0.32;
+      const th = Math.atan2(rh + 0.6, span / 2 + o);
+      const midY = top - 0.6 + (rh + 0.6) / 2 + 0.25;
+      if (rr() < 0.42) {
+        const len = longX ? x1 - x0 : z1 - z0;
+        const cnt = len > 34 ? 2 : 1;
+        for (let k = 0; k < cnt; k++) {
+          const f = cnt === 1 ? 0.5 : 0.3 + k * 0.4;
+          if (longX) {   // 南向きの斜面（+z 側）
+            v.set(lerp(x0, x1, f), midY, (z0 + z1) / 2 + (span / 2 + o) / 2);
+            q.setFromEuler(e.set(th, 0, 0));
+          } else {
+            v.set((x0 + x1) / 2 + (span / 2 + o) / 2, midY, lerp(z0, z1, f));
+            q2.setFromEuler(e.set(0, Math.PI / 2, 0));
+            q.setFromEuler(e.set(0, 0, -th)).multiply(q2);
+          }
+          putM('solar_panel', new THREE.Matrix4().compose(v.clone(), q.clone(), sc));
+        }
+      }
+      if (rr() < 0.65) {
+        const ax = longX ? lerp(x0, x1, 0.2) : (x0 + x1) / 2, az = longX ? (z0 + z1) / 2 : lerp(z0, z1, 0.2);
+        putM('tv_antenna', G3.M4(ax, top + rh + 0.4, az, rr() * TAU, U));
+      }
+    }
+  }
+
+  /* ---------- 第5段: ガソリンスタンド ---------- */
+  function gasStations(scene) {
+    const rr = mulberry32(5510);
+    const gb = new G3.GB(false);
+    let n = 0;
+    const mains = ROADS.filter(r => r.kind === 'main');
+    for (let t = 0; t < 1500 && n < 6; t++) {
+      const r = mains[(rr() * mains.length) | 0];
+      const d = 40 + rr() * (r.pl.len - 120);
+      const c0 = at(r, d, 0);
+      if (zoneOf(c0.x, c0.y) === 'center') continue;
+      if (r.junc.some(j => Math.abs(j.d - d - 25) < j.road.w / 2 + 40)) continue;
+      const sg = rr() < 0.5 ? 1 : -1;
+      const W = 50, D = 38, o0 = r.w / 2 + G3.SW + 0.5;
+      const pts = [];
+      for (const u of [0, 0.5, 1]) for (const vv of [0, 0.5, 1]) pts.push(at(r, d + u * W, sg * (o0 + vv * D)));
+      let ok = true;
+      for (const q of pts) {
+        const rq = roadInfo(q.x, q.y);
+        if (inWaterRaw(q.x, q.y) || hillAt(q.x, q.y) || inPark(q.x, q.y, 4) || nearBld(q.x, q.y, 3) || !free(q.x, q.y, 6) || railDist(q.x, q.y) < 18 ||
+          nearLM(q.x, q.y, 110) || propHit(q.x, q.y, 3, true) || (rq && rq.road !== r && rq.d < rq.road.w / 2 + G3.SW + 2)) { ok = false; break; }
+      }
+      if (!ok) continue;
+      const Lc = (u, vv) => at(r, d + u, sg * (o0 + vv));
+      const V = q => [q.x, heightAt(q.x, q.y) + 0.07, q.y];
+      const P = [Lc(0, 0), Lc(W, 0), Lc(W, D), Lc(0, D)].map(V);
+      const nyv = (P[1][2] - P[0][2]) * (P[3][0] - P[0][0]) - (P[1][0] - P[0][0]) * (P[3][2] - P[0][2]);
+      gb.quad(nyv > 0 ? P : [P[0], P[3], P[2], P[1]], [[0, 0], [1, 0], [1, 1], [0, 1]]);
+      const cc = Lc(W / 2, 15), rot = -cc.a;
+      put('gs_canopy', cc.x, cc.y, rot, 0);
+      if (typeof addCollider === 'function') for (const u of [-10, 10]) { const pp = Lc(W / 2 + u, 15); addCollider({ x: pp.x, y: pp.y, r: 0.8 }); }
+      for (const vv of [9, 21]) { const pp = Lc(W / 2, vv); put('gs_pump', pp.x, pp.y, rot, 0); }
+      const of = Lc(W - 8, D - 9);
+      put('gs_office', of.x, of.y, roadFace(r, sg, d + W - 8, of), 0);
+      const sp = Lc(3, 2);
+      put('gs_sign', sp.x, sp.y, rot, 0);
+      for (const q of pts) take(q.x, q.y, 10);
+      n++;
+    }
+    const m = gb.mesh(new THREE.MeshStandardMaterial({ map: G3.tex.concrete || null, color: 0xc9c6bd, roughness: 0.9, polygonOffset: true, polygonOffsetFactor: -1, polygonOffsetUnits: -6 }), false);
+    m.castShadow = false;
+    scene.add(m);
+    stats.gas_station = n;
+  }
+
+  /* ---------- 第5段: 歩道の工事（家具帯の中だけを囲う） ---------- */
+  function roadworks() {
+    const rr = mulberry32(5511);
+    let n = 0;
+    for (let t = 0; t < 600 && n < 12; t++) {
+      const r = ROADS[(rr() * ROADS.length) | 0];
+      if (r.kind === 'arcade') continue;
+      const sg = rr() < 0.5 ? 1 : -1, d = 30 + rr() * (r.pl.len - 60);
+      const cuts = G3.roadCuts(r);
+      const ivs = G3.minusIntervals(r.pl.len, sg > 0 ? cuts.cutsL : cuts.cutsR);
+      if (!ivs.some(([a, b]) => d > a + 10 && d + 12 < b - 10)) continue;
+      const c = walkAt(r, sg, d + 6, 1.8);
+      if (!free(c.x, c.y, 9)) continue;
+      for (const k of [0, 6]) { const p = walkAt(r, sg, d + 3 + k, 3.0); put('barricade', p.x, p.y, -p.a, G3.CURB); }
+      for (const k of [0, 3, 6, 9, 12]) { const p = walkAt(r, sg, d + k, 0.6); put('traffic_cone', p.x, p.y, 0, G3.CURB); }
+      for (const dd of [-1.5, 13.5]) { const p = walkAt(r, sg, d + dd, 1.8); put('barricade', p.x, p.y, -(p.a + Math.PI / 2), G3.CURB); }
+      const ks = walkAt(r, sg, d - 4, 2.0);
+      put('koji_sign', ks.x, ks.y, -(ks.a + Math.PI), G3.CURB);
+      take(c.x, c.y, 10);
+      n++;
+    }
+    stats.roadwork = n;
+  }
+
+  /* ---------- 第5段: 漁船・バス待合所 ---------- */
+  function boats() {
+    const rr = mulberry32(5512);
+    let last = null;
+    for (const [x, y, nx, ny] of portCoast) {
+      if (rr() < 0.35) continue;
+      const bx = x - nx * 9, by = y - ny * 9;
+      if (!inWaterRaw(bx, by) || (last && hyp(last[0] - bx, last[1] - by) < 26)) continue;
+      put('fishing_boat', bx, by, -(Math.atan2(ny, nx) + Math.PI / 2 + (rr() - 0.5) * 0.2), -1.4);
+      last = [bx, by];
+    }
+  }
+  function busShelters() {
+    for (const b of BUSSTOPS) {
+      const z = zoneOf(b[0], b[1]);
+      if (z === 'suburb' || z === 'port') continue;
+      const ri = roadInfo(b[0], b[1]);
+      if (!ri) continue;
+      const r = ri.road, d = dOnPl(r.pl, b[0], b[1]), c = at(r, d, 0);
+      const sg = ((b[0] - c.x) * -Math.sin(c.a) + (b[1] - c.y) * Math.cos(c.a)) > 0 ? 1 : -1;
+      const p = walkAt(r, sg, d - 9, G3.SW + 2.2);
+      if (nearBld(p.x, p.y, 2) || !free(p.x, p.y, 4)) continue;
+      put('bus_shelter', p.x, p.y, roadFace(r, sg, d - 9, p), 0);
+      take(p.x, p.y, 5);
+    }
+  }
+
   /* ---------- インスタンス化 ---------- */
   let blockMat = null;
   function streetMat(m) {
@@ -1006,11 +1309,15 @@ G3.street = (function () {
     return G3.lmMat(m);
   }
   // 種類ごとの描画距離（これより遠いチャンクは描かない）。大物は常に描く。
-  const FAR = { guide_gantry: 1e9, tram_stop: 2200, karakuri_clock: 1e9, container_a: 2400, container_b: 2400, container_c: 2400, container_d: 2400,
+  const FAR = { guide_gantry: 1e9, tram_stop: 2200, karakuri_clock: 1e9, container_a: 2400, container_b: 2400, container_c: 2400, container_d: 2400, gs_canopy: 1600, gs_sign: 1600, fishing_boat: 1800,
+    catenary_pole: 1100, park_toilet: 1000, solar_panel: 900, tv_antenna: 700, bus_shelter: 1000,
     guardrail: 1300, guard_pipe: 1000, hedge_planter: 1200, block_wall: 1000, awning_red: 1100, awning_green: 1100, awning_blue: 1100, awning_orange: 1100,
     sign_speed: 900, sign_stop: 900, curve_mirror: 900, parking_sign: 1200, clock_pole: 1400, map_board: 900 };
   const FAR_DEF = 650;
-  const CH = 400;   // チャンク一辺（ゲーム単位 = 160m）
+  // 影を落とすのは大きな物だけ（小物は影のパスの描画回数を増やすだけ）
+  const SHADOW = /wall|fence|awning|booth|container|canopy|gs_|tram_stop|guide|karakuri|toilet|shelter|hedge|guardrail|gantry|catenary|boat|lantern|jungle|slide|swing|vending|map_board/;
+  Object.assign(FAR, { bicycle_a: 480, bicycle_b: 480, bicycle_c: 480, ac_unit: 520, potted_plant: 450, propane: 520, tv_antenna: 650 });
+  const CH = 650;   // チャンク一辺（ゲーム単位 = 260m）
   const chunks = [];
   function flush(scene) {
     const tmpV = new THREE.Vector3();
@@ -1027,7 +1334,7 @@ G3.street = (function () {
       const far = (FAR[name] || FAR_DEF) * (matchMedia('(pointer:coarse)').matches ? 0.7 : 1);
       const all = [];
       for (const [k, mats] of groups) {
-        const g = G3.instanceNode(node, mats, { shadow: far > 700 || /wall|fence|awning|box|booth|rack/.test(name) });
+        const g = G3.instanceNode(node, mats, { shadow: SHADOW.test(name) });
         g.traverse(o => { if (o.isInstancedMesh) { o.computeBoundingSphere(); o.frustumCulled = true; } });
         let cx = 0, cz = 0;
         for (const M of mats) { cx += M.elements[12]; cz += M.elements[14]; }
@@ -1044,6 +1351,7 @@ G3.street = (function () {
   }
   let upT = 0;
   function update(dt) {
+    updCrossings(dt);
     upT -= dt;
     if (upT > 0) return;
     upT = 0.25;
@@ -1064,9 +1372,17 @@ G3.street = (function () {
     dogo(scene);
     furniture(scene);
     ports();
+    crossings(scene);
+    catenary(scene);
+    gasStations(scene);
+    parks(scene);
+    busShelters();
+    roadworks();
     gomiStations();
     roadEdges();
     buildingDetails();
+    roofs();
+    boats();
     flush(scene);
     G3.street.stats = stats;
   }

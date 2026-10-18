@@ -1220,7 +1220,20 @@ function updPlayer(dt){
     if(c.hp<=0)explodeCar();
   }
   // TPSカメラのヨー追従
-  S.tpsYaw+=angDiff(S.tpsYaw,S.pa)*clamp(dt*(S.mode==='car'?4.2:3.2),0,1);
+  // 視点の回り込みはゆっくり・上限つき（横歩き・後ろ歩きでは回さない）
+  {
+    const df=angDiff(S.tpsYaw,S.pa);
+    let rate,maxW;
+    if(S.mode==='car'){
+      const sp=Math.abs(S.pcar.v);
+      rate=sp<15?0:3.0*clamp(sp/120,0.5,1);maxW=2.0;
+      if(S.pcar.v<-5)rate=0; // バック中は回さない
+    }else{
+      const f=Math.cos(df);
+      rate=S.moving&&f>-0.2?0.3+0.8*Math.max(0,f):0;maxW=0.8;
+    }
+    S.tpsYaw+=clamp(df*clamp(dt*rate,0,1),-maxW*dt,maxW*dt);
+  }
   // HP回復
   S.hp=clamp(S.hp+dt*1.2,0,100);
   // みかん回収

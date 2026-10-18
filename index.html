@@ -11069,6 +11069,7 @@ const R3 = { ok: false, state: 'idle' };
       setLoad(0.93, '人と車を配置中…');
       await new Promise(r => setTimeout(r, 30));
       G3.dyn.build(); lap('dyn');
+      if (G3.world.patchClouds) G3.world.patchClouds(G3.scene);   // 雲の影（全マテリアルに差し込み、下準備でシェーダーを作る）
       updEnv(0.016);
       updCamera(1);
       setLoad(0.97, '描画の下準備中…');
@@ -13551,6 +13552,10 @@ G3.world = (function () {
     // 風: ふだんはそよ風、雨や曇りの日は強く
     SWAY.uSwayT.value = (SWAY.uSwayT.value + dt) % 1000;
     SWAY.uWind.value.z += ((0.35 + 0.25 * S.cloudI + 0.9 * S.rainI) - SWAY.uWind.value.z) * Math.min(1, dt * 0.3);
+    // 雲の影は風下へ流れる（約5m/s）。晴れは雲が少なく、曇りは多い
+    CLOUD.uCloudOff.value.x -= SWAY.uWind.value.x * 12 * dt; CLOUD.uCloudOff.value.y -= SWAY.uWind.value.y * 12 * dt;
+    CLOUD.uCloudCov.value = 0.2 + 0.5 * S.cloudI;
+    CLOUD.uCloudK.value = 0.55 * (1 - 0.5 * S.rainI);
     if ((treeT -= dt) <= 0) {
       treeT = 0.3;
       const c = G3.camera.position;
@@ -13598,6 +13603,47 @@ G3.world = (function () {
     }
   }
 
+  /* ---------- 雲の影 ----------
+     晴れや薄曇りの日に、大きな雲の影がゆっくり街を流れていく。太陽（平行光源）の光だけを、
+     ワールド座標の値ノイズ（3オクターブ）で弱める。標準・物理マテリアルすべてに後から差し込む */
+  const CLOUD = { uCloudOff: { value: new THREE.Vector2(0, 0) }, uCloudCov: { value: 0.25 }, uCloudK: { value: 0.5 } };
+  const CLOUD_GLSL = `
+    uniform vec2 uCloudOff;
+    uniform float uCloudCov, uCloudK;
+    float cHash(vec2 p) { return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }
+    float cNoise(vec2 p) { vec2 i = floor(p), f = fract(p); f = f * f * (3.0 - 2.0 * f);
+      return mix(mix(cHash(i), cHash(i + vec2(1.0, 0.0)), f.x), mix(cHash(i + vec2(0.0, 1.0)), cHash(i + vec2(1.0, 1.0)), f.x), f.y); }
+    float cloudShade() {
+      vec3 wp = cameraPosition + transpose(mat3(viewMatrix)) * (-vViewPosition);
+      vec2 p = (wp.xz + uCloudOff) / 1300.0;
+      float n = cNoise(p) * 0.6 + cNoise(p * 2.3 + 7.1) * 0.28 + cNoise(p * 5.3 + 3.7) * 0.12;
+      n = clamp((n - 0.5) * 2.6 + 0.5, 0.0, 1.0);   // 値ノイズの重ね合わせは 0.5 付近に寄るので広げる
+      return 1.0 - uCloudK * smoothstep(1.0 - uCloudCov - 0.1, 1.0 - uCloudCov + 0.1, n);
+    }`;
+  const LIGHTS_CLOUD = THREE.ShaderChunk.lights_fragment_begin.replace('getDirectionalLightInfo( directionalLight, directLight );',
+    'getDirectionalLightInfo( directionalLight, directLight );\n\t\tdirectLight.color *= cloudShade();');
+  const cloudDone = new WeakSet();
+  function patchClouds(scene) {
+    let n = 0;
+    scene.traverse(o => {
+      if (!o.material) return;
+      for (const m of (Array.isArray(o.material) ? o.material : [o.material])) {
+        if (!m || cloudDone.has(m) || !(m.isMeshStandardMaterial || m.isMeshPhysicalMaterial)) continue;
+        cloudDone.add(m);
+        const prev = m.onBeforeCompile, k0 = m.customProgramCacheKey();
+        m.onBeforeCompile = function (sh, r) {
+          if (prev) prev.call(this, sh, r);
+          sh.uniforms.uCloudOff = CLOUD.uCloudOff; sh.uniforms.uCloudCov = CLOUD.uCloudCov; sh.uniforms.uCloudK = CLOUD.uCloudK;
+          sh.fragmentShader = sh.fragmentShader.replace('#include <common>', '#include <common>\n' + CLOUD_GLSL)
+            .replace('#include <lights_fragment_begin>', LIGHTS_CLOUD);
+        };
+        m.customProgramCacheKey = () => k0 + '|cloud1';
+        n++;
+      }
+    });
+    return n;
+  }
+
   function build() {
     const scene = G3.scene, WT = G3.worldTimes = {}; let tw = performance.now();
     const lapw = k => { const t = performance.now(); WT[k] = Math.round(t - tw); tw = t; };
@@ -13625,7 +13671,7 @@ G3.world = (function () {
     G3.birds.build(scene); lapw('birds');
     G3.rainfx.build(scene); lapw('rainfx');
   }
-  return { build, update, updEnv, WM, anim, canvasTex };
+  return { build, update, updEnv, patchClouds, WM, anim, canvasTex };
 })();
 
 </script>

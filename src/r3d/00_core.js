@@ -86,7 +86,7 @@ const R3 = { ok: false, state: 'idle' };
   }
 
   /* ---------- レンダラー ---------- */
-  let renderer, scene, camera, composer, bloomPass, sky, sun, hemi, pmrem, skyScene, skyEnv, stars, rain;
+  let renderer, scene, camera, composer, bloomPass, sky, sun, hemi, pmrem, skyScene, skyEnv, stars, rain, aoPass = null, gradePass = null;
   G3.sunDir = new THREE.Vector3(0, 1, 0);
 
   function initGL() {
@@ -171,10 +171,40 @@ const R3 = { ok: false, state: 'idle' };
     const rt = new THREE.WebGLRenderTarget(innerWidth * renderer.getPixelRatio(), innerHeight * renderer.getPixelRatio(),
       { type: THREE.HalfFloatType, samples: isTouch ? 2 : 4 });
     composer = new T.EffectComposer(renderer, rt);
-    composer.addPass(new T.RenderPass(scene, camera));
+    // 環境遮蔽（建物の足元・隅・軒下の陰影）。デスクトップのみ。シーンの描画も兼ねる
+    if (!isTouch && T.N8AOPass) {
+      const pw = innerWidth * renderer.getPixelRatio(), ph = innerHeight * renderer.getPixelRatio();
+      aoPass = new T.N8AOPass(scene, camera, pw, ph);
+      aoPass.autoDetectTransparency = false;
+      aoPass.configuration.transparencyAware = false;
+      aoPass.beautyRenderTarget.samples = 4;     // MSAA を維持
+      Object.assign(aoPass.configuration, { aoRadius: 7, distanceFalloff: 2.0, intensity: 2.4, halfRes: true, depthAwareUpsampling: true,
+        gammaCorrection: false, aoSamples: 12, denoiseSamples: 6, denoiseRadius: 10 });
+      aoPass.configuration.color = new THREE.Color(0x0a0c12);
+      composer.addPass(aoPass);
+    } else composer.addPass(new T.RenderPass(scene, camera));
     bloomPass = new T.UnrealBloomPass(new THREE.Vector2(innerWidth, innerHeight), 0.35, 0.55, 0.88);
     composer.addPass(bloomPass);
     composer.addPass(new T.OutputPass());
+    // 色調補正（彩度・コントラスト・明部を暖色/暗部を寒色に・ごく弱いフィルムグレイン）
+    if (T.ShaderPass) {
+      gradePass = new T.ShaderPass({
+        uniforms: { tDiffuse: { value: null }, uTime: { value: 0 }, uSat: { value: 1.1 }, uContrast: { value: 1.06 }, uWarm: { value: 1 }, uGrain: { value: 0.012 } },
+        vertexShader: 'varying vec2 vUv; void main(){ vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }',
+        fragmentShader: `uniform sampler2D tDiffuse; uniform float uTime, uSat, uContrast, uWarm, uGrain; varying vec2 vUv;
+          void main(){
+            vec4 c = texture2D(tDiffuse, vUv); vec3 col = c.rgb;
+            float l = dot(col, vec3(0.2126, 0.7152, 0.0722));
+            col = mix(vec3(l), col, uSat);
+            col = (col - 0.5) * uContrast + 0.5;
+            col += (vec3(0.028, 0.012, -0.022) * smoothstep(0.5, 1.0, l) + vec3(-0.012, 0.0, 0.02) * (1.0 - smoothstep(0.0, 0.4, l))) * uWarm;
+            float n = fract(sin(dot(vUv * vec2(12.9898, 78.233) + uTime, vec2(1.0))) * 43758.5453);
+            col += (n - 0.5) * uGrain;
+            gl_FragColor = vec4(clamp(col, 0.0, 1.0), c.a);
+          }`,
+      });
+      composer.addPass(gradePass);
+    }
 
     addEventListener('resize', onResize);
     initOrbit();
@@ -253,6 +283,13 @@ const R3 = { ok: false, state: 'idle' };
     renderer.toneMappingExposure = 0.9 + 0.25 * (1 - day);
     // 昼は空全体が閾値を超えるのでブルームを切り、夕方〜夜だけ発光体を滲ませる
     bloomPass.enabled = day < 0.9;
+    if (gradePass) {
+      const u2 = gradePass.uniforms;
+      u2.uTime.value = (u2.uTime.value + dt) % 100;
+      u2.uSat.value = lerp(1.04, 1.12, day) * (1 - 0.18 * wet);
+      u2.uWarm.value = (0.4 + 0.8 * dusk + 0.4 * day) * (1 - 0.6 * wet);
+    }
+    if (aoPass) aoPass.configuration.intensity = lerp(1.2, 2.4, day) * (1 - 0.3 * cloud);
     bloomPass.strength = 0.32 * (1 - day);
     bloomPass.threshold = lerp(1.15, 3.0, day);
     bloomPass.radius = 0.22;

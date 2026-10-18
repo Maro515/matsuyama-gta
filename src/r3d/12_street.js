@@ -931,8 +931,8 @@ G3.street = (function () {
   /* ---------- 第4段: 路面標示（ダイヤマーク・止まれ・停止線・矢印・自転車ナビ） ---------- */
   function markAtlas() {
     // 4×2 セル（各128px）。キャンバス上方向 = 進行方向
-    return G3.world.canvasTex(512, 256, g => {
-      g.clearRect(0, 0, 512, 256);
+    return G3.world.canvasTex(512, 512, g => {
+      g.clearRect(0, 0, 512, 512);
       const W = '#f2f2ee';
       const cell = (i, fn) => { g.save(); g.translate((i % 4) * 128, ((i / 4) | 0) * 128); fn(); g.restore(); };
       // 0: ダイヤマーク（横断歩道あり）
@@ -960,6 +960,33 @@ G3.street = (function () {
       });
       // 5: 白ベタ（停止線）
       cell(5, () => { g.fillStyle = W; g.fillRect(0, 0, 128, 128); });
+      // 6: 舗装の補修跡（少し濃いアスファルト）
+      cell(6, () => {
+        g.fillStyle = 'rgba(28,30,34,0.55)';
+        g.beginPath(); g.moveTo(10, 14);
+        for (let k = 0; k < 18; k++) { const a = k / 18 * TAU, r = 50 + Math.sin(k * 2.7) * 6; g.lineTo(64 + Math.cos(a) * r, 64 + Math.sin(a) * r * 0.95); }
+        g.closePath(); g.fill();
+        g.strokeStyle = 'rgba(10,10,12,0.5)'; g.lineWidth = 2; g.stroke();
+      });
+      // 7: ひび割れ
+      cell(7, () => {
+        g.strokeStyle = 'rgba(12,12,14,0.65)'; g.lineWidth = 1.6;
+        const br = (x, y, a, n) => { if (n <= 0) return; const L = 10 + Math.random() * 16; const x2 = x + Math.cos(a) * L, y2 = y + Math.sin(a) * L;
+          g.beginPath(); g.moveTo(x, y); g.lineTo(x2, y2); g.stroke(); br(x2, y2, a + (Math.random() - 0.5) * 0.9, n - 1); if (Math.random() < 0.35) br(x2, y2, a + 1.2, n - 2); };
+        br(64, 4, Math.PI / 2, 8); br(64, 64, 0.3, 4);
+      });
+      // 8: 側溝のグレーチング（鉄の格子）
+      cell(8, () => {
+        g.fillStyle = '#3c3e40'; g.fillRect(16, 4, 96, 120);
+        g.fillStyle = '#16171a'; for (let k = 0; k < 14; k++) g.fillRect(22, 10 + k * 8.2, 84, 4.5);
+        g.strokeStyle = '#5a5c5e'; g.lineWidth = 3; g.strokeRect(16, 4, 96, 120);
+      });
+      // 9: オイル染み
+      cell(9, () => {
+        const gr = g.createRadialGradient(64, 64, 0, 64, 64, 60);
+        gr.addColorStop(0, 'rgba(8,8,10,0.55)'); gr.addColorStop(0.6, 'rgba(8,8,10,0.25)'); gr.addColorStop(1, 'rgba(8,8,10,0)');
+        g.fillStyle = gr; g.beginPath(); g.ellipse(64, 64, 60, 44, 0.3, 0, TAU); g.fill();
+      });
     });
   }
   function roadMarks(scene) {
@@ -967,7 +994,7 @@ G3.street = (function () {
     const decal = (x, y, h, hw, hl, ci) => {
       const fx = Math.cos(h), fy = Math.sin(h), rx = -Math.sin(h), ry = Math.cos(h);
       const u0 = (ci % 4) / 4 + 0.004, u1 = ((ci % 4) + 1) / 4 - 0.004;
-      const v1 = 1 - ((ci / 4) | 0) / 2 - 0.004, v0 = 1 - (((ci / 4) | 0) + 1) / 2 + 0.004;
+      const v1 = 1 - ((ci / 4) | 0) / 4 - 0.004, v0 = 1 - (((ci / 4) | 0) + 1) / 4 + 0.004;
       const P = [[x - fx * hl - rx * hw, y - fy * hl - ry * hw], [x - fx * hl + rx * hw, y - fy * hl + ry * hw],
         [x + fx * hl + rx * hw, y + fy * hl + ry * hw], [x + fx * hl - rx * hw, y + fy * hl - ry * hw]];
       const UV = [[u0, v0], [u1, v0], [u1, v1], [u0, v1]];
@@ -997,6 +1024,7 @@ G3.street = (function () {
           const head = d => at(r, d, 0).a + (dir > 0 ? 0 : Math.PI);
           const ps = lane(dStop, all[0]);
           decal(ps.x, ps.y, head(dStop), all[1], 0.45, 5); n++;
+          for (const L of lanes) { const po = lane(dStop - dir * 9, L[0]); decal(po.x, po.y, head(dStop), 1.6, 2.6, 9); n++; }
           if (r.kind === 'minor' && j.road.kind === 'main') {
             const d = dStop - dir * 15, p = lane(d, lanes[0][0]);
             decal(p.x, p.y, head(d), Math.min(lanes[0][1], 3.6), 11, 1); n++;
@@ -1021,6 +1049,26 @@ G3.street = (function () {
           for (const L of lanes) {
             const p = at(r, d, -dir * L[0]);
             decal(p.x, p.y, p.a + (dir > 0 ? 0 : Math.PI), Math.min(2.6, L[1]), 6.5, 0); n++;
+          }
+        }
+      }
+      // 路面の傷み（補修跡・ひび割れ・オイル染み）と側溝のグレーチング
+      {
+        const rw = mulberry32(5700 + r.pl.len | 0);
+        const cuts = G3.roadCuts(r);
+        for (const [a, b] of G3.minusIntervals(r.pl.len, cuts.mark)) {
+          for (let d = a + 6; d < b - 6; d += 26) {
+            for (const sg of [1, -1]) {
+              const p = at(r, d + (sg > 0 ? 0 : 13), sg * (r.w / 2 - 0.75));
+              decal(p.x, p.y, p.a, 0.5, 1.25, 8); n++;
+            }
+          }
+          for (let d = a + 10; d < b - 10; d += 40 + rw() * 60) {
+            const o = (rw() - 0.5) * (r.w - 4), p = at(r, d, o), k = rw();
+            if (k < 0.45) decal(p.x, p.y, p.a + (rw() - 0.5) * 0.4, 2 + rw() * 3, 3 + rw() * 4, 6);
+            else if (k < 0.85) decal(p.x, p.y, p.a + (rw() - 0.5) * 2, 1.5 + rw() * 2, 3 + rw() * 3, 7);
+            else decal(p.x, p.y, rw() * TAU, 1.2 + rw(), 1.5 + rw(), 9);
+            n++;
           }
         }
       }

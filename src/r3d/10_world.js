@@ -947,7 +947,7 @@ G3.world = (function () {
   function buildBuildings(scene) {
     const GBs = {};
     const gbOf = k => GBs[k] || (GBs[k] = new GB(true));
-    const gbRoof = new GB(true), gbPar = new GB(true), gbKaw = new GB(true), gbEq = new GB(true), gbSign = new GB(false), gbAd = new GB(false);
+    const gbRoof = new GB(true), gbPar = new GB(true), gbKaw = new GB(true), gbEq = new GB(true), gbSign = new GB(false), gbAd = new GB(false), gbBal = new GB(true);
     const signs = [];
     for (const b of buildings) {
       if (b.noDraw) continue;
@@ -958,6 +958,32 @@ G3.world = (function () {
       const faces = [
         [[x0, z0], [x1, z0]], [[x1, z0], [x1, z1]], [[x1, z1], [x0, z1]], [[x0, z1], [x0, z0]],
       ];
+      // 立体感: 足元の幅木・各階の水平な庇（帯）・マンション正面のバルコニー
+      const cxB = (x0 + x1) / 2, czB = (z0 + z1) / 2, fsB = frontSide(b);
+      faces.forEach((f, fi) => {
+        const [A, B] = [f[1], f[0]];
+        const len = hyp(B[0] - A[0], B[1] - A[1]);
+        if (len < 4) return;
+        let nx = -(B[1] - A[1]) / len, nz = (B[0] - A[0]) / len;
+        const mx = (A[0] + B[0]) / 2, mz = (A[1] + B[1]) / 2;
+        if ((mx + nx - cxB) * nx + (mz + nz - czB) * nz < (mx - cxB) * nx + (mz - czB) * nz) { nx = -nx; nz = -nz; }
+        const dark = tint.map(v => v * 0.55);
+        ledge(gbPar, A, B, nx, nz, 0, 1.4, 0.25, dark);
+        if (b.kind === 'house') return;
+        const floors = Math.round((top - gH) / FLOOR);
+        const lc = tint.map(v => v * 0.86);
+        ledge(gbPar, A, B, nx, nz, gH - 0.6, gH, 0.9, lc);
+        const isFront = fi === [0, 1, 2, 3][fsB];
+        if (b.kind === 'mansion' && isFront) {
+          for (let k = 1; k < floors; k++) {
+            const z = gH + k * FLOOR;
+            ledge(gbPar, A, B, nx, nz, z - 0.45, z, 3.0, lc);                    // 床スラブ
+            ledge(gbBal, A, B, nx, nz, z, z + 2.75, 3.0, C('#9aa3ab'), 0.18);     // 手すり（腰壁）
+          }
+        } else {
+          for (let k = 1; k < floors; k++) ledge(gbPar, A, B, nx, nz, gH + k * FLOOR - 0.35, gH + k * FLOOR, 0.35, lc);
+        }
+      });
       // 外側から見た反時計回りにするため順序を反転
       faces.forEach((f, fi) => {
         const [A, B] = [f[1], f[0]];
@@ -1003,7 +1029,7 @@ G3.world = (function () {
       scene.add(m);
     }
     const rm = gbRoof.mesh(WM.concrete, false); rm.receiveShadow = true; scene.add(rm);
-    scene.add(gbPar.mesh(WM.plaster, true), gbKaw.mesh(WM.kawara, true), gbEq.mesh(WM.metal, true));
+    scene.add(gbPar.mesh(WM.plaster, true), gbKaw.mesh(WM.kawara, true), gbEq.mesh(WM.metal, true), gbBal.mesh(WM.metal, true));
     // 袖看板（両面に文字）
     for (const s of signs) {
       const b = s.b;
@@ -1021,6 +1047,28 @@ G3.world = (function () {
       gbSign.quad([P(d1, s.sh0, 1), P(d1, s.sh0, -1), P(d1, s.sh1, -1), P(d1, s.sh1, 1)], [[u0, 0], [u0 + .001, 0], [u0 + .001, .01], [u0, .01]]);
     }
     scene.add(gbSign.mesh(WM.sign, true), gbAd.mesh(WM.ad, true));
+  }
+  // 壁面 A→B に沿って外へ out だけ張り出す帯（高さ z0..z1）。thick を与えると薄い板（手すり）
+  function ledge(gb, A, B, nx, nz, z0, z1, out, col, thick) {
+    const ex = 0.05;
+    const tx = (B[0] - A[0]), tz = (B[1] - A[1]), L = hyp(tx, tz), ux = tx / L * ex, uz = tz / L * ex;
+    const a0 = [A[0] - ux, A[1] - uz], b0 = [B[0] + ux, B[1] + uz];
+    const o1 = out, o0 = thick ? out - thick : 0;
+    const P = (p, o, y) => [p[0] + nx * o, y, p[1] + nz * o];
+    const q = (pts) => gb.quad(pts, [[0, 0], [1, 0], [1, 1], [0, 1]], col);
+    // 外面・上面・下面・両端（向きは外から見て反時計回り）
+    const face = (p1, p2, p3, p4) => {
+      const ux2 = p2[0] - p1[0], uy2 = p2[1] - p1[1], uz2 = p2[2] - p1[2], vx = p4[0] - p1[0], vy = p4[1] - p1[1], vz = p4[2] - p1[2];
+      return [uy2 * vz - uz2 * vy, uz2 * vx - ux2 * vz, ux2 * vy - uy2 * vx];
+    };
+    const add = (pts, want) => { const n = face(...pts); if (n[0] * want[0] + n[1] * want[1] + n[2] * want[2] < 0) pts.reverse(); q(pts); };
+    add([P(a0, o1, z0), P(b0, o1, z0), P(b0, o1, z1), P(a0, o1, z1)], [nx, 0, nz]);
+    add([P(a0, o0, z1), P(b0, o0, z1), P(b0, o1, z1), P(a0, o1, z1)], [0, 1, 0]);
+    add([P(a0, o0, z0), P(b0, o0, z0), P(b0, o1, z0), P(a0, o1, z0)], [0, -1, 0]);
+    if (thick) add([P(a0, o0, z0), P(b0, o0, z0), P(b0, o0, z1), P(a0, o0, z1)], [-nx, 0, -nz]);
+    const tdx = tx / L, tdz = tz / L;
+    add([P(a0, o0, z0), P(a0, o1, z0), P(a0, o1, z1), P(a0, o0, z1)], [-tdx, 0, -tdz]);
+    add([P(b0, o0, z0), P(b0, o1, z0), P(b0, o1, z1), P(b0, o0, z1)], [tdx, 0, tdz]);
   }
   function houseRoof(gbK, gbP, b, top, tint) {
     const x0 = b.x0, z0 = b.y0, x1 = b.x1, z1 = b.y1, o = 1.2;

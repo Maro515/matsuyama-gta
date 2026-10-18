@@ -9,4 +9,6 @@ import { RenderPass } from 'three/examples/jsm/postprocessing/RenderPass.js';
 import { UnrealBloomPass } from 'three/examples/jsm/postprocessing/UnrealBloomPass.js';
 import { OutputPass } from 'three/examples/jsm/postprocessing/OutputPass.js';
 import { MeshoptDecoder } from 'three/examples/jsm/libs/meshopt_decoder.module.js';
-window.T3 = { THREE, GLTFLoader, SkeletonUtils, mergeGeometries, Sky, EffectComposer, RenderPass, UnrealBloomPass, OutputPass, MeshoptDecoder };
+import { ShaderPass } from 'three/examples/jsm/postprocessing/ShaderPass.js';
+import { N8AOPass } from 'n8ao';
+window.T3 = { THREE, GLTFLoader, SkeletonUtils, mergeGeometries, Sky, EffectComposer, RenderPass, UnrealBloomPass, OutputPass, MeshoptDecoder, ShaderPass, N8AOPass };

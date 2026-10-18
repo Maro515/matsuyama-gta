@@ -2041,6 +2041,121 @@ def build_stage14():
     return [mesh_fence(), urichi_sign()]
 
 
+# ======================================================================
+# 第15段: 路地の小物（防犯灯・猫・ビールケース・ポリバケツ・植木鉢の棚・行き止まりの札）
+# ======================================================================
+def wall_lamp():
+    """壁付けの防犯灯（LED）。壁面が x=0、+X 側へ腕が出る。高さ 3m。"""
+    m = M()
+    p = [box('plate', (0.04, 0.12, 0.2), (0.02, 0, 3.0), m['grey']),
+         box('arm', (0.36, 0.04, 0.04), (0.2, 0, 3.05), m['grey']),
+         box('head', (0.34, 0.15, 0.07), (0.44, 0, 3.0), m['white'], bevel=0.01),
+         box('led', (0.28, 0.11, 0.012), (0.44, 0, 2.962), mat('NightGlow_LightAlley', '#e8ecef', rough=0.3, emit='#f4f8ff', estr=0.0))]
+    return join(p, 'wall_lamp', smooth_angle=40)
+
+
+def cat(name, body_col, patch_cols, loaf=False):
+    """路地の猫。前方 +X。座り（loaf=False）か香箱座り。"""
+    bm_ = mat('SP_Cat_' + name, body_col, rough=0.85)
+    pm = [mat('SP_CatP_%s_%d' % (name, i), c, rough=0.85) for i, c in enumerate(patch_cols)]
+    eye = mat('SP_CatEye', '#d8c040', rough=0.2)
+    p = []
+    if loaf:
+        p.append(ico('body', 0.17, (0, 0, 0.11), bm_, sub=2, scale=(1.45, 0.95, 0.72)))
+        hx, hz = 0.2, 0.17
+    else:
+        p.append(ico('body', 0.15, (-0.03, 0, 0.14), bm_, sub=2, scale=(1.1, 0.85, 1.25)))
+        p.append(ico('chest', 0.09, (0.08, 0, 0.17), bm_, sub=2, scale=(0.8, 0.9, 1.3)))
+        for sy in (-1, 1):
+            p.append(cyl('leg', 0.025, 0.14, (0.1, sy * 0.045, 0.07), bm_, verts=8))
+        hx, hz = 0.12, 0.33
+    p.append(ico('head', 0.085, (hx, 0, hz), bm_, sub=2, scale=(1.0, 1.05, 0.92)))
+    for sy in (-1, 1):
+        e = prism('ear', [(-0.03, 0), (0.03, 0), (0, 0.06)], -0.008, 0.008, bm_, axis='X')
+        e.location = (hx - 0.01, sy * 0.045, hz + 0.055)
+        p.append(e)
+        p.append(ico('eye', 0.012, (hx + 0.075, sy * 0.03, hz + 0.012), eye, sub=1))
+    # しっぽ
+    tz = 0.06 if loaf else 0.05
+    p.append(cyl('tail', 0.02, 0.26, (-0.22 if not loaf else -0.26, 0.06, tz), bm_, verts=8, axis='Y', r2=0.014))
+    for i, (x, y, z, r) in enumerate(((-0.08, 0.06, 0.2, 0.06), (0.0, -0.07, 0.12, 0.05), (hx + 0.01, -0.03, hz + 0.04, 0.035))[:len(pm) + 1]):
+        if i < len(pm):
+            p.append(ico('patch', r, (x, y, z), pm[i], sub=1, scale=(1.4, 0.5, 1.0)))
+    return join(p, name, smooth_angle=60)
+
+
+def beer_crates():
+    """店の裏のビールケースの山（黄・赤、空き瓶入り）。長手 X。"""
+    cols = [mat('SP_CrateY', '#f0b818', rough=0.6), mat('SP_CrateR', '#c8281e', rough=0.6)]
+    bottle = mat('SP_Bottle', '#5a3214', rough=0.15)
+    p = []
+    stacks = [(0.0, 0.0, 3), (0.46, 0.0, 2), (0.23, 0.36, 1)]
+    k = 0
+    for (x, y, n) in stacks:
+        for i in range(n):
+            c = cols[(k + i) % 2]
+            z = 0.15 + i * 0.3
+            p.append(box('crate', (0.42, 0.33, 0.28), (x, y, z), c, bevel=0.01))
+            if i == n - 1:
+                for bx in (-0.12, 0, 0.12):
+                    for byy in (-0.08, 0.08):
+                        p.append(cyl('btl', 0.028, 0.08, (x + bx, y + byy, z + 0.18), bottle, verts=6))
+        k += 1
+    return join(p, 'beer_crates', smooth_angle=30)
+
+
+def poly_bin():
+    """ポリバケツ（ふた付き）2つ。"""
+    a = mat('SP_PolyBlue', '#3a6aa8', rough=0.5)
+    b = mat('SP_PolyGrey', '#8a9096', rough=0.5)
+    p = []
+    for (x, c) in ((0.0, a), (0.55, b)):
+        p.append(cyl('bin', 0.23, 0.6, (x, 0, 0.3), c, verts=16, r2=0.2))
+        p.append(cyl('lid', 0.25, 0.05, (x, 0, 0.62), c, verts=16))
+        p.append(box('hd', (0.12, 0.03, 0.03), (x, 0, 0.66), c))
+    return join(p, 'poly_bin', smooth_angle=50)
+
+
+def plant_shelf():
+    """路地の植木鉢の棚（板2段に鉢がずらり）。長手 X、壁は -Y 側。"""
+    wood = mat('SP_ShelfWood', '#8a6440', rough=0.75)
+    pot = mat('SP_Pot', '#9a5a3a', rough=0.7)
+    leaf = mat('SP_Leaf', '#3b7a33', rough=0.8)
+    flower = mat('SP_FlowerPink', '#e070a0', rough=0.6)
+    p = []
+    for z in (0.3, 0.65):
+        p.append(box('board', (1.0, 0.3, 0.03), (0, 0, z), wood))
+    for x in (-0.48, 0.48):
+        for y in (-0.13, 0.13):
+            p.append(box('leg', (0.04, 0.04, 0.7), (x, y, 0.35), wood))
+    import random as _r
+    rr = _r.Random(15)
+    for z in (0.315, 0.665):
+        for i in range(4):
+            x = -0.36 + i * 0.24
+            r = 0.07 + rr.random() * 0.03
+            p.append(cyl('pot', r, 0.12, (x, 0, z + 0.06), pot, verts=10, r2=r * 0.75))
+            p.append(ico('lf', r * 1.4, (x, 0, z + 0.12 + r), leaf, sub=1, scale=(1, 1, 1.1)))
+            if rr.random() < 0.5:
+                p.append(ico('fl', r * 0.5, (x + 0.02, 0.02, z + 0.16 + r * 1.6), flower, sub=1))
+    return join(p, 'plant_shelf', smooth_angle=50)
+
+
+def ikidomari():
+    """「この先 行き止まり」の札（細い支柱）。正面 +X。"""
+    m = M()
+    p = [cyl('post', 0.025, 1.4, (0, 0, 0.7), m['grey'], verts=8),
+         box('bd', (0.02, 0.36, 0.5), (0.03, 0, 1.25), m['signw'])]
+    p.append(text3d('t1', 'この先', 0.07, (0.042, 0, 1.38), '+X', m['red']))
+    p.append(text3d('t2', '行き止まり', 0.075, (0.042, 0, 1.22), '+X', m['red']))
+    return join(p, 'ikidomari', smooth_angle=40)
+
+
+def build_stage15():
+    return [wall_lamp(), cat('cat_a', '#f2ede4', ['#d8822e', '#2a2624']), cat('cat_b', '#2a2624', [], loaf=True),
+            cat('cat_c', '#d8a050', ['#a86020']), beer_crates(), poly_bin(), plant_shelf(), ikidomari()]
+
+
 def layout_preview(roots, path, cols=7, gap=2.2, big=()):
     small = [o for o in roots if o.name not in big]
     for i, o in enumerate(small):
@@ -2069,7 +2184,8 @@ if __name__ == '__main__':
     roots12 = build_stage12()
     roots13 = build_stage13()
     roots14 = build_stage14()
-    roots = roots1 + roots2 + roots3 + roots5 + roots6 + roots7 + roots8 + roots9 + roots10 + roots11 + roots12 + roots13 + roots14
+    roots15 = build_stage15()
+    roots = roots1 + roots2 + roots3 + roots5 + roots6 + roots7 + roots8 + roots9 + roots10 + roots11 + roots12 + roots13 + roots14 + roots15
     export_glb(os.path.join(ASSETS, 'glb', 'street.glb'), roots)
     only = argv_after()
     def away():
@@ -2083,6 +2199,11 @@ if __name__ == '__main__':
             continue
         away()
         layout_preview(grp, os.path.join(PREV, 'street%s.png' % tag), **kw)
+    if only and '15' in only:
+        away()
+        for i, o in enumerate(roots15):
+            o.location = (i * 1.3 - 4.5, 0, 0)
+        preview(os.path.join(PREV, 'street15.png'), target=(0, 0, 0.9), dist=7.5, elev=16, azim=-70, lens=45, res=(1400, 700), samples=48)
     if only and '13' in only:
         away()
         for i, o in enumerate(roots13):

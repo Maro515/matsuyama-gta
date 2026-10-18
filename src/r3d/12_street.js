@@ -54,13 +54,15 @@ G3.street = (function () {
   const BREAK = { xlamp: 95, sign_stop: 40, sign_speed: 40, sign_noparking: 40, sign_pedonly: 40, sign_crosswalk: 40, curve_mirror: 40, hydrant_sign: 40,
     guard_pipe: 55, end_marker: 30, traffic_cone: 10, barricade: 20, koji_sign: 20, stand_sign: 15, nobori_a: 15, nobori_b: 15, nobori_c: 15,
     nobori_d: 15, nobori_e: 15, bicycle_a: 20, bicycle_b: 20, bicycle_c: 20, bench: 70, recycle_box: 40, post_square: 90, post_round: 90,
-    planter_box: 70, potted_plant: 20, park_lamp: 80, taxi_sign: 40, iron_fence: 70, car_stop: 60, hydrant: 70, map_board: 90, parking_sign: 120 };
+    planter_box: 70, potted_plant: 20, park_lamp: 80, taxi_sign: 40, iron_fence: 70, car_stop: 60, hydrant: 70, map_board: 90, parking_sign: 120,
+    poly_bin: 18, beer_crates: 22, plant_shelf: 28, ikidomari: 30 };
   /* ---------- 見た目どおりの当たり判定 ----------
      モデルの「体の高さ」(0.3〜1.9m) にある面を 8cm の格子に焼き、長方形の集まりにする。
      ベンチの座面・自転車・柵・祠・看板の脚・ガソリンスタンドの柱などが形どおりに当たる。
      布や頭上の物（暖簾・提灯・のぼりの旗・日よけ）はGTAと同じく通り抜けられる */
   const SOFT = new Set(['noren', 'chochin', 'awning_red', 'awning_green', 'awning_blue', 'awning_orange', 'solar_panel', 'tv_antenna', 'tetrapod',
-    'nobori_a', 'nobori_b', 'nobori_c', 'nobori_d', 'nobori_e', 'backstop', 'jib_crane', 'lighthouse_red', 'lighthouse_white', 'fishing_boat', 'weed_a', 'weed_b']);
+    'nobori_a', 'nobori_b', 'nobori_c', 'nobori_d', 'nobori_e', 'backstop', 'jib_crane', 'lighthouse_red', 'lighthouse_white', 'fishing_boat', 'weed_a', 'weed_b',
+    'cat_a', 'cat_b', 'cat_c', 'wall_lamp']);
   const baked = {};
   function bakeShape(name) {
     if (name in baked) return baked[name];
@@ -213,6 +215,9 @@ G3.street = (function () {
     // ゲーム上の大事な地点（みかん・ギグ・ミッション）は空けておく
     for (const k of KEYPTS) take(k[0], k[1], 7);
     for (const r of ROADS) if (r.kind === 'lane') for (let d = 0; d <= r.pl.len; d += 6) { const p = plAt(r.pl, d); take(p.x, p.y, r.w / 2 - 0.5); }
+    // 小道は真ん中を歩けるように空ける（両端は路地の小物を置く所）
+    alleyIndex();
+    if (typeof ALLEYS !== 'undefined') for (const a of ALLEYS) for (let d = 0; d <= a.pl.len; d += 3) { const p = plAt(a.pl, d); take(p.x, p.y, Math.max(1.2, a.w / 2 - 1.2)); }
     // 追加ランドマークの石段・参道の前（歩道の柵や街具で入口を塞がない）
     for (const l of LMS) if (l.ex) for (let x = l.ex[0] - 12; x <= l.ex[2] + 12; x += 4) for (let y = l.ex[1] - 12; y <= l.ex[3] + 12; y += 4) take(x, y, 3);
     // 河川敷の桜と遊歩道
@@ -924,6 +929,7 @@ G3.street = (function () {
             const a = wallPt(b, f, (s0 - ext) / len, off), e = wallPt(b, f, (s0 + sec - ext) / len, off);
             if (!clearOfRoad(a.x, a.y, 0.6) || !clearOfRoad(e.x, e.y, 0.6)) continue;
             if (overlapsOther(b, a.x, a.y, 1) || overlapsOther(b, e.x, e.y, 1)) continue;
+            if (onAlley(a.x, a.y, 0.4) || onAlley(e.x, e.y, 0.4) || onAlley((a.x + e.x) / 2, (a.y + e.y) / 2, 0.4)) continue;   // 小道を塀でふさがない
             put('block_wall', a.x, a.y, a.along, 0);
           }
         }
@@ -2385,6 +2391,7 @@ G3.street = (function () {
     soccer_goal: 900, jib_crane: 2400, small_shrine: 1000, farm_hut: 1000 });
   // 影を落とすのは大きな物だけ（小物は影のパスの描画回数を増やすだけ）
   const SHADOW = /konbini|pylon|ob_stair|platform|billboard|crane|shrine|farm_hut|backstop|wall|fence|awning|booth|container|wcont|lighthouse|canopy|gs_|tram_stop|guide|karakuri|toilet|shelter|hedge|guardrail|gantry|catenary|boat|lantern|jungle|slide|swing|vending|map_board/;
+  Object.assign(FAR, { cat_a: 220, cat_b: 220, cat_c: 220, beer_crates: 320, poly_bin: 320, plant_shelf: 300, ikidomari: 380, wall_lamp: 520 });
   Object.assign(FAR, { bicycle_a: 330, bicycle_b: 330, bicycle_c: 330, ac_unit: 380, potted_plant: 300, propane: 380, tv_antenna: 500,
     block_wall: 700, guard_pipe: 650, guardrail: 900, hedge_planter: 800, awning_red: 800, awning_green: 800, awning_blue: 800, awning_orange: 800,
     xlamp: 900, hydrant: 300, hydrant_sign: 380, stand_sign: 330, nobori_a: 450, nobori_b: 450, nobori_c: 450, nobori_d: 450, nobori_e: 450 });
@@ -2508,6 +2515,7 @@ G3.street = (function () {
           const L = hyp(B.x - A.x, B.y - A.y), ang = Math.atan2(B.y - A.y, B.x - A.x), seg = 5;
           for (let s2 = 0; s2 + seg <= L + 0.01; s2 += seg) {
             if (gapAt !== undefined && Math.abs(s2 + seg / 2 - gapAt) < 4.5) continue;   // 入口
+            if (onAlley(A.x + Math.cos(ang) * (s2 + seg / 2), A.y + Math.sin(ang) * (s2 + seg / 2), 0.5)) continue;   // 小道を金網でふさがない
             put('mesh_fence', A.x + Math.cos(ang) * s2, A.y + Math.sin(ang) * s2, -ang, 0);
           }
         };
@@ -2819,6 +2827,225 @@ G3.street = (function () {
     stats.mikan_moved = moved;
   }
 
+  /* ---------- 小道（路地・抜け道・袋小路・細道）の路面と小物（2026-10-19） ----------
+     小道は game.html の ALLEYS（焼き込みデータ）。真ん中は歩けるように空け（seedOcc で予約）、両端に路地らしい物を置く */
+  let alleyGrid = null;
+  const _ag = [];
+  function alleyIndex() {
+    alleyGrid = makeGrid();
+    if (typeof ALLEYS === 'undefined') return;
+    for (const a of ALLEYS) for (let i = 1; i < a.pts.length; i++) {
+      const [ax, ay] = a.pts[i - 1], [bx, by] = a.pts[i];
+      gridAdd(alleyGrid, Math.min(ax, bx) - 10, Math.min(ay, by) - 10, Math.max(ax, bx) + 10, Math.max(ay, by) + 10, { ax, ay, bx, by, a });
+    }
+  }
+  function onAlley(x, y, m) {   // 小道の路面（幅/2 + m）の上なら、その小道
+    if (!alleyGrid) return null;
+    gridNear(alleyGrid, x, y, _ag);
+    for (const s of _ag) if (seg(x, y, s.ax, s.ay, s.bx, s.by).d < s.a.w / 2 + m) return s.a;
+    return null;
+  }
+  // 折れ線上の距離 d の位置と向き
+  function alleyAt(a, d) { const p = plAt(a.pl, clamp(d, 0, a.pl.len)); return { x: p.x, y: p.y, a: p.a, nx: -Math.sin(p.a), ny: Math.cos(p.a) }; }
+  function alleys(scene) {
+    if (typeof ALLEYS === 'undefined' || !ALLEYS.length) return;
+    const rr = mulberry32(5501);
+    const T = G3.tex;
+    const mk = (tex, rough) => new THREE.MeshStandardMaterial({ map: tex || null, vertexColors: true, roughness: rough, polygonOffset: true, polygonOffsetFactor: -1, polygonOffsetUnits: -6 });
+    const MAT = { conc: mk(T.concrete, 0.9), asph: mk(T.asphalt, 0.88), stone: mk(T.sidewalk, 0.85), soil: mk(T.soil, 0.95) };
+    for (const k of ['conc', 'asph', 'stone']) G3.world.anim.wet.push(MAT[k]);
+    const GBs = { conc: new G3.GB(true), asph: new G3.GB(true), stone: new G3.GB(true), soil: new G3.GB(true) };
+    const gbE = new G3.GB(true);   // U字溝の蓋・格子・石畳の目地・草の縁
+    const col = h => { const c = new THREE.Color(h); return [c.r, c.g, c.b]; };
+    const STY = {
+      ura: { m: 'conc', c: col('#9c988f'), gut: 1 }, yoko: { m: 'asph', c: col('#6a6560'), gut: 1 }, ishi: { m: 'stone', c: col('#bcae94'), mid: col('#d6cab2') },
+      minato: { m: 'conc', c: col('#a59f92'), gut: 1 }, jutaku: { m: 'asph', c: col('#86847f'), gut: 2 }, tsuchi: { m: 'soil', c: col('#a08a68'), grass: col('#6f8a4c') },
+    };
+    const CG = col('#8d8a83'), CGR = col('#3c3d3b');
+    const Hh = (x, z, dy) => heightAt(x, z) + dy;
+    const UV = (p, s) => [p[0] / s, p[2] / s];
+    const strip = (gb, a, o0, o1, dy, c, s, d0 = 0, d1 = 1e9) => {   // 折れ線の帯 [o0,o1]（左手が正）
+      const P = a.pts;
+      let acc = 0;
+      for (let i = 1; i < P.length; i++) {
+        const [ax, ay] = P[i - 1], [bx, by] = P[i], L = hyp(bx - ax, by - ay);
+        if (L < 0.01) continue;
+        const s0 = Math.max(0, d0 - acc), s1 = Math.min(L, d1 - acc);
+        acc += L;
+        if (s1 <= s0) continue;
+        const tx = (bx - ax) / L, ty = (by - ay) / L, nx = -ty, ny = tx;
+        const q = (s, o) => { const x = ax + tx * s + nx * o, z = ay + ty * s + ny * o; return [x, Hh(x, z, dy), z]; };
+        const A = q(s0, o0), B = q(s0, o1), C2 = q(s1, o1), D = q(s1, o0);
+        gb.quad([A, B, C2, D], [UV(A, s), UV(B, s), UV(C2, s), UV(D, s)], c);
+      }
+    };
+    const corner = (gb, x, y, h, dy, c, s) => {
+      const A = [x - h, Hh(x - h, y - h, dy), y - h], B = [x - h, Hh(x - h, y + h, dy), y + h], C2 = [x + h, Hh(x + h, y + h, dy), y + h], D = [x + h, Hh(x + h, y - h, dy), y - h];
+      gb.quad([A, B, C2, D], [UV(A, s), UV(B, s), UV(C2, s), UV(D, s)], c);
+    };
+    const FURN = {
+      ura: [['ac_unit', 0.22], ['propane', 0.1], ['poly_bin', 0.14], ['beer_crates', 0.08], ['potted_plant', 0.14], ['bicycle_a', 0.1], ['plant_shelf', 0.07], ['recycle_box', 0.05]],
+      yoko: [['beer_crates', 0.26], ['poly_bin', 0.16], ['stand_sign', 0.2], ['potted_plant', 0.12], ['bicycle_b', 0.06], ['propane', 0.06]],
+      ishi: [['potted_plant', 0.32], ['plant_shelf', 0.18], ['bicycle_c', 0.1], ['stand_sign', 0.08], ['nobori_c', 0.06]],
+      minato: [['propane', 0.14], ['poly_bin', 0.14], ['fish_crates', 0.1], ['buoy_stack', 0.06], ['potted_plant', 0.16], ['plant_shelf', 0.1], ['bicycle_a', 0.1]],
+      jutaku: [['potted_plant', 0.3], ['plant_shelf', 0.14], ['bicycle_a', 0.16], ['poly_bin', 0.1], ['propane', 0.1], ['ac_unit', 0.08]],
+      tsuchi: [['weed_a', 0.4], ['weed_b', 0.35]],
+    };
+    const WALLY = new Set(['ac_unit', 'propane', 'plant_shelf', 'beer_crates', 'recycle_box', 'fish_crates', 'buoy_stack']);
+    // 壁から路地の中への奥行きの半分（ゲーム単位）。ALONG は壁に沿わせる物、それ以外は路地の中を向く
+    const DEPTH = { ac_unit: 0.43, propane: 0.5, poly_bin: 0.62, beer_crates: 0.86, potted_plant: 0.55, plant_shelf: 0.38, bicycle_a: 0.69,
+      bicycle_b: 0.69, bicycle_c: 0.69, recycle_box: 0.53, stand_sign: 0.62, nobori_c: 0.4, fish_crates: 0.9, buoy_stack: 0.9, weed_a: 0.3, weed_b: 0.3 };
+    const ALONG = new Set(['bicycle_a', 'bicycle_b', 'bicycle_c', 'plant_shelf', 'beer_crates', 'poly_bin', 'fish_crates', 'buoy_stack']);
+    const CLEAR = 1.25;   // 真ん中に必ず空ける半幅（人が通れる 1m）
+    const pick = list => { const u = rr(); let s = 0; for (const [n, p] of list) { s += p; if (u < s) return n; } return null; };
+    const signN = G3.world.WM.sign && G3.world.WM.sign.map ? Math.round(G3.world.WM.sign.map.image.width / 64) : 0;
+    const IZA = [0, 9, 1, 2, 0, 9, 10, 5, 6, 7];   // 居酒屋・焼鳥・ラーメン・カラオケ・喫茶・うどん・鯛めし・じゃこ天（10_world の SIGNS の並び）
+    const gbSign = new G3.GB(false), wire = [];
+    let nItem = 0, nLamp = 0, nSign = 0, nCat = 0, nWall = 0;
+    for (const a of ALLEYS) {
+      const S = STY[a.style] || STY.jutaku, h = a.w / 2;
+      // 路面（曲がり角は四角で埋める）
+      strip(GBs[S.m], a, -h, h, 0.07, S.c, S.m === 'soil' ? 8 : 6);
+      for (let i = 1; i < a.pts.length - 1; i++) corner(GBs[S.m], a.pts[i][0], a.pts[i][1], h, 0.07, S.c, S.m === 'soil' ? 8 : 6);
+      // 片側（住宅地は両側）の U字溝の蓋と、ところどころの鉄の格子
+      if (S.gut) {
+        const sides = S.gut === 2 ? [1, -1] : [rr() < 0.5 ? 1 : -1];
+        for (const sg of sides) {
+          const o0 = sg > 0 ? h - 0.75 : -h + 0.15, o1 = sg > 0 ? h - 0.15 : -h + 0.75;
+          strip(gbE, a, o0, o1, 0.085, CG, 3);
+          for (let d = 3 + rr() * 4; d < a.pl.len - 2; d += 7 + rr() * 5) strip(gbE, a, o0 + 0.08, o1 - 0.08, 0.092, CGR, 3, d, d + 0.6);
+        }
+      }
+      if (S.mid) strip(gbE, a, -0.55, 0.55, 0.085, S.mid, 3);
+      if (S.grass) for (const sg of [1, -1]) strip(gbE, a, sg > 0 ? h - 0.55 : -h - 0.25, sg > 0 ? h + 0.25 : -h + 0.55, 0.08, S.grass, 4);
+      // 小物（両端に交互）
+      const list = FURN[a.style] || FURN.jutaku;
+      let k = (rr() * 2) | 0;
+      if (a.w >= 5) for (let d = 4 + rr() * 4; d < a.pl.len - 4; d += 6 + rr() * 7, k++) {
+        if (rr() < 0.25) continue;
+        const sg = k % 2 ? 1 : -1, q = alleyAt(a, d);
+        const wx = q.x + q.nx * sg * (h + 0.9), wy = q.y + q.ny * sg * (h + 0.9);
+        const wall = nearBld(wx, wy, 0.4);
+        const nm = pick(list);
+        if (!nm || (WALLY.has(nm) && !wall)) continue;
+        // 壁際（壁は h+0.35）に寄せて置き、路地の真ん中に CLEAR を残す
+        const dep = DEPTH[nm] || 0.6, o = h + 0.25 - dep;
+        if (o - dep < CLEAR && !SOFT.has(nm) && !nm.startsWith('weed')) continue;
+        const x = q.x + q.nx * sg * o, y = q.y + q.ny * sg * o;
+        if (!free(x, y, Math.min(0.5, dep)) || nearLM(x, y, 2)) continue;
+        // 壁から路地の中を向く（+X が外向き）／長い物は壁に沿わせる
+        const inA = Math.atan2(-q.ny * sg, -q.nx * sg);
+        put(nm, x, y, ALONG.has(nm) ? -q.a : -inA, 0);
+        take(x, y, dep + 0.3);
+        nItem++;
+      }
+      // 建物のない側はブロック塀（道後の石畳は土塀）で囲む＝空き地を横切るだけの道に見せない。ところどころ切れ目
+      if (a.style !== 'tsuchi' && a.style !== 'yoko') {
+        const ishi = a.style === 'ishi', SEG = ishi ? 9.5 : 5;
+        for (const sg of [1, -1]) {
+          let run = rr() < 0.7;
+          let acc = 0;
+          for (let i = 1; i < a.pts.length; i++) {
+            const [ax, ay] = a.pts[i - 1], [bx, by] = a.pts[i], L = hyp(bx - ax, by - ay);
+            const tx = (bx - ax) / L, ty = (by - ay) / L, nx = -ty, ny = tx, ang = Math.atan2(ty, tx);
+            for (let s = 1.5; s + SEG <= L - 1.5; s += SEG) {
+              if (rr() < (run ? 0.12 : 0.35)) run = !run;
+              if (!run) continue;
+              const o = sg * (h + 0.45), sx = ax + tx * s + nx * o, sy = ay + ty * s + ny * o;
+              const mx = sx + tx * SEG / 2, my = sy + ty * SEG / 2, ex = sx + tx * SEG, ey = sy + ty * SEG;
+              // 外側に建物がある所（壁がある）・道路・ほかの小道・大事な地点の近くには立てない
+              if ([[sx, sy], [mx, my], [ex, ey]].some(([x, y]) => nearBld(x + nx * sg * 1.6, y + ny * sg * 1.6, 0.4) || nearBld(x, y, 0.3) || !clearOfRoad(x, y, 0.4)
+                || (onAlley(x, y, 0.2) && onAlley(x, y, 0.2) !== a) || !free(x, y, 0.2) || nearLM(x, y, 2))) continue;
+              if (ishi) put('dobei', mx, my, -ang, 0);
+              else put('block_wall', sx, sy, -ang, 0);
+              nWall++;
+            }
+            acc += L;
+          }
+        }
+      }
+      // 猫（ときどき。通り抜けられる）
+      if (a.style !== 'tsuchi' && rr() < 0.22) {
+        const q = alleyAt(a, a.pl.len * (0.2 + rr() * 0.6)), sg = rr() < 0.5 ? 1 : -1;
+        const x = q.x + q.nx * sg * (h - 0.4), y = q.y + q.ny * sg * (h - 0.4);
+        if (free(x, y, 0.3)) { put(['cat_a', 'cat_b', 'cat_c'][(rr() * 3) | 0], x, y, -(q.a + (rr() - 0.5) * 2.5), 0); nCat++; }
+      }
+      // 壁の防犯灯（夜に灯る）
+      for (let d = 6 + rr() * 8; d < a.pl.len - 3; d += 16 + rr() * 8) {
+        const sg = rr() < 0.5 ? 1 : -1, q = alleyAt(a, d);
+        const mx = q.x + q.nx * sg * (h + 0.35), my = q.y + q.ny * sg * (h + 0.35);
+        if (!nearBld(q.x + q.nx * sg * (h + 0.9), q.y + q.ny * sg * (h + 0.9), 0.4)) continue;
+        put('wall_lamp', mx, my, -Math.atan2(-q.ny * sg, -q.nx * sg), 0);
+        nLamp++;
+      }
+      // 飲み屋横丁: 頭上に提灯の綱、壁に暖簾と袖看板
+      if (a.style === 'yoko') {
+        for (let d = 3 + rr() * 3; d < a.pl.len - 2; d += 8 + rr() * 3) {
+          const q = alleyAt(a, d), y0 = heightAt(q.x, q.y) + 9.4;
+          const A = [q.x + q.nx * (h + 0.3), q.y + q.ny * (h + 0.3)], B = [q.x - q.nx * (h + 0.3), q.y - q.ny * (h + 0.3)];
+          wire.push(A[0], y0, A[1], B[0], y0, B[1]);
+          for (const t of [0.3, 0.7]) put('chochin', lerp(A[0], B[0], t), lerp(A[1], B[1], t), -q.a, 8.4);
+        }
+        for (let d = 2 + rr() * 3; d < a.pl.len - 2; d += 5 + rr() * 4) {
+          const sg = rr() < 0.5 ? 1 : -1, q = alleyAt(a, d);
+          const wx = q.x + q.nx * sg * (h + 0.9), wy = q.y + q.ny * sg * (h + 0.9);
+          if (!nearBld(wx, wy, 0.4)) continue;
+          const ex = q.x + q.nx * sg * (h + 0.32), ey = q.y + q.ny * sg * (h + 0.32), rot = -Math.atan2(-q.ny * sg, -q.nx * sg);
+          if (rr() < 0.55) put('noren', ex, ey, rot, 0);
+          if (signN && rr() < 0.7) {   // 袖看板（壁から路地へ張り出す縦長の看板、両面）
+            const si = IZA[(rr() * IZA.length) | 0], u0 = si / signN, u1 = (si + 1) / signN;
+            const g0 = heightAt(ex, ey), z0 = g0 + 5.6, z1 = g0 + 9.2;
+            const px = -q.nx * sg, py = -q.ny * sg;   // 路地の中へ
+            const P = (o, z, s2) => [ex + px * o + Math.cos(q.a) * 0.12 * s2, z, ey + py * o + Math.sin(q.a) * 0.12 * s2];
+            // 表（法線 sg*進行方向）を +sg 側、裏を -sg 側に。どちらから見ても文字が正しく読める
+            gbSign.quad([P(0.2, z0, sg), P(1.6, z0, sg), P(1.6, z1, sg), P(0.2, z1, sg)], [[u0, 0], [u1, 0], [u1, 1], [u0, 1]]);
+            gbSign.quad([P(1.6, z0, -sg), P(0.2, z0, -sg), P(0.2, z1, -sg), P(1.6, z1, -sg)], [[u0, 0], [u1, 0], [u1, 1], [u0, 1]]);
+            nSign++;
+          }
+        }
+      }
+      // 道後の石畳: 入口に石灯籠（幅のある路地）
+      if (a.style === 'ishi' && a.w >= 6 && a.junc.length) {
+        const j = a.junc[0], d = j.d < 1 ? 3 : a.pl.len - 3, q = alleyAt(a, d), sg = rr() < 0.5 ? 1 : -1;
+        const x = q.x + q.nx * sg * (h - 0.6), y = q.y + q.ny * sg * (h - 0.6);
+        if (free(x, y, 0.6)) { put('stone_lantern', x, y, -q.a, 0); take(x, y, 1.2); }
+      }
+      // 入口の標識: 歩行者専用・カーブミラー・行き止まり。袋小路の奥には祠
+      const ends = [0, 1].map(e => ({ e, road: a.junc.some(j => e ? j.d > a.pl.len - 1 : j.d < 1) }));
+      for (const { e, road } of ends) {
+        if (!road) continue;
+        const d = e ? a.pl.len - 2.4 : 2.4, q = alleyAt(a, d), sg = rr() < 0.5 ? 1 : -1;
+        const x = q.x + q.nx * sg * (h - 0.35), y = q.y + q.ny * sg * (h - 0.35);
+        const out = Math.atan2(e ? Math.sin(q.a) : -Math.sin(q.a), e ? Math.cos(q.a) : -Math.cos(q.a));   // 道路の方
+        const dead = !ends[1 - e].road;
+        let nm = null;
+        if (dead && rr() < 0.6) nm = 'ikidomari';
+        else if ((a.style === 'ura' || a.style === 'yoko' || a.style === 'ishi') && rr() < 0.3) nm = 'sign_pedonly';
+        else if ((a.style === 'jutaku' || a.style === 'ura') && a.w >= 5 && rr() < 0.25) nm = 'curve_mirror';
+        if (nm && free(x, y, 0.4)) { put(nm, x, y, -out, 0); take(x, y, 0.8); }
+      }
+      if (ends.some(o => !o.road) && a.style !== 'tsuchi' && rr() < 0.3) {
+        const e = ends[0].road ? 1 : 0, q = alleyAt(a, e ? a.pl.len - 1.2 : 1.2);
+        if (free(q.x, q.y, 0.6)) { put('small_shrine', q.x, q.y, -(q.a + (e ? Math.PI : 0)), 0); take(q.x, q.y, 1.2); }
+      }
+      // 立ち話の人（飲み屋横丁・石畳）
+      if ((a.style === 'yoko' || a.style === 'ishi') && rr() < 0.5) {
+        const q = alleyAt(a, a.pl.len * (0.3 + rr() * 0.4)), sg = rr() < 0.5 ? 1 : -1;
+        const x = q.x + q.nx * sg * (h - 1.0), y = q.y + q.ny * sg * (h - 1.0);
+        amb.push({ x, y, a: Math.atan2(-q.ny * sg, -q.nx * sg) + Math.PI, pose: 'stand', h: heightAt(x, y) + 0.07 });
+      }
+    }
+    for (const k in GBs) if (GBs[k].p.length) { const m = GBs[k].mesh(MAT[k], false); m.receiveShadow = true; scene.add(m); }
+    if (gbE.p.length) { const m = gbE.mesh(new THREE.MeshStandardMaterial({ map: T.concrete, vertexColors: true, roughness: 0.85, polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -12 }), false); m.receiveShadow = true; scene.add(m); }
+    if (gbSign.p.length) scene.add(gbSign.mesh(G3.world.WM.sign, false));
+    if (wire.length) {
+      const wg = new THREE.BufferGeometry();
+      wg.setAttribute('position', new THREE.Float32BufferAttribute(wire, 3));
+      scene.add(new THREE.LineSegments(wg, new THREE.LineBasicMaterial({ color: 0x1d1f22 })));
+    }
+    stats.alley = { n: ALLEYS.length, items: nItem, lamps: nLamp, signs: nSign, cats: nCat, walls: nWall };
+  }
+
   function build(scene) {
     if (!G3.glb.street) return;
     seedOcc();
@@ -2856,6 +3083,7 @@ G3.street = (function () {
     greenery();
     exteriors();
     vacantLots(scene);
+    alleys(scene);
     nightLights(scene);
     shopLights(scene);
     roofs();

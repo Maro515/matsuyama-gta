@@ -379,6 +379,42 @@ G3.world = (function () {
   }
 
 
+
+  /* ---------- 道後公園（湯築城跡）: 土塁の盛り土と砂利の園路 ---------- */
+  function buildYuzuki(scene) {
+    if (typeof YUZUKI === 'undefined') return;
+    const Y = YUZUKI, gbM = new GB(true), gbP = new GB(true);
+    // 土塁（高さは heightAt と同じ yuzukiMound）
+    const NA = 220, NR = 10;
+    for (let i = 0; i < NA; i++) for (let j = 0; j < NR; j++) {
+      const a0 = i / NA * TAU, a1 = (i + 1) / NA * TAU, r0 = Y.r0 - 1 + (Y.r1 - Y.r0 + 2) * j / NR, r1 = Y.r0 - 1 + (Y.r1 - Y.r0 + 2) * (j + 1) / NR;
+      const P = (r, a) => { const x = Y.x + Math.cos(a) * r, z = Y.y + Math.sin(a) * r; return [x, yuzukiMound(x, z) + 0.04, z]; };
+      const A = P(r0, a0), B = P(r0, a1), Cc = P(r1, a1), D = P(r1, a0);
+      if (A[1] + B[1] + Cc[1] + D[1] < 0.3) continue;
+      const sh = 0.86 + 0.14 * Math.sin((j + 0.5) / NR * Math.PI);
+      gbM.quad([A, D, Cc, B], [[A[0] / 30, A[2] / 30], [D[0] / 30, D[2] / 30], [Cc[0] / 30, Cc[2] / 30], [B[0] / 30, B[2] / 30]], C('#6f8a52').map(v => v * sh));
+    }
+    // 園路: 橋の切れ目から本壇のふもとへ、と内側を一周
+    const path = (pts, w) => ribbon(gbP, pts, -w / 2, w / 2, (x, z) => heightAt(x, z) + 0.08, 6, C('#d8ccb0'));
+    for (const g of Y.gaps) {
+      const pts = [];
+      const cp = Y.compound;
+      for (let r = Y.r1 + 2; r >= 44; r -= 4) {
+        const x = Y.x + Math.cos(g) * r, z = Y.y + Math.sin(g) * r;
+        if (x > cp[0] - 4 && x < cp[2] + 4 && z > cp[1] - 4 && z < cp[3] + 4) break;   // 屋敷の塀の手前で止める
+        pts.push([x, z]);
+      }
+      if (pts.length > 1) path(pts, 7);
+    }
+    const ring = [];
+    for (let i = 0; i <= 96; i++) { const a = i / 96 * TAU; ring.push([Y.x + Math.cos(a) * 77, Y.y + Math.sin(a) * 77]); }
+    path(ring, 5);
+    const mp = new THREE.MeshStandardMaterial({ map: G3.tex.gravel, vertexColors: true, roughness: 0.95, polygonOffset: true, polygonOffsetFactor: -1, polygonOffsetUnits: -3 });
+    const mm = gbM.mesh(WM.hill, false); mm.receiveShadow = true;
+    const pm = gbP.mesh(mp, false); pm.receiveShadow = true;
+    scene.add(mm, pm);
+  }
+
   /* ---------- みかん山の段々畑（石積み・みかんの列・農道・モノレールと運搬車） ---------- */
   function buildEstates(scene) {
     if (typeof ESTATES === 'undefined' || !ESTATES.length) return;
@@ -1912,6 +1948,7 @@ G3.world = (function () {
     buildLandmarks(scene);
     buildTrees(scene);
     buildEstates(scene);
+    buildYuzuki(scene);
     buildProps(scene);
     if (G3.street) G3.street.build(scene);
   }

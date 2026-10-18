@@ -1310,6 +1310,23 @@ const ESTATES=[];
 // 段々畑の位置（x,y）: 楕円の正規化半径 r と角度 t から
 function estatePt(e,r,t){const h=HILLS[e.hi];return[h.x+Math.cos(t)*h.rx*r,h.y+Math.sin(t)*h.ry*r];}
 
+/* ---------- 道後公園（湯築城跡）: 堀の内側の土塁（橋の所は切れ目）と中央の本壇の丘 ----------
+   生成の最後に足すので既存の位置は変わらない（公園の中は建物・道路・みかん無し） */
+const YUZUKI={x:7430,y:2585,r0:82,r1:98,h:6,gw:0.14,
+  gaps:FOOTBRIDGES.filter(f=>f.m===1).map(f=>{const p=plAt(MOATS[1].pl,f.d);return Math.atan2(p.y-2585,p.x-7430);}),
+  hill:{n:'湯築城 本壇',x:7440,y:2575,rx:38,ry:34},compound:[7362,2574,7402,2610]};   // compound=武家屋敷の土塀の矩形
+HILLS.push(YUZUKI.hill);
+// 土塁の高さ（橋の切れ目の前後はなだらかに下げる）
+function yuzukiMound(x,y){
+  const Y=YUZUKI,dx=x-Y.x,dy=y-Y.y;
+  if(Math.abs(dx)>Y.r1||Math.abs(dy)>Y.r1)return 0;
+  const r=Math.hypot(dx,dy);
+  if(r<=Y.r0||r>=Y.r1)return 0;
+  const a=Math.atan2(dy,dx);
+  let f=1;for(const g of Y.gaps){const d=Math.abs(angDiff(g,a));f=Math.min(f,clamp((d-Y.gw)/0.12,0,1));}
+  return Y.h*Math.sin(Math.PI*(r-Y.r0)/(Y.r1-Y.r0))*f*f*(3-2*f);
+}
+
 /* ---------- セーブ ---------- */
 const SAVEKEY='matsuyama-gta-save';
 function save(){
@@ -2587,6 +2604,8 @@ function drawTerrain(c,mini){
       c.stroke();
     }
   }
+  // 道後公園の土塁
+  c.strokeStyle='rgba(70,110,50,.55)';c.lineWidth=YUZUKI.r1-YUZUKI.r0;c.beginPath();c.arc(YUZUKI.x,YUZUKI.y,(YUZUKI.r0+YUZUKI.r1)/2,0,TAU);c.stroke();
   // 段々畑（石積み・みかんの列・農道）
   for(const e of ESTATES){
     const h=HILLS[e.hi],Rav=(h.rx+h.ry)/2;

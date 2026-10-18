@@ -2387,6 +2387,39 @@ G3.street = (function () {
   }
 
 
+
+  /* ---------- 道後公園（湯築城跡）: 武家屋敷（土塀・門・母屋・土蔵）、本壇の東屋、石碑、園路のベンチと灯籠 ---------- */
+  function yuzuki() {
+    if (typeof YUZUKI === 'undefined') return;
+    const Y = YUZUKI, [ox, oy, X1, Y1] = Y.compound;   // 屋敷の土塀の矩形
+    // 土塀（東面の中央に門）
+    for (let x = ox + 5; x <= X1 - 4; x += 9.5) { put('dobei', x, oy, 0, 0); put('dobei', x, Y1, 0, 0); }
+    for (let y = oy + 4.5; y <= Y1 - 4; y += 9) put('dobei', ox, y, -Math.PI / 2, 0);
+    for (const y of [oy + 4.5, oy + 9, Y1 - 9, Y1 - 4.5]) put('dobei', X1, y, -Math.PI / 2, 0);
+    put('dobei_gate', X1, (oy + Y1) / 2, 0, 0);
+    put('buke_house', 7378, 2586, -Math.PI, 0);       // 縁側は南の庭へ
+    put('buke_kura', 7372, 2604, 0, 0);               // 土蔵は奥（南西の隅）。門から庭へは広く空ける
+    for (const [x, y] of [[ox, oy], [X1, Y1], [ox, Y1], [X1, oy]]) take(x, y, 3);
+    for (let x = ox; x <= X1; x += 5) for (let y = oy; y <= Y1; y += 5) take(x, y, 3.5);
+    // 本壇の上の東屋
+    const h = Y.hill;
+    put('azumaya', h.x, h.y, 0, 0); take(h.x, h.y, 8);
+    // 北の入口の石碑と灯籠
+    const g0 = Y.gaps.reduce((b, g) => (Math.sin(g) < Math.sin(b) ? g : b), Y.gaps[0]);   // いちばん北の切れ目
+    const sp = [Y.x + Math.cos(g0 + 0.13) * 74, Y.y + Math.sin(g0 + 0.13) * 74];
+    put('sekihi', sp[0], sp[1], -(g0 + Math.PI), 0); take(sp[0], sp[1], 3);
+    for (const g of Y.gaps) for (const r of [62, 50]) for (const s of [1, -1]) {
+      const a = g + s * 5.5 / r, x = Y.x + Math.cos(a) * r, y = Y.y + Math.sin(a) * r;
+      if (free(x, y, 2.5) && !nearBld(x, y, 2)) { put('stone_lantern', x, y, 0, 0); take(x, y, 2); }
+    }
+    // 一周する園路のベンチ（内向き）
+    for (let i = 0; i < 12; i++) {
+      const a = i / 12 * TAU + 0.26, x = Y.x + Math.cos(a) * 81, y = Y.y + Math.sin(a) * 81;
+      if (Y.gaps.some(g => Math.abs(angDiff(g, a)) < 0.25) || !free(x, y, 3) || nearBld(x, y, 2)) continue;
+      put('bench', x, y, faceTo(x, y, Y.x, Y.y), 0); take(x, y, 2);
+    }
+  }
+
   /* ---------- アーケード（大街道・銀天街・道後ハイカラ通り）: 入口の看板・吊り看板・フラッグ・中央のベンチと植え込み・店頭ワゴン ---------- */
   const ARC_GATE = { '大街道': 'arcade_gate_okaido', '銀天街': 'arcade_gate_gintengai', '道後商店街': 'arcade_gate_dogo' };
   function arcades() {
@@ -2506,6 +2539,7 @@ G3.street = (function () {
     signs();
     dogo(scene);
     arcades();
+    yuzuki();
     furniture(scene);
     ports();
     coastline(scene);

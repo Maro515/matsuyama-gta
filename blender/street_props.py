@@ -1645,6 +1645,113 @@ def build_stage9():
            [hang_sign(*h) for h in HANG] + [arcade_flag(), shop_wagon()]
 
 
+
+# ======================================================================
+# 第10段: 道後公園（湯築城跡）の武家屋敷・土塀・門・東屋・石碑
+# ======================================================================
+def pyramid_roof(name, w, d, z, h, over, m):
+    """寄棟（方形）の屋根。中心 (0,0)、軒の高さ z。"""
+    bm = bmesh.new()
+    a, b = w / 2 + over, d / 2 + over
+    c = [bm.verts.new(p) for p in ((-a, -b, z), (a, -b, z), (a, b, z), (-a, b, z))]
+    t = bm.verts.new((0, 0, z + h))
+    for i in range(4):
+        bm.faces.new((c[i], c[(i + 1) % 4], t))
+    bm.faces.new(list(reversed(c)))
+    bmesh.ops.recalc_face_normals(bm, faces=bm.faces)
+    return mesh_from_bm(name, bm, [m])
+
+
+def buke_house():
+    """武家屋敷の母屋（10×6.5m、瓦の切妻、腰板＋白壁、+Y 側に縁側と障子）。"""
+    m = M()
+    wood = mat('SP_BukeWood', '#3e2e22', rough=0.75)
+    plas = mat('SP_BukePlaster', '#efe9dc', rough=0.85)
+    shoji = mat('NightGlow_Shoji', '#e8dcc0', rough=0.9, emit='#ffffff', estr=0.0)
+    kaw = mat('SP_Kawara', '#4a5056', rough=0.5, metal=0.2)
+    W, D = 10.0, 6.5
+    p = [box('base', (W + 0.4, D + 0.4, 0.5), (0, 0, 0.25), m['granite']),
+         box('koshi', (W, D, 0.9), (0, 0, 0.95), wood), box('wall', (W - 0.1, D - 0.1, 1.9), (0, 0, 2.35), plas)]
+    for x in (-W / 2, -W / 4, 0, W / 4, W / 2):
+        for y in (-D / 2, D / 2):
+            p.append(box('post', (0.2, 0.2, 2.8), (x, y, 1.9), wood))
+    for k in range(6):   # 縁側に面した障子
+        p.append(box('shoji', (1.4, 0.05, 1.7), (-W / 2 + 0.95 + k * 1.62, D / 2 + 0.03, 1.85), shoji))
+    p.append(box('engawa', (W, 1.0, 0.12), (0, D / 2 + 0.5, 0.62), wood))
+    p.append(prism('roof', [(-D / 2 - 1.0, 3.2), (D / 2 + 1.0, 3.2), (0, 5.2)], -W / 2 - 0.8, W / 2 + 0.8, kaw, axis='X'))
+    p.append(box('ridge', (W + 1.7, 0.4, 0.35), (0, 0, 5.25), kaw))
+    p.append(box('genkan', (2.0, 1.2, 2.2), (W / 2 - 1.6, -D / 2 - 0.6, 1.6), wood))
+    return join(p, 'buke_house', smooth_angle=30)
+
+
+def buke_kura():
+    """土蔵（4×3.5m、白漆喰・腰はなまこ壁風の黒、瓦屋根）。"""
+    m = M()
+    plas = mat('SP_KuraPlaster', '#f2eee4', rough=0.85)
+    blk = mat('SP_KuraBlack', '#2a2c30', rough=0.7)
+    kaw = mat('SP_Kawara', '#4a5056', rough=0.5, metal=0.2)
+    p = [box('base', (4.3, 3.8, 0.4), (0, 0, 0.2), m['granite']), box('low', (4.0, 3.5, 1.0), (0, 0, 0.9), blk),
+         box('wall', (3.95, 3.45, 2.4), (0, 0, 2.6), plas), box('door', (0.06, 1.2, 1.8), (2.0, 0, 1.4), blk)]
+    for k in range(5):
+        p.append(box('namako', (4.02, 0.03, 0.04), (0, 1.76, 0.5 + k * 0.18), plas))
+    p.append(prism('roof', [(-2.3, 3.8), (2.3, 3.8), (0, 5.0)], -2.4, 2.4, kaw, axis='X'))
+    return join(p, 'buke_kura', smooth_angle=30)
+
+
+def dobei():
+    """土塀 4m（石の基礎＋土壁＋瓦の笠）。長手 X、中心が原点。"""
+    m = M()
+    wall = mat('SP_Dobei', '#cdbf9e', rough=0.9)
+    kaw = mat('SP_Kawara', '#4a5056', rough=0.5, metal=0.2)
+    p = [box('base', (4.0, 0.7, 0.45), (0, 0, 0.225), m['granite']), box('wall', (4.0, 0.5, 1.45), (0, 0, 1.17), wall),
+         prism('cap', [(-0.6, 1.9), (0.6, 1.9), (0, 2.25)], -2.02, 2.02, kaw, axis='X')]
+    return join(p, 'dobei', smooth_angle=30)
+
+
+def dobei_gate():
+    """屋敷の門（扉は内側へ開いている）。通り口は Y 方向に 2.6m、+X が外。"""
+    m = M()
+    wood = mat('SP_BukeWood', '#3e2e22', rough=0.75)
+    kaw = mat('SP_Kawara', '#4a5056', rough=0.5, metal=0.2)
+    p = []
+    for y in (-1.45, 1.45):
+        p.append(box('post', (0.32, 0.32, 3.0), (0, y, 1.5), wood))
+        p.append(box('door', (1.3, 0.08, 2.4), (-0.75, y * 0.97, 1.3), wood))   # 開いた扉（内側へ）
+    p.append(box('beam', (0.36, 3.6, 0.3), (0, 0, 3.0), wood))
+    p.append(prism('roof', [(-1.3, 3.15), (1.3, 3.15), (0, 4.0)], -2.2, 2.2, kaw, axis='Y'))
+    return join(p, 'dobei_gate', smooth_angle=30)
+
+
+def azumaya():
+    """公園の東屋（3.6m四方、方形の屋根、中にベンチ）。"""
+    m = M()
+    wood = mat('SP_AzuWood', '#6a4a30', rough=0.75)
+    kaw = mat('SP_Kawara', '#4a5056', rough=0.5, metal=0.2)
+    p = []
+    for x in (-1.6, 1.6):
+        for y in (-1.6, 1.6):
+            p.append(box('post', (0.18, 0.18, 2.6), (x, y, 1.3), wood))
+    p.append(pyramid_roof('roof', 3.6, 3.6, 2.6, 1.3, 0.7, kaw))
+    for y in (-1.2, 1.2):
+        p.append(box('seat', (2.6, 0.4, 0.06), (0, y, 0.45), wood))
+    p.append(box('floor', (3.8, 3.8, 0.12), (0, 0, 0.06), m['granite']))
+    return join(p, 'azumaya', smooth_angle=30)
+
+
+def sekihi():
+    """石碑「湯築城跡」（文字は +X 面）。"""
+    m = M()
+    st = mat('SP_Sekihi', '#7a7a74', rough=0.8)
+    ink = mat('SP_SekihiInk', '#1c1c1c', rough=0.7)
+    p = [box('base', (1.2, 1.6, 0.35), (0, 0, 0.175), m['granite']), box('stone', (0.35, 0.9, 2.0), (0, 0, 1.35), st)]
+    p += vtext('湯築城跡', 0.2, (0.18, 0, 2.05), '+X', ink)
+    return join(p, 'sekihi', smooth_angle=30)
+
+
+def build_stage10():
+    return [buke_house(), buke_kura(), dobei(), dobei_gate(), azumaya(), sekihi()]
+
+
 def layout_preview(roots, path, cols=7, gap=2.2, big=()):
     small = [o for o in roots if o.name not in big]
     for i, o in enumerate(small):
@@ -1668,7 +1775,8 @@ if __name__ == '__main__':
     roots7 = build_stage7()
     roots8 = build_stage8()
     roots9 = build_stage9()
-    roots = roots1 + roots2 + roots3 + roots5 + roots6 + roots7 + roots8 + roots9
+    roots10 = build_stage10()
+    roots = roots1 + roots2 + roots3 + roots5 + roots6 + roots7 + roots8 + roots9 + roots10
     export_glb(os.path.join(ASSETS, 'glb', 'street.glb'), roots)
     only = argv_after()
     def away():
@@ -1682,6 +1790,11 @@ if __name__ == '__main__':
             continue
         away()
         layout_preview(grp, os.path.join(PREV, 'street%s.png' % tag), **kw)
+    if only and '10' in only:
+        away()
+        for i, o in enumerate(roots10):
+            o.location = ((i % 3) * 13 - 13, (i // 3) * 12 - 4, 0)
+        preview(os.path.join(PREV, 'street10.png'), target=(0, 3, 2), dist=40, elev=22, azim=-55, lens=45, res=(1400, 800), samples=48)
     if only and '9' in only:
         away()
         for i, o in enumerate(roots9):

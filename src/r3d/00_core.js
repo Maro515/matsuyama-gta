@@ -602,7 +602,7 @@ function heightAt(x, y) {
     const r = d.ramp;
     if (x > r.x0 && x <= r.x1 && y > r.y0 && y < r.y1) return d.top * (x - r.x0) / (r.x1 - r.x0);
   }
-  let m = 0;
+  let m = typeof yuzukiMound === 'function' ? yuzukiMound(x, y) : 0;   // 道後公園の土塁
   for (const h of HILLS3) {
     if (Math.abs(x - h.x) > h.rx || Math.abs(y - h.y) > h.ry) continue;
     const v = hillProfile(h, x, y);

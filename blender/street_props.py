@@ -1597,6 +1597,11 @@ def arcade_gate(name, width, title, sub, bg, fg):
 HANG = [('hang_sign_a', 'くすり', '#2a6ab0', '#ffffff'), ('hang_sign_b', 'めがね', '#f2efe6', '#2a2a2a'), ('hang_sign_c', '珈琲', '#4a2e1e', '#f0d8a8'),
         ('hang_sign_d', '書店', '#1e5a3a', '#ffffff'), ('hang_sign_e', '時計・宝石', '#14141a', '#e8c860'), ('hang_sign_f', 'うどん', '#f2efe6', '#b02020'),
         ('hang_sign_g', 'みかん', '#f08a1c', '#ffffff'), ('hang_sign_h', '靴', '#b02828', '#ffffff')]
+# 道後ハイカラ通り（道後商店街）の土産物（店名ではなく品名）
+HANG_DOGO = [('hang_sign_i', '坊っちゃん団子', '#2e6b3a', '#ffffff'), ('hang_sign_j', 'じゃこ天', '#f2efe6', '#b02020'),
+             ('hang_sign_k', 'みかんジュース', '#f08a1c', '#ffffff'), ('hang_sign_l', '今治タオル', '#1e4f9a', '#ffffff'),
+             ('hang_sign_m', '砥部焼', '#f4f6f8', '#1e4f9a'), ('hang_sign_n', '地ビール', '#1a1a1a', '#e8c860'),
+             ('hang_sign_o', '伊予かすり', '#22305a', '#f2efe6'), ('hang_sign_p', 'タルト', '#6a3a1e', '#f2e2c0')]
 
 
 def hang_sign(name, label, bg, fg):
@@ -1608,7 +1613,7 @@ def hang_sign(name, label, bg, fg):
     for y in (-0.6, 0.6):
         p.append(cyl('rod', 0.012, 2.0, (0, y, 4.2), m['steel'], verts=5))
     for f, x in (('+X', 0.04), ('-X', -0.04)):
-        p.append(text3d('t', label, 0.26 if len(label) <= 3 else 0.19, (x, 0, 2.95), f, ink))
+        p.append(text3d('t', label, 0.26 if len(label) <= 3 else 0.19 if len(label) <= 5 else 0.17, (x, 0, 2.95), f, ink))
     return join(p, name, smooth_angle=30)
 
 
@@ -1642,7 +1647,7 @@ def build_stage9():
     return [arcade_gate('arcade_gate_okaido', 12.0, '大街道', 'OKAIDO SHOPPING STREET', '#1e3c78', '#ffffff'),
             arcade_gate('arcade_gate_gintengai', 10.4, '銀天街', 'GINTENGAI', '#7a1e1e', '#f2d27a'),
             arcade_gate('arcade_gate_dogo', 9.6, '道後ハイカラ通り', 'DOGO HAIKARA-DORI', '#2a221c', '#f2e6c8')] + \
-           [hang_sign(*h) for h in HANG] + [arcade_flag(), shop_wagon()]
+           [hang_sign(*h) for h in HANG + HANG_DOGO] + [arcade_flag(), shop_wagon()]
 
 
 

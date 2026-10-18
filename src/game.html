@@ -417,6 +417,23 @@ const RAILS=[
  {n:'伊予鉄郡中線',pl:buildPl([[5865,3625],[5500,3800],[5000,4100],[4400,4500],[3800,5000],[3400,5700]])},
  {n:'JR予讃線',pl:buildPl([[4482,300],[4520,900],[4600,1600],[4680,2300],[4740,2985],[4700,3400],[4500,3900],[4200,4400],[3800,4870],[3300,5300],[2900,5700]])},
 ];
+// JR松山駅付近の連続立体交差（2024年9月29日に高架へ切り替え）。駅の中心から前後 flat は高架、その先 ramp で地上へ
+// 駅（中心 ±sta）は2面4線: 本線(0)の東に島式ホーム1、西に副本線と島式ホーム2。オフセットは線路の左手(+)＝西が正
+const JR_EL={pl:RAILS[3].pl,c:0,flat:330,ramp:380,h:22,sta:150,sub:[-14.9,8.4,23.4],plats:[[-11.0,-3.9],[12.3,19.5]],deck:[-18.5,27.5]};
+{let bd=1e9;for(let d=0;d<=JR_EL.pl.len;d+=2){const p=plAt(JR_EL.pl,d),k=hyp(p.x-4732,p.y-3070);if(k<bd){bd=k;JR_EL.c=d;}}}
+function railLift(pl,d){ // 線路の地面からの高さ（ゲーム単位）
+  if(pl!==JR_EL.pl)return 0;
+  const k=Math.abs(d-JR_EL.c);
+  if(k<=JR_EL.flat)return JR_EL.h;
+  if(k>=JR_EL.flat+JR_EL.ramp)return 0;
+  const t=1-(k-JR_EL.flat)/JR_EL.ramp;return JR_EL.h*t*t*(3-2*t);
+}
+function jrLiftXY(x,y){ // 座標から（JR線の近くだけ）
+  if(x<4300||x>5000||y<2000||y>4100)return 0;
+  const P=JR_EL.pl.pts,C=JR_EL.pl.cum;let bd=1e9,bdd=0;
+  for(let i=1;i<P.length;i++){const ax=P[i-1][0],ay=P[i-1][1],dx=P[i][0]-ax,dy=P[i][1]-ay,L2=dx*dx+dy*dy;const t=clamp(((x-ax)*dx+(y-ay)*dy)/L2,0,1),k=hyp(ax+dx*t-x,ay+dy*t-y);if(k<bd){bd=k;bdd=C[i-1]+t*Math.sqrt(L2);}}
+  return bd<40?railLift(JR_EL.pl,bdd):0;
+}
 
 /* ---------- ランドマーク ---------- */
 const LMS=[
@@ -762,10 +779,12 @@ const GREENH=[];
 const LMS_ADD=[
  {n:'伊佐爾波神社',x:7672,y:2240,t:'isaniwa',s:1,solid:[7622,2198,7722,2282],ex:[7588,2229,7622,2251]},  // 石段は西
  {n:'椿神社',x:6550,y:4400,t:'tsubaki',s:1,solid:[6495,4355,6605,4445],ex:[6530,4283,6570,4355]},       // 参道は北
+ {n:'飛鳥乃湯泉',x:7292,y:2197,t:'asuka',s:1,solid:[7228,2163,7356,2231]},   // 道後温泉別館（2017年）。東隣に椿の湯、間に椿の中庭
 ];
 for(const l of LMS_ADD){
   LMS.push(l);
   for(const q of [l.solid,l.ex]){
+    if(!q)continue;
     EXCLUDE.push(q);
     for(const b of buildings){
       if(b.noDraw||!(b.x1>q[0]-4&&b.x0<q[2]+4&&b.y1>q[1]-4&&b.y0<q[3]+4))continue;
@@ -773,6 +792,14 @@ for(const l of LMS_ADD){
       for(const [k,a] of bldGrid){const i=a.indexOf(b);if(i>=0)a.splice(i,1);}
     }
   }
+  addSolid(l.solid[0],l.solid[1],l.solid[2],l.solid[3],true);
+}
+LMS.push({n:'椿の湯',x:7331,y:2215,t:'label'});   // 飛鳥乃湯泉の敷地内（3Dは asuka に含む）
+// 道後温泉駅の駅舎は放生園の西。ハイカラ通り（アーケード）の入口に掛かっていたので西へ寄せる（建物の生成後に動かすので他の配置は変わらない）
+{
+  const l=LMS.find(q=>q.n==='道後温泉駅'),s0=l.solid,DX=-28;
+  for(const [k,a] of bldGrid)for(let i=a.length-1;i>=0;i--){const b=a[i];if(b.noDraw&&b.x0===s0[0]&&b.y0===s0[1]&&b.x1===s0[2]&&b.y1===s0[3])a.splice(i,1);}
+  l.x+=DX;l.solid=[s0[0]+DX,s0[1],s0[2]+DX,s0[3]];
   addSolid(l.solid[0],l.solid[1],l.solid[2],l.solid[3],true);
 }
 
@@ -1043,7 +1070,7 @@ const TRAM_STOPS=[
   TRAINS[1].stopL=TRAINS[0].stopL;TRAINS[1].stops=TRAINS[0].stops;
   const st=(tr,pts)=>{tr.stops=pts.map(pt=>dOnPl(tr.pl,pt[0],pt[1])).sort((a,b)=>a-b);};
   st(TRAINS[3],[[4700,3150],[3900,2830],[1800,1950],[1100,1150]]);
-  st(TRAINS[4],[[4740,2985]]);
+  TRAINS[4].stops=[JR_EL.c];   // JR松山駅（高架ホームの中央）
 }
 const FERRY={t:0,dir:1,ax:1120,ay:900,bx:760,by:1080};
 const PLANE={st:0,t:20,x:0,y:0,a:0,alt:0}; // st:0待機 1着陸 2停止 3離陸
@@ -2468,7 +2495,9 @@ function updTrains(dt){
     }
     // 衝突
     for(let ci=0;ci<tr.cars;ci++){
-      const p=plAt(tr.pl,clamp(tr.d-ci*50*tr.dir,0,tr.pl.len));
+      const dc=clamp(tr.d-ci*50*tr.dir,0,tr.pl.len);
+      if(railLift(tr.pl,dc)>6)continue;   // 高架の上の電車には地上からはぶつからない
+      const p=plAt(tr.pl,dc);
       const d=hyp(p.x-S.px,p.y-S.py);
       if(d<14){
         const a=Math.atan2(S.py-p.y,S.px-p.x);
@@ -3131,6 +3160,14 @@ function drawLandmark(c,l,tsec,mini){
       box(c,x+8,y-12,x+31,y+12,24,31,'#c8402a');
       slab(c,x+5,y-15,x+34,y+15,32,'#5a3a28');
       break;}
+    case 'asuka':{   // 飛鳥乃湯泉（朱の柱と白壁・裳階と大屋根）と椿の湯
+      box(c,x-58,y-24,x-8,y+24,0,13,'#f1eee6','#c8402a');
+      slab(c,x-62,y-28,x-4,y+28,14,'#4a525c');
+      box(c,x-50,y-16,x-16,y+16,14,24,'#f1eee6','#c8402a');
+      slab(c,x-55,y-21,x-11,y+21,26,'#4a525c');
+      box(c,x+23,y+5,x+55,y+31,0,12,'#f1eee6','#4a3424');
+      slab(c,x+19,y+1,x+59,y+35,14,'#4a525c');
+      break;}
     case 'tsubaki':{   // 銅板葺きの拝殿、北に楼門と大鳥居
       box(c,x-28,y-20,x+28,y+15,0,15,'#ece6d8','#d6d0c2');
       slab(c,x-35,y-27,x+35,y+22,16,'#4f8a74');
@@ -3510,7 +3547,7 @@ function drawLabels(c,zoom,x0,y0,x1,y1){
   }
 }
 /* ---------- メイン描画 ---------- */
-const LMH={isaniwa:24,tsubaki:16,depart:44,pref:26,office:30,hospital:36,police:28,onsen:20,retro:13,temple:14,campus:18,station:20,villa:13,rope:11,port:12,bigport:16,mitsukoshi:30,sakakumo:16,artmuseum:14,iyogin:34,fujigran:16,radiotower:10,school:14};
+const LMH={isaniwa:24,tsubaki:16,asuka:30,depart:44,pref:26,office:30,hospital:36,police:28,onsen:20,retro:13,temple:14,campus:18,station:20,villa:13,rope:11,port:12,bigport:16,mitsukoshi:30,sakakumo:16,artmuseum:14,iyogin:34,fujigran:16,radiotower:10,school:14};
 let tSec=0;
 function render(){
   if(cw<2||ch<2){resize();if(cw<2||ch<2)return;}

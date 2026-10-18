@@ -540,7 +540,8 @@ def branch3(name, a, b, r, m):
 # JR松山駅（高架駅）
 # ======================================================================
 def jrstation():
-    """JR松山駅（駅舎＋線路側の地上ホームと上屋）。線路は駅中心の東約49m。"""
+    """JR松山駅の駅舎（西側の旧駅舎の位置）。線路は駅中心の東約49m で、2024年9月から高架
+    （高架橋・島式ホーム2面4線・上屋・高架下の「JR松山駅だんだん通り」はゲーム側 buildViaduct で線路に沿って作る）。"""
     M = L()
     P, top = office_block('hall', -18, -24, 18, 24, 2, upper='glass', ground='goffice', gH=4.5, M=M)
     P.append(box('roofwhite', (38, 50, 0.6), (0, 0, top + 0.6), mat('LM_RoofWhite', '#eef0f0', rough=0.4)))
@@ -549,13 +550,9 @@ def jrstation():
         P.append(cyl('col', 0.22, 4.2, (x, 30.5, 2.1), M['steel'], verts=10))
     P.append(box('signbd', (16, 0.4, 2.2), (0, 24.3, top - 2.0), M['blue']))
     P.append(text3d('signt', '松山駅', 1.5, (0, 24.55, top - 2.0), '+Y', M['white']))
-    # ホームと上屋
-    P.append(box('platform', (4.2, 70, 1.0), (45.4, 0, 0.5), M['conc']))
-    P.append(box('pedge', (0.3, 70, 0.08), (47.35, 0, 1.04), mat('LM_Yellow', '#e8c020', rough=0.5)))
-    P.append(box('shelter', (5.5, 52, 0.25), (45.6, 0, 4.6), mat('LM_RoofWhite', '#eef0f0')))
-    for y in [-24 + 8 * i for i in range(7)]:
-        P.append(cyl('pcol', 0.15, 3.6, (44.6, y, 2.8), M['steel'], verts=8))
-    P.append(box('bridge', (28, 3.5, 3.0), (31, -10, 7.0), M['steel']))
+    # 高架ホームへの連絡通路（駅舎の東面から高架橋の西側の高欄へ。床は高架のホームの高さ付近）
+    P.append(box('link', (20.2, 6.0, 3.2), (28.0, 4, 9.6), mat('LM_RoofWhite', '#eef0f0', rough=0.4)))
+    P.append(box('linkwin', (20.2, 6.1, 1.2), (28.0, 4, 9.8), M['glass']))
     return finish_lm('jrstation', P)
 
 
@@ -881,6 +878,132 @@ def tsubaki():
     P += hip_roof('juyor', 16.5, 7.5, 8, 8, 3.4, 2.2, 1.0, M['kawara'], upturn=0.3, fascia=M['darkwood'])
     return finish_lm('tsubaki', P)
 
+
+def shibi(name, x, y, z, s, m):
+    """鴟尾（大棟の両端の魚の尾びれ形の飾り）。s=+1 で +X 端（外へ反る）。"""
+    parts = [box(name + '_b', (0.9, 0.5, 1.0), (x, y, z + 0.5), m)]
+    parts.append(box(name + '_f', (0.5, 0.42, 1.5), (x + s * 0.35, y, z + 1.25), m, rot=('Y', s * 0.42)))
+    parts.append(box(name + '_t', (0.42, 0.38, 0.7), (x + s * 0.85, y, z + 1.95), m, rot=('Y', s * 0.95)))
+    return parts
+
+
+def asuka():
+    """道後温泉別館 飛鳥乃湯泉（2017年開業）と椿の湯、間の椿の中庭。
+    原点＝敷地中心（ゲーム 7292,2197）。敷地 ±25.6m × ±13.6m、東(+X)が道後ハイカラ通り（アーケード）。
+    飛鳥乃湯泉: 飛鳥時代の様式（石の基壇、朱の柱と白壁、緑の連子窓、裳階、大屋根の両端に鴟尾）、入口は東の中庭側。
+    椿の湯: 白壁と焦げ茶の柱の入母屋、入口は東のアーケード側。"""
+    M = L()
+    P = []
+    granite = mat('LM_Granite', '#8d897f', rough=0.85)
+    paving = mat('LM_Paving', '#bdb7aa', rough=0.9)
+    gravel = mat('LM_Gravel', '#cbc5b6', rough=0.95)
+    renji = mat('LM_RenjiGreen', '#3f7a5c', rough=0.5)        # 連子窓の緑
+    shibi_m = mat('LM_ShibiGold', '#b8913e', metal=0.8, rough=0.35)
+    leaf = mat('LM_TsubakiLeaf', '#24452a', rough=0.7)
+    flower = mat('LM_TsubakiRed', '#c4202e', rough=0.5)
+    noren_a = mat('Noren_Asuka', '#5a2a4a', rough=0.9)
+    noren_t = mat('Noren_Tsubaki', '#9a1f2c', rough=0.9)
+    # 地面（中庭は玉砂利、通路は石畳）
+    P.append(box('ground', (51.2, 27.2, 0.06), (0, 0, 0.03), gravel))
+    P.append(box('path', (27.4, 3.0, 0.1), (11.9, 0.0, 0.05), paving))          # 飛鳥乃湯泉の入口から東へ
+    P.append(box('path2', (3.6, 4.8, 0.1), (23.8, -3.9, 0.05), paving))         # 椿の湯の前へ
+    # ---------- 飛鳥乃湯泉 ----------
+    bx0, bx1, by0, by1 = -24.0, -2.4, -10.4, 10.4
+    cx, cy = (bx0 + bx1) / 2, 0.0
+    P.append(box('kidan', (bx1 - bx0 + 1.2, by1 - by0 + 1.2, 0.7), (cx, cy, 0.35), granite))   # 基壇
+    for (sx, z0, h, x0, x1, y0, y1) in (('1', 0.7, 4.4, bx0 + 0.8, bx1 - 0.8, by0 + 0.8, by1 - 0.8),
+                                        ('2', 6.4, 3.2, bx0 + 3.4, bx1 - 3.4, by0 + 3.4, by1 - 3.4)):
+        P.append(box('akabe' + sx, (x1 - x0, y1 - y0, h), ((x0 + x1) / 2, (y0 + y1) / 2, z0 + h / 2), M['white']))
+        # 朱の柱（壁の外に半分出す）と頭貫・腰長押
+        for (axis, c0, c1, fixed, sgn) in (('x', x0, x1, y0, -1), ('x', x0, x1, y1, 1), ('y', y0, y1, x0, -1), ('y', y0, y1, x1, 1)):
+            n = max(2, int(round((c1 - c0) / 2.7)))
+            for i in range(n + 1):
+                c = c0 + (c1 - c0) * i / n
+                pos = (c, fixed + sgn * 0.12, z0 + h / 2) if axis == 'x' else (fixed + sgn * 0.12, c, z0 + h / 2)
+                P.append(cyl('hashira', 0.2, h, pos, M['vermil'], verts=10))
+                if i < n:   # 柱間の連子窓（緑の格子、夜は障子が灯る）
+                    cm = c + (c1 - c0) / n / 2
+                    wsz = (c1 - c0) / n * 0.62
+                    if axis == 'x':
+                        P.append(box('shoji', (wsz, 0.05, h * 0.36), (cm, fixed + sgn * 0.03, z0 + h * 0.55), M['glow']))
+                        for k in range(7):
+                            P.append(box('renji', (0.07, 0.1, h * 0.36), (cm - wsz / 2 + wsz * (k + 0.5) / 7, fixed + sgn * 0.09, z0 + h * 0.55), renji))
+                    else:
+                        P.append(box('shoji', (0.05, wsz, h * 0.36), (fixed + sgn * 0.03, cm, z0 + h * 0.55), M['glow']))
+                        for k in range(7):
+                            P.append(box('renji', (0.1, 0.07, h * 0.36), (fixed + sgn * 0.09, cm - wsz / 2 + wsz * (k + 0.5) / 7, z0 + h * 0.55), renji))
+            Lb = c1 - c0
+            for zz, hh in ((z0 + h - 0.25, 0.4), (z0 + h * 0.25, 0.22)):
+                if axis == 'x':
+                    P.append(box('nuki', (Lb + 0.4, 0.34, hh), ((c0 + c1) / 2, fixed + sgn * 0.14, zz), M['vermil']))
+                else:
+                    P.append(box('nuki', (0.34, Lb + 0.4, hh), (fixed + sgn * 0.14, (c0 + c1) / 2, zz), M['vermil']))
+    # 裳階（1階の屋根）と大屋根（寄棟）・鴟尾
+    P += hip_roof('mokoshi', cx, cy, bx1 - bx0 - 1.2, by1 - by0 - 1.2, 5.1, 1.5, 1.5, M['kawara'], upturn=0.3, thick=0.3, fascia=M['vermil'], ridge_ratio=0.6)
+    P += hip_roof('ooyane', cx, cy, bx1 - bx0 - 6.0, by1 - by0 - 6.0, 9.6, 4.0, 2.2, M['kawara'], upturn=0.5, fascia=M['vermil'], ridge_ratio=0.62)
+    ax_, ay_ = (bx1 - bx0 - 6.0) / 2 + 2.2, (by1 - by0 - 6.0) / 2 + 2.2
+    rl = max(0.3, ax_ * 0.62 + (ax_ - ay_) * 0.38)   # hip_roof の大棟の半長と同じ式
+    for s in (-1, 1):
+        P += shibi('shibi', cx + s * (rl + 0.1), cy, 9.6 + 4.0 + 0.35, s, shibi_m)
+    # 入口（東面・中庭側）: 朱の柱の車寄せ＋暖簾＋扁額
+    ex = bx1 + 0.6
+    for (px, py) in ((ex + 2.6, -2.6), (ex + 2.6, 2.6), (ex, -2.6), (ex, 2.6)):
+        P.append(cyl('ehashira', 0.22, 4.2, (px, py, 0.7 + 2.1), M['vermil'], verts=10))
+    P += hip_roof('eroof', ex - 0.6, 0, 7.6, 6.0, 4.9, 1.7, 0.8, M['kawara'], upturn=0.35, thick=0.25, fascia=M['vermil'], gables=M['white'], ridge_ratio=0.9)   # 妻を東へ
+    P.append(box('estep', (3.4, 6.4, 0.7), (ex + 1.3, 0, 0.35), granite))
+    P.append(box('noren', (0.08, 3.6, 1.3), (bx1 - 0.7, 0, 3.6), noren_a))
+    P.append(text3d('noren_t', '飛鳥乃湯泉', 0.42, (bx1 - 0.62, 0, 3.6), '+X', M['white'], font=MINCHO))
+    P.append(box('gaku', (0.12, 4.6, 0.9), (ex + 2.75, 0, 5.05), M['darkwood']))
+    P.append(text3d('gaku_t', '道後温泉別館', 0.42, (ex + 2.83, 0, 5.05), '+X', M['gold'], font=MINCHO))
+    # ---------- 椿の湯 ----------
+    tx0, tx1, ty0, ty1 = 9.0, 22.0, -12.6, -1.8
+    tcx, tcy = (tx0 + tx1) / 2, (ty0 + ty1) / 2
+    P.append(box('tplinth', (tx1 - tx0 + 0.8, ty1 - ty0 + 0.8, 0.4), (tcx, tcy, 0.2), granite))
+    P += wall_block('tkabe', tx0, ty0, tx1, ty1, 0.4, 4.8, M['white'], M['darkwood'], 0.22, win_mat=M['glow'], win_h=1.3, win_w=1.6, gap=2.6, win_z=0.6)
+    for (axis, c0, c1, fixed, sgn) in (('x', tx0, tx1, ty0, -1), ('x', tx0, tx1, ty1, 1), ('y', ty0, ty1, tx0, -1), ('y', ty0, ty1, tx1, 1)):
+        n = max(2, int(round((c1 - c0) / 2.6)))
+        for i in range(n + 1):
+            c = c0 + (c1 - c0) * i / n
+            pos = (c, fixed + sgn * 0.06, 2.8) if axis == 'x' else (fixed + sgn * 0.06, c, 2.8)
+            P.append(box('tpost', (0.24, 0.24, 4.8), pos, M['darkwood']))
+    P += hip_roof('troof', tcx, tcy, tx1 - tx0 + 0.6, ty1 - ty0 + 0.6, 5.2, 3.4, 1.6, M['kawara'], upturn=0.4, fascia=M['darkwood'], ridge_ratio=0.35)
+    # 入口（東・アーケード側）: 唐破風風の切妻の車寄せ＋えんじの暖簾
+    ez = tx1 + 0.2
+    for py in (tcy - 2.4, tcy + 2.4):
+        P.append(box('tepost', (0.3, 0.3, 3.8), (ez + 2.2, py, 2.3), M['darkwood']))
+    P += hip_roof('teroof', ez - 0.6, tcy, 6.8, 5.6, 4.6, 1.6, 0.7, M['kawara'], upturn=0.45, thick=0.25, fascia=M['darkwood'], gables=M['white'], ridge_ratio=0.9)   # 妻をアーケードへ
+    P.append(box('tnoren', (0.08, 3.4, 1.3), (tx1 + 0.06, tcy, 3.0), noren_t))
+    P.append(text3d('tnoren_t', '椿の湯', 0.6, (tx1 + 0.14, tcy, 3.0), '+X', M['white'], font=MINCHO))
+    P.append(box('tgaku', (0.12, 3.8, 0.8), (ez + 2.36, tcy, 4.55), M['darkwood']))
+    P.append(text3d('tgaku_t', '道後温泉 椿の湯', 0.36, (ez + 2.44, tcy, 4.55), '+X', M['gold'], font=MINCHO))
+    # ---------- 中庭の椿（聖徳太子の碑文にちなむ椿の森）と石灯籠・築地塀 ----------
+    import random
+    rnd = random.Random(1207)
+    spots = [(x, y) for x in (3.6, 7.4, 11.2, 15.0, 18.8, 22.6) for y in (4.6, 8.4, 12.0)] + \
+            [(x, y) for x in (2.6, 6.2) for y in (-11.4, -7.6, -4.0)]
+    for (x, y) in spots:
+        r = 0.9 + rnd.random() * 0.6
+        P.append(ico('tsubaki', r, (x, y, r * 0.95), leaf, sub=2, scale=(1.0, 1.0, 1.15)))
+        for k in range(6):
+            a = rnd.random() * math.tau
+            zz = r * (0.5 + rnd.random() * 0.9)
+            rr = r * 0.92
+            P.append(ico('hana', 0.14, (x + math.cos(a) * rr, y + math.sin(a) * rr, zz), flower, sub=1))
+    for (x, y) in ((2.8, -3.0), (2.8, 3.0)):
+        P.append(box('lbase', (0.8, 0.8, 0.5), (x, y, 0.25), granite))
+        P.append(cyl('lpole', 0.18, 1.2, (x, y, 1.1), granite, verts=8))
+        P.append(box('lfire', (0.6, 0.6, 0.5), (x, y, 1.95), M['glow']))
+        P.append(box('lroof', (1.0, 1.0, 0.25), (x, y, 2.3), granite))
+    for (a0, a1, fixed, ax) in ((-25.6, 25.6, -13.4, 'x'), (-25.6, 25.6, 13.4, 'x'), (-13.4, 13.4, -25.4, 'y')):
+        Lw = a1 - a0
+        if ax == 'x':
+            P.append(box('tsuiji', (Lw, 0.6, 1.9), ((a0 + a1) / 2, fixed, 0.95), M['white']))
+            P.append(box('tsuijir', (Lw + 0.2, 1.0, 0.25), ((a0 + a1) / 2, fixed, 2.0), M['kawara']))
+        else:
+            P.append(box('tsuiji', (0.6, Lw, 1.9), (fixed, (a0 + a1) / 2, 0.95), M['white']))
+            P.append(box('tsuijir', (1.0, Lw + 0.2, 0.25), (fixed, (a0 + a1) / 2, 2.0), M['kawara']))
+    return finish_lm('asuka', P)
+
 def stadium():
     """坊っちゃんスタジアム（すり鉢状のスタンド＋照明塔＋スコアボード）。"""
     M = L()
@@ -995,7 +1118,7 @@ def build():
              cityhall(), prefoffice(), shiki(), ishiteji(), campus('campus_a', 110, 70), campus('campus_b', 98, 56),
              hospital(), police(), shrine(), stadium(), parktower(), airport(), port('port', 28, 34, '三津浜港'),
              port('ferryterminal', 52, 34, '松山観光港'), ropeway(), mitsukoshi(), sakakumo(), artmuseum(), iyogin(),
-             fujigran(), radiotower(), school('school_a', 62, 26), school('school_b', 62, 22), isaniwa(), tsubaki()]
+             fujigran(), radiotower(), school('school_a', 62, 26), school('school_b', 62, 22), isaniwa(), tsubaki(), asuka()]
     return roots
 
 
@@ -1004,21 +1127,29 @@ if __name__ == '__main__':
     path = os.path.join(ASSETS, 'glb', 'landmarks.glb')
     bpy.ops.object.select_all(action='DESELECT')
     export_glb(path, roots, images='NONE')
-    # プレビュー：代表的なものを並べて撮る
-    show = {'castle': (0, 0), 'dogo_honkan': (75, 0), 'dogo_station': (130, 0), 'bansuiso': (165, 0), 'takashimaya': (0, -90),
-            'prefoffice': (85, -80), 'ishiteji': (150, -75), 'shrine': (205, -70), 'radiotower': (240, 0),
-            'isaniwa': (40, 70), 'tsubaki': (130, 70)}
-    for r in roots:
-        r.location = (*show[r.name], 0) if r.name in show else (0, 4000, 0)
-    preview(os.path.join(PREV, 'landmarks.png'), target=(115, -40, 8), dist=230, elev=24, azim=-62, lens=45, res=(1600, 900), samples=64)
-    for r in roots:
-        r.location = (0, 4000, 0)
-    for r in roots:
-        if r.name == 'castle':
-            r.location = (0, 0, 0)
-    preview(os.path.join(PREV, 'castle.png'), target=(2, 8, 8), dist=62, elev=18, azim=-58, lens=45, res=(1200, 800), samples=64)
-    for r in roots:
-        r.location = (0, 4000, 0)
-        if r.name == 'dogo_honkan':
-            r.location = (0, 0, 0)
-    preview(os.path.join(PREV, 'dogo.png'), target=(0, -2, 6), dist=70, elev=20, azim=-70, lens=45, res=(1200, 800), samples=64)
+    only = argv_after()
+    if not only:
+        # プレビュー：代表的なものを並べて撮る
+        show = {'castle': (0, 0), 'dogo_honkan': (75, 0), 'dogo_station': (130, 0), 'bansuiso': (165, 0), 'takashimaya': (0, -90),
+                'prefoffice': (85, -80), 'ishiteji': (150, -75), 'shrine': (205, -70), 'radiotower': (240, 0),
+                'isaniwa': (40, 70), 'tsubaki': (130, 70), 'asuka': (210, 70)}
+        for r in roots:
+            r.location = (*show[r.name], 0) if r.name in show else (0, 4000, 0)
+        preview(os.path.join(PREV, 'landmarks.png'), target=(115, -40, 8), dist=230, elev=24, azim=-62, lens=45, res=(1600, 900), samples=64)
+        for r in roots:
+            r.location = (0, 4000, 0)
+        for r in roots:
+            if r.name == 'castle':
+                r.location = (0, 0, 0)
+        preview(os.path.join(PREV, 'castle.png'), target=(2, 8, 8), dist=62, elev=18, azim=-58, lens=45, res=(1200, 800), samples=64)
+        for r in roots:
+            r.location = (0, 4000, 0)
+            if r.name == 'dogo_honkan':
+                r.location = (0, 0, 0)
+        preview(os.path.join(PREV, 'dogo.png'), target=(0, -2, 6), dist=70, elev=20, azim=-70, lens=45, res=(1200, 800), samples=64)
+    if not only or 'asuka' in only:
+        for r in roots:
+            r.location = (0, 4000, 0)
+            if r.name == 'asuka':
+                r.location = (0, 0, 0)
+        preview(os.path.join(PREV, 'asuka.png'), target=(0, 0, 4), dist=58, elev=24, azim=-35, lens=45, res=(1400, 800), samples=48)

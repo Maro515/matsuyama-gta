@@ -766,10 +766,12 @@ G3.street = (function () {
     if (!free(c.x, c.y, len / 2 + 1)) return;
     for (let k = 0; k < n; k++) {
       if (rr() < 0.22) continue;
-      const q = walkAt(r, sg, d + k * step, 1.9);
+      const dk = d + k * step, q = walkAt(r, sg, dk, 1.9);
       // 進行方向に対して斜め45°前後（歩道の家具帯に収まる）
       const ba = q.a + (sg > 0 ? -1 : 1) * (0.78 + (rr() - 0.5) * 0.12);
-      onWalk(['bicycle_a', 'bicycle_a', 'bicycle_b', 'bicycle_c'][(rr() * 4) | 0], q.x, q.y, -ba);
+      const nm = ['bicycle_a', 'bicycle_a', 'bicycle_b', 'bicycle_c'][(rr() * 4) | 0];
+      if (dk < 1 || dk > r.pl.len - 1) continue;   // 道路の端の外（交差点の中に1点に重なる）には置かない。乱数の消費は変えない
+      onWalk(nm, q.x, q.y, -ba);
     }
     take(c.x, c.y, len / 2 + 1);
   }
@@ -1315,6 +1317,7 @@ G3.street = (function () {
           if (t < 0 || t > 1 || u < 0 || u > 1) continue;
           const dRail = rl.pl.cum[i - 1] + t * Math.hypot(rx, ry), dRoad = r.pl.cum[j - 1] + u * Math.hypot(sx, sy);
           if (dRoad < 12 || dRoad > r.pl.len - 12) continue;
+          if (railLift(rl.pl, dRail) > 3) continue;   // 高架の下は踏切なし
           if (r.junc.some(k => Math.abs(k.d - dRoad) < k.road.w / 2 + 10)) continue;
           const lamps = [], arms = [];
           for (const dir of [1, -1]) {
@@ -1370,9 +1373,13 @@ G3.street = (function () {
         const p = plAt(rl.pl, d);
         const nx = -Math.sin(p.a), ny = Math.cos(p.a);
         const x = p.x + nx * 6.8, y = p.y + ny * 6.8;
-        const top = heightAt(p.x, p.y) + 16.6;
+        const lift = railLift(rl.pl, d), top = heightAt(p.x, p.y) + lift + 16.6;
         if (prev) wire.push(prev[0], prev[1], prev[2], p.x, top, p.y);
         prev = [p.x, top, p.y];
+        if (lift > 3) {   // 高架橋の上（駅のホームの所は上屋があるので立てない）
+          if (Math.abs(d - JR_EL.c) > JR_EL.sta + 6) put('catenary_pole', x, y, -(p.a - Math.PI / 2), lift);
+          continue;
+        }
         const ri = roadInfo(x, y);
         if ((ri && ri.d < ri.road.w / 2 + G3.SW + 2) || inWaterRaw(x, y) || nearBld(x, y, 2) || xings.some(k => k.pl === rl.pl && Math.abs(k.d - d) < 18)) continue;
         put('catenary_pole', x, y, -(p.a - Math.PI / 2), 0);
@@ -1763,7 +1770,7 @@ G3.street = (function () {
       if (!tr || !tr.stops) continue;
       for (const sd of tr.stops) {
         const p = plAt(tr.pl, sd);
-        if (nearLM(p.x, p.y, 40) || zoneOf(p.x, p.y) === 'center') continue;
+        if (railLift(tr.pl, sd) > 3 || nearLM(p.x, p.y, 40) || zoneOf(p.x, p.y) === 'center') continue;
         for (const sg of [1, -1]) {
           const q = plAt(tr.pl, sd + sg * 8);
           const nx = -Math.sin(q.a), ny = Math.cos(q.a);
@@ -2721,7 +2728,7 @@ G3.street = (function () {
       let k = (rr() * 8) | 0;
       for (let d = 12; d < r.pl.len - 10; d += 17 + rr() * 4) {
         const sg = (k % 2) ? 1 : -1, q = at(r, d, sg * (r.w / 2 - 3.2));
-        put('hang_sign_' + 'abcdefgh'[k % 8], q.x, q.y, -q.a, 0); k += 3; nh++;
+        put('hang_sign_' + (r.n === '道後商店街' ? 'ijklmnop' : 'abcdefgh')[k % 8], q.x, q.y, -q.a, 0); k += 3; nh++;
       }
       for (let d = 20; d < r.pl.len - 14; d += 34) { const q = at(r, d, 0); put('arcade_flag', q.x, q.y, -q.a, 0); }
       // 中央の植え込みとベンチ（外の店の方を向く）

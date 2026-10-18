@@ -408,8 +408,12 @@ G3.dyn = (function () {
         const p = plAt(tr.pl, d);
         const q = plAt(tr.pl, clamp(d + 2, 0, tr.pl.len));
         const a = Math.atan2(q.y - p.y, q.x - p.x) + (tr.dir < 0 ? Math.PI : 0);
-        o.position.set(p.x, heightAt(p.x, p.y) + (tr.type === 'jr' || tr.type === 'iyotetsu' ? 0.72 : 0.09), p.y);
-        o.rotation.set(0, -a, 0);
+        const lift = railLift(tr.pl, d);
+        o.position.set(p.x, heightAt(p.x, p.y) + lift + (tr.type === 'jr' || tr.type === 'iyotetsu' ? 0.72 : 0.09), p.y);
+        // 高架へのこう配では車体を傾ける（向いている方へ上り = 機首上げ）
+        const sgn = tr.dir < 0 ? -1 : 1, pit = lift || railLift(tr.pl, d + 6) ? Math.atan2(railLift(tr.pl, d + 6 * sgn) - railLift(tr.pl, d - 6 * sgn), 12) : 0;
+        o.rotation.order = 'YZX';
+        o.rotation.set(0, -a, pit);
         for (const m of o.userData.lights) m.emissiveIntensity = m.name.startsWith('Head') ? night * 5 + 0.2 : night * 1.4;
       });
     }

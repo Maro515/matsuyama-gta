@@ -1,0 +1,9 @@
+{
+  "name": "matsuyama-gta-build",
+  "private": true,
+  "description": "Vendor bundle for GRAND THEFT MIKAN (three.js + addons)",
+  "devDependencies": {
+    "three": "0.186.1",
+    "esbuild": "0.25.10"
+  }
+}

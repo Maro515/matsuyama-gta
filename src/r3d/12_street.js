@@ -349,6 +349,236 @@ G3.street = (function () {
     if (t2 && t2.stops) for (const d of t2.stops) add(t2.pl, d);
   }
 
+  /* ---------- 第2段: 歩道の街具 ---------- */
+  const faceTo = (x, y, tx, ty) => -Math.atan2(ty - y, tx - x);
+  // 歩道（交差点で切った区間）上を一定間隔で歩くイテレータ
+  function walkSpots(r, step, jitter, rr, fn) {
+    const cuts = G3.roadCuts(r);
+    for (const [sg, cl] of [[1, cuts.cutsL], [-1, cuts.cutsR]]) {
+      for (const [a, b] of G3.minusIntervals(r.pl.len, cl)) {
+        if (b - a < 16) continue;
+        for (let d = a + 8 + rr() * step * 0.5; d < b - 8; d += step + (rr() - 0.5) * jitter) fn(sg, d);
+      }
+    }
+  }
+  const walkAt = (r, sg, d, k) => at(r, d, sg * (r.w / 2 + k));
+  const roadFace = (r, sg, d, p) => { const c = at(r, d, 0); return faceTo(p.x, p.y, c.x, c.y); };
+  function nudgeOffRoad(x, y, need = 6) {
+    for (let i = 0; i < 12; i++) {
+      const ri = roadInfo(x, y);
+      if (!ri || ri.d > ri.road.w / 2 + G3.SW + need) return [x, y];
+      const dx = x - ri.x, dy = y - ri.y, l = hyp(dx, dy) || 1;
+      x += dx / l * 4; y += dy / l * 4;
+    }
+    return [x, y];
+  }
+
+  function furniture(scene) {
+    const rr = mulberry32(5203);
+    // 自販機の横に回収箱
+    for (const v of VENDING) {
+      const ri = roadInfo(v.x, v.y);
+      if (!ri) continue;
+      const th = Math.atan2(ri.y - v.y, ri.x - v.x);
+      const x = v.x + Math.sin(th) * 2.3, y = v.y - Math.cos(th) * 2.3;
+      if (!free(x, y, 1.5)) continue;
+      onWalk('recycle_box', x, y, -th);
+      take(x, y, 1.5);
+    }
+    for (const r of ROADS) {
+      if (r.kind === 'arcade') continue;
+      // ポスト
+      walkSpots(r, 520, 260, rr, (sg, d) => {
+        const p = walkAt(r, sg, d, G3.SW - 1.3);
+        if (!free(p.x, p.y, 3)) return;
+        const z = zoneOf(p.x, p.y);
+        const round = z === 'dogo' || z === 'port' || rr() < 0.18;
+        onWalk(round ? 'post_round' : 'post_square', p.x, p.y, roadFace(r, sg, d, p));
+        take(p.x, p.y, 2);
+      });
+      // 消火栓標識（縁石ぎわ）
+      walkSpots(r, 460, 200, rr, (sg, d) => {
+        const p = walkAt(r, sg, d, 0.8);
+        if (!free(p.x, p.y, 3)) return;
+        onWalk('hydrant_sign', p.x, p.y, -p.a);
+        take(p.x, p.y, 1.5);
+      });
+      // 地上機器（中心部・郊外の幹線）
+      if (r.kind === 'main' || zoneOf(at(r, r.pl.len / 2, 0).x, at(r, r.pl.len / 2, 0).y) === 'center') {
+        walkSpots(r, 340, 200, rr, (sg, d) => {
+          const p = walkAt(r, sg, d, G3.SW - 0.9);
+          if (!free(p.x, p.y, 3.5)) return;
+          onWalk('utility_box', p.x, p.y, roadFace(r, sg, d, p));
+          take(p.x, p.y, 2.5);
+        });
+      }
+      // 駐輪ラック（中心部の歩道）
+      walkSpots(r, 300, 200, rr, (sg, d) => {
+        const p0 = walkAt(r, sg, d, 0);
+        if (zoneOf(p0.x, p0.y) !== 'center' && zoneOf(p0.x, p0.y) !== 'dogo') return;
+        bikeRack(r, sg, d, 1 + (rr() < 0.3 ? 1 : 0), rr);
+      });
+    }
+    // 駅前・商店街入口の大きな駐輪場
+    for (const [x, y] of [[5868, 3600], [4760, 2990], [6244, 3125], [5925, 3590], [7395, 2350], [6210, 3480], [1210, 1520]]) {
+      const ri = roadInfo(x, y);
+      if (!ri) continue;
+      const r = ri.road;
+      if (r.kind === 'arcade') continue;
+      const d0 = dOnPl(r.pl, x, y);
+      for (const sg of [1, -1]) for (const dd of [-34, 22]) bikeRack(r, sg, d0 + dd, 2, rr);
+    }
+    // 電話ボックス（中心部のバス停の近く・駅前）
+    let nb = 0;
+    for (const b of BUSSTOPS) {
+      if (zoneOf(b[0], b[1]) === 'suburb' && rr() < 0.75) continue;
+      const ri = roadInfo(b[0], b[1]);
+      if (!ri) continue;
+      const r = ri.road, d = dOnPl(r.pl, b[0], b[1]);
+      const c = at(r, d, 0);
+      const sg = ((b[0] - c.x) * -Math.sin(c.a) + (b[1] - c.y) * Math.cos(c.a)) > 0 ? 1 : -1;
+      for (const dd of [12, -12, 20]) {
+        const p = walkAt(r, sg, d + dd, G3.SW - 1.6);
+        if (!free(p.x, p.y, 3)) continue;
+        onWalk('phone_booth', p.x, p.y, roadFace(r, sg, d + dd, p));
+        take(p.x, p.y, 2.5);
+        nb++;
+        break;
+      }
+    }
+    // 公園のベンチ
+    for (const pk of PARKS) {
+      const n = pk.k === 'rect' ? 18 : 12;
+      for (let i = 0, t = 0; i < n && t < 200; t++) {
+        let x, y, cx, cy;
+        if (pk.k === 'rect') { x = lerp(pk.x0 + 20, pk.x1 - 20, rr()); y = lerp(pk.y0 + 20, pk.y1 - 20, rr()); cx = (pk.x0 + pk.x1) / 2; cy = (pk.y0 + pk.y1) / 2; }
+        else { const a = rr() * TAU, rd = pk.r * (0.35 + rr() * 0.5); x = pk.x + Math.cos(a) * rd; y = pk.y + Math.sin(a) * rd; cx = pk.x; cy = pk.y; }
+        if (inWaterRaw(x, y) || hillAt(x, y) || nearBld(x, y, 6) || !free(x, y, 6)) continue;
+        const ri = roadInfo(x, y);
+        if (ri && ri.d < ri.road.w / 2 + G3.SW + 3) continue;
+        put('bench', x, y, faceTo(x, y, cx, cy), 0);
+        take(x, y, 3);
+        i++;
+      }
+    }
+    // 花園町通り・平和通りの歩道ベンチ
+    for (const rn of ['花園町通り', '平和通り']) {
+      const r = ROADS.find(q => q.n === rn);
+      if (!r) continue;
+      walkSpots(r, 70, 20, rr, (sg, d) => {
+        const p = walkAt(r, sg, d, G3.SW - 1.0);
+        if (!free(p.x, p.y, 3)) return;
+        onWalk('bench', p.x, p.y, roadFace(r, sg, d, p));
+        take(p.x, p.y, 2.5);
+      });
+    }
+    // 商店街のプランター
+    for (const r of ROADS) {
+      if (r.kind !== 'arcade') continue;
+      let k = 0;
+      for (let d = 14; d < r.pl.len - 10; d += 26) {
+        const sg = (k++ % 2) ? 1 : -1;
+        const p = at(r, d, sg * (r.w / 2 - 2.4));
+        put('planter_box', p.x, p.y, -p.a, 0.12);
+        take(p.x, p.y, 2);
+      }
+    }
+    // 観光案内板・時計塔（観光地・駅前広場）
+    const spots = [[7372, 2352, 'map_board'], [7452, 2240, 'map_board'], [6300, 2990, 'map_board'], [5905, 3585, 'map_board'],
+      [4700, 2960, 'map_board'], [8060, 2560, 'map_board'], [1060, 1730, 'map_board'], [1300, 720, 'map_board'], [5650, 3000, 'map_board'],
+      [4700, 3060, 'clock_pole'], [5820, 3690, 'clock_pole'], [7420, 2380, 'clock_pole'], [1290, 740, 'clock_pole']];
+    for (const [sx, sy, nm] of spots) {
+      const [x, y] = nudgeOffRoad(sx, sy, nm === 'clock_pole' ? 8 : 3);
+      if (nearBld(x, y, 3)) continue;
+      const ri = roadInfo(x, y);
+      put(nm, x, y, ri ? faceTo(x, y, ri.x, ri.y) : 0, 0);
+      take(x, y, 3);
+    }
+    parkingLots(scene, rr);
+    stats.phone_booth = nb;
+  }
+
+  function bikeRack(r, sg, d, racks, rr) {
+    const len = 7.5;   // ラック1基 = 3m
+    for (let i = 0; i < racks; i++) {
+      const dd = d + i * (len + 1);
+      const c = walkAt(r, sg, dd + len / 2, G3.SW - 2.6);
+      if (!free(c.x, c.y, 4.5)) return;
+      const p = walkAt(r, sg, dd, G3.SW - 2.6);
+      const rot = -p.a;
+      onWalk('bike_rack', p.x, p.y, rot);
+      for (let k = 0; k < 6; k++) {
+        if (rr() < 0.3) continue;
+        const q = walkAt(r, sg, dd + k * 1.5, G3.SW - 2.6);
+        const ba = p.a + (sg > 0 ? Math.PI / 2 : -Math.PI / 2) + (rr() - 0.5) * 0.16;
+        onWalk(['bicycle_a', 'bicycle_a', 'bicycle_b', 'bicycle_c'][(rr() * 4) | 0], q.x, q.y, -ba);
+      }
+      take(c.x, c.y, 4.5);
+    }
+  }
+
+  // コインパーキング（中心部の空き地）
+  function parkingLots(scene, rr) {
+    const gb = new G3.GB(false), gbL = new G3.GB(false);
+    let n = 0;
+    for (let t = 0; t < 900 && n < 12; t++) {
+      const x = lerp(5450, 6900, rr()), y = lerp(2300, 3700, rr());
+      const ri = roadInfo(x, y);
+      if (!ri || ri.road.kind === 'arcade') continue;
+      const r = ri.road;
+      const d = dOnPl(r.pl, x, y);
+      const c = at(r, d, 0);
+      const sg = ((x - c.x) * -Math.sin(c.a) + (y - c.y) * Math.cos(c.a)) > 0 ? 1 : -1;
+      const spaces = 3 + ((rr() * 3) | 0), W = spaces * 6.4 + 2, D = 14;
+      const o0 = r.w / 2 + G3.SW + 1.5, o1 = o0 + D;
+      const corners = [];
+      for (const [dd, oo] of [[d, o0], [d + W, o0], [d + W, o1], [d, o1], [d + W / 2, (o0 + o1) / 2]]) corners.push(at(r, dd, sg * oo));
+      if (d + W > r.pl.len - 20 || d < 20) continue;
+      if (r.junc.some(j => Math.abs(j.d - (d + W / 2)) < j.road.w / 2 + W / 2 + 12)) continue;
+      let bad = false;
+      for (const q of corners) {
+        if (nearBld(q.x, q.y, 3) || inWaterRaw(q.x, q.y) || inPark(q.x, q.y, 4) || hillAt(q.x, q.y) || !free(q.x, q.y, 5)) { bad = true; break; }
+        const rq = roadInfo(q.x, q.y);
+        if (rq && rq.road !== r && rq.d < rq.road.w / 2 + G3.SW + 2) { bad = true; break; }
+      }
+      if (bad) continue;
+      const Y = (q) => heightAt(q.x, q.y) + 0.07;
+      const P = corners;
+      const quad = (g, a, b, cc, dd) => {
+        const ux = b[0] - a[0], uz = b[2] - a[2], vx = dd[0] - a[0], vz = dd[2] - a[2];
+        const ny = uz * vx - ux * vz;   // 上向き法線になる頂点順にそろえる
+        g.quad(ny > 0 ? [a, b, cc, dd] : [a, dd, cc, b], [[0, 0], [1, 0], [1, 1], [0, 1]]);
+      };
+      const V = q => [q.x, Y(q), q.y];
+      quad(gb, V(P[0]), V(P[1]), V(P[2]), V(P[3]));
+      // 白線（区画）と車止め
+      for (let k = 0; k <= spaces; k++) {
+        const dd = d + 1 + k * 6.4;
+        const a = at(r, dd - 0.2, sg * (o0 + 1.5)), b = at(r, dd + 0.2, sg * (o0 + 1.5)), e = at(r, dd + 0.2, sg * (o1 - 0.8)), f = at(r, dd - 0.2, sg * (o1 - 0.8));
+        const lift = q => [q.x, Y(q) + 0.02, q.y];
+        quad(gbL, lift(a), lift(b), lift(e), lift(f));
+        if (k < spaces) {
+          const cs = at(r, dd + 3.2, sg * (o1 - 2.2));
+          put('car_stop', cs.x, cs.y, -(cs.a + Math.PI / 2), 0.05);
+          // 頭から入れて停めた車（乗って運転できる）
+          if (rr() < 0.55 && typeof mkCar === 'function') {
+            const cp = at(r, dd + 3.2, sg * (o0 + D * 0.5));
+            const into = Math.atan2(cs.y - cp.y, cs.x - cp.x);
+            parked.push(mkCar(cp.x, cp.y, into, ['sedan', 'kei', 'kei', 'sedan', 'taxi'][(rr() * 5) | 0]));
+          }
+        }
+      }
+      const sp = at(r, d - 0.5, sg * (o0 + 0.5));
+      put('parking_sign', sp.x, sp.y, -sp.a, 0);
+      for (const q of corners) take(q.x, q.y, 6);
+      n++;
+    }
+    const lotMat = new THREE.MeshStandardMaterial({ color: 0x4a4c50, roughness: 0.92, polygonOffset: true, polygonOffsetFactor: -1, polygonOffsetUnits: -8 });
+    const lineMat = new THREE.MeshStandardMaterial({ color: 0xe8e8e2, roughness: 0.7, polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -16 });
+    if (n) { const m1 = gb.mesh(lotMat, false); const m2 = gbL.mesh(lineMat, false); m1.castShadow = m2.castShadow = false; scene.add(m1, m2); }
+    stats.parking_lot = n;
+  }
+
   /* ---------- インスタンス化 ---------- */
   function flush(scene) {
     for (const name in lists) {
@@ -356,7 +586,10 @@ G3.street = (function () {
       stats[name] = lists[name].length;
       if (!node) continue;
       node.traverse(c => { if (c.isMesh) c.material = Array.isArray(c.material) ? c.material.map(G3.lmMat) : G3.lmMat(c.material); });
-      scene.add(G3.instanceNode(node, lists[name]));
+      const g = G3.instanceNode(node, lists[name]);
+      g.name = 'street_' + name;
+      g.userData.pos = lists[name].map(M => [M.elements[12], M.elements[14]]);
+      scene.add(g);
     }
     lists = {};
   }
@@ -367,6 +600,7 @@ G3.street = (function () {
     tramStops();
     guideSigns(scene);
     signs();
+    furniture(scene);
     roadEdges();
     flush(scene);
     G3.street.stats = stats;

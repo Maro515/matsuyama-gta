@@ -384,6 +384,290 @@ def build_stage1():
             sign_round('sign_pedonly', 'pedonly'), sign_crosswalk(), curve_mirror(), guide_gantry(), tram_stop()]
 
 
+# ======================================================================
+# 第2段: 歩道の街具
+# ======================================================================
+def post_round():
+    """丸ポスト（郵便差出箱1号丸形）。正面+X。"""
+    m = M()
+    red = mat('SP_PostRed', '#d0281e', rough=0.4, coat=0.3)
+    p = [cyl('base', 0.24, 0.12, (0, 0, 0.06), m['dark'], verts=24),
+         cyl('body', 0.2, 1.05, (0, 0, 0.64), red, verts=28),
+         cyl('brim', 0.25, 0.05, (0, 0, 1.18), red, verts=28),
+         sphere('dome', 0.22, (0, 0, 1.2), red, seg=28, rings=10, scale=(1, 1, 0.55))]
+    for z in (1.0,):
+        p.append(box('slot', (0.03, 0.2, 0.035), (0.195, 0, z), m['black']))
+        p.append(box('lip', (0.04, 0.24, 0.02), (0.205, 0, z + 0.035), red))
+    p.append(box('plate', (0.012, 0.16, 0.22), (0.2, 0, 0.6), m['signw']))
+    p.append(box('door', (0.012, 0.22, 0.3), (0.196, 0, 0.3), red))
+    p.append(text3d('t', '〒', 0.12, (0.2, 0, 0.82), '+X', m['signw'], depth=0.004))
+    return join(p, 'post_round', smooth_angle=50)
+
+
+def post_square():
+    """角型ポスト（郵便差出箱13号）。正面+X。"""
+    m = M()
+    red = mat('SP_PostRed', '#d0281e', rough=0.4, coat=0.3)
+    p = [box('leg', (0.18, 0.18, 0.5), (0, 0, 0.25), red),
+         box('body', (0.42, 0.56, 0.78), (0, 0, 0.9), red, bevel=0.03),
+         box('cap', (0.48, 0.62, 0.04), (0, 0, 1.31), red, bevel=0.015)]
+    for y in (-0.14, 0.14):
+        p.append(box('slot', (0.02, 0.2, 0.03), (0.215, y, 1.14), m['black']))
+        p.append(box('hood', (0.06, 0.24, 0.015), (0.22, y, 1.17), red))
+        p.append(box('lab', (0.01, 0.2, 0.06), (0.214, y, 1.04), m['signw']))
+    p.append(box('plate', (0.01, 0.4, 0.18), (0.214, 0, 0.78), m['signw']))
+    p.append(text3d('t', '〒', 0.1, (0.218, 0, 0.92), '+X', m['signw'], depth=0.004))
+    return join(p, 'post_square', smooth_angle=40)
+
+
+def phone_booth():
+    """電話ボックス（グレー枠＋ガラス、緑の公衆電話）。扉は+X。"""
+    m = M()
+    frame = mat('SP_BoothFrame', '#c9ccce', metal=0.4, rough=0.4)
+    glass = mat('SP_Glass', '#a6c0cc', rough=0.05, alpha=0.35)
+    green = mat('SP_PhoneGreen', '#2f8a4c', rough=0.4)
+    w, h = 0.9, 2.25
+    p = [box('floor', (w, w, 0.08), (0, 0, 0.04), m['grey']),
+         box('roof', (w + 0.06, w + 0.06, 0.16), (0, 0, h), frame, bevel=0.02),
+         box('sign', (w + 0.07, w + 0.07, 0.12), (0, 0, h - 0.14), mat('NightGlow_Light', '#f2f2ec', emit='#fff6e0', estr=0.0))]
+    for sx in (-1, 1):
+        for sy in (-1, 1):
+            p.append(box('col', (0.05, 0.05, h), (sx * w / 2, sy * w / 2, h / 2), frame))
+    for (cx, cy, sx, sy) in ((0, w / 2, w, 0.012), (0, -w / 2, w, 0.012), (-w / 2, 0, 0.012, w), (w / 2, 0, 0.012, w)):
+        p.append(box('gl', (sx, sy, h - 0.35), (cx, cy, 0.12 + (h - 0.35) / 2), glass))
+        p.append(box('kick', (sx + 0.01, sy + 0.01, 0.12), (cx, cy, 0.14), frame))
+    for f in ('+X', '-X'):
+        x = 0.47 if f == '+X' else -0.47
+        p.append(text3d('t', '公衆電話', 0.075, (x, 0, h - 0.14), f, m['dark'], depth=0.003))
+    p.append(box('phone', (0.18, 0.24, 0.32), (-0.34, 0, 1.2), green, bevel=0.02))
+    p.append(box('shelf', (0.3, 0.6, 0.03), (-0.3, 0, 0.98), frame))
+    p.append(box('handle', (0.03, 0.03, 0.3), (0.46, -0.3, 1.1), m['steel']))
+    return join(p, 'phone_booth', smooth_angle=40)
+
+
+def wheel(name, x, r, m_tire, m_rim, m_spoke):
+    parts = []
+    t = bpy.ops.mesh.primitive_torus_add(major_radius=r, minor_radius=0.018, major_segments=28, minor_segments=6,
+                                         location=(x, 0, r + 0.018), rotation=(math.pi / 2, 0, 0))
+    o = bpy.context.active_object
+    o.data.materials.append(m_tire)
+    parts.append(o)
+    parts.append(cyl('rim', r - 0.02, 0.012, (x, 0, r + 0.018), m_rim, verts=24, axis='Y', cap=False))
+    for k in range(8):
+        a = k / 8 * math.pi
+        parts.append(box('sp', (2 * (r - 0.03), 0.003, 0.003), (x, 0, r + 0.018), m_spoke, rot=('Y', a)))
+    parts.append(cyl('hub', 0.025, 0.08, (x, 0, r + 0.018), m_spoke, verts=10, axis='Y'))
+    return parts
+
+
+def bicycle(name, col):
+    """ママチャリ。前方+X、全長約1.8m。"""
+    m = M()
+    frame = mat('SP_Bike_' + name, col, metal=0.3, rough=0.35, coat=0.4)
+    tire = mat('SP_Tire', '#1a1a1a', rough=0.85)
+    chrome = mat('SP_Chrome', '#d5d8dc', metal=1.0, rough=0.15)
+    r = 0.33
+    fx, rx = 0.56, -0.5
+    p = wheel('fw', fx, r, tire, chrome, chrome) + wheel('rw', rx, r, tire, chrome, chrome)
+    hz = r + 0.018
+    bb = (0.0, 0, 0.3)
+    st = (-0.12, 0, 0.82)
+    hd = (0.42, 0, 0.88)
+    def tube(a, b, rad=0.017, mm=frame):
+        a, b = Vector(a), Vector(b)
+        d = b - a
+        o = cyl('t', rad, d.length, (0, 0, 0), mm, verts=8)
+        o.rotation_euler = d.to_track_quat('Z', 'Y').to_euler()
+        o.location = (a + b) / 2
+        return o
+    p += [tube(bb, st), tube(bb, (0.45, 0, 0.62)), tube((0.45, 0, 0.62), hd, 0.02),  # 低床フレーム
+          tube(bb, (rx, 0.04, hz), 0.012), tube(st, (rx, 0.04, hz), 0.011), tube(bb, (rx, -0.04, hz), 0.012), tube(st, (rx, -0.04, hz), 0.011),
+          tube(hd, (fx, 0.04, hz), 0.014, chrome), tube(hd, (fx, -0.04, hz), 0.014, chrome),
+          tube(st, (-0.15, 0, 0.95), 0.014, chrome), tube(hd, (0.4, 0, 1.02), 0.014, chrome)]
+    p.append(box('saddle', (0.26, 0.15, 0.06), (-0.17, 0, 0.98), m['black'], bevel=0.02))
+    p.append(cyl('bar', 0.012, 0.56, (0.38, 0, 1.03), chrome, verts=8, axis='Y'))
+    for s in (-1, 1):
+        p.append(cyl('grip', 0.017, 0.1, (0.38, s * 0.27, 1.03), m['black'], verts=8, axis='Y'))
+    # 前かご
+    basket = box('basket', (0.3, 0.36, 0.24), (0.64, 0, 0.92), chrome)
+    add_mod(basket, 'WIREFRAME', thickness=0.006, use_replace=True)
+    p.append(basket)
+    p.append(box('bbot', (0.3, 0.36, 0.006), (0.64, 0, 0.8), chrome))
+    # 泥除け・荷台・チェーンケース
+    p.append(box('fender_r', (0.55, 0.06, 0.012), (rx + 0.05, 0, hz + r + 0.03), frame))
+    p.append(box('rack', (0.4, 0.18, 0.015), (rx + 0.08, 0, hz + r + 0.06), chrome))
+    p.append(box('chain', (0.55, 0.012, 0.12), (-0.25, 0.06, 0.32), frame))
+    p.append(box('stand', (0.02, 0.4, 0.02), (rx - 0.05, 0, 0.12), chrome))
+    p.append(sphere('lamp', 0.04, (0.7, 0, 0.6), chrome, seg=10, rings=6))
+    return join(p, name, smooth_angle=50)
+
+
+def bike_rack():
+    """駐輪ラック（スタンド式）6台分、x方向へ 0.6m間隔。"""
+    m = M()
+    p = [box('rail', (3.6, 0.05, 0.05), (1.5, 0.35, 0.05), m['galv']),
+         box('rail2', (3.6, 0.05, 0.05), (1.5, -0.35, 0.05), m['galv'])]
+    for i in range(6):
+        x = i * 0.6
+        p.append(box('slot', (0.06, 0.75, 0.04), (x, 0, 0.08), m['galv']))
+        p.append(box('guide', (0.04, 0.04, 0.3), (x, 0.32, 0.2), m['galv']))
+    p.append(box('sign', (0.02, 0.4, 0.3), (-0.3, 0.3, 0.9), m['blue']))
+    p.append(cyl('sp', 0.02, 0.8, (-0.3, 0.3, 0.4), m['galv'], verts=8))
+    return join(p, 'bike_rack', smooth_angle=40)
+
+
+def recycle_box():
+    """自販機横の空き缶・ペットボトル回収箱（2個）。正面+X。"""
+    m = M()
+    blue = mat('SP_RecBlue', '#2a64b4', rough=0.4)
+    green = mat('SP_RecGreen', '#2f8f4a', rough=0.4)
+    p = []
+    for y, col in ((-0.24, blue), (0.24, green)):
+        p.append(box('b', (0.42, 0.42, 0.9), (0, y, 0.45), col, bevel=0.03))
+        p.append(cyl('hole', 0.065, 0.02, (0.205, y, 0.72), m['black'], verts=16, axis='X'))
+        p.append(box('lab', (0.01, 0.3, 0.12), (0.212, y, 0.5), m['signw']))
+    return join(p, 'recycle_box', smooth_angle=40)
+
+
+def utility_box():
+    """地上機器（配電用の歩道上キャビネット）。正面+X。"""
+    m = M()
+    body = mat('SP_UtilBox', '#b9b7a8', metal=0.2, rough=0.55)
+    p = [box('base', (0.6, 1.3, 0.12), (0, 0, 0.06), m['conc']),
+         box('body', (0.5, 1.2, 1.15), (0, 0, 0.7), body, bevel=0.015)]
+    for z in (0.4, 0.5, 1.05, 1.15):
+        p.append(box('vent', (0.012, 0.9, 0.02), (0.255, 0, z), m['grey']))
+    p.append(box('seam', (0.012, 0.01, 1.0), (0.255, 0, 0.7), m['grey']))
+    p.append(box('tag', (0.01, 0.2, 0.08), (0.256, 0.35, 0.85), m['yellow']))
+    return join(p, 'utility_box', smooth_angle=40)
+
+
+def hydrant_sign():
+    """消火栓標識（赤い板・白文字）。正面+X、両面。"""
+    m = M()
+    p = sign_pole(2.6, m)
+    p.append(box('plate', (0.02, 0.4, 0.62), (0.04, 0, 2.2), m['red']))
+    p.append(box('wband', (0.022, 0.38, 0.03), (0.04, 0, 1.96), m['signw']))
+    p += vtext('消火栓', 0.13, (0.052, 0, 2.38), '+X', m['signw'])
+    p += vtext('消火栓', 0.13, (0.028, 0, 2.38), '-X', m['signw'])
+    p.append(box('band', (0.022, 0.4, 0.18), (0.04, 0, 1.78), m['signw']))
+    p.append(text3d('ad', '松山市', 0.06, (0.052, 0, 1.78), '+X', m['dark'], depth=0.003))
+    return join(p, 'hydrant_sign', smooth_angle=40)
+
+
+def vtext(s, size, loc, facing, mm):
+    return [text3d('v', ch, size, (loc[0], loc[1], loc[2] - i * size * 1.08), facing, mm, depth=0.003) for i, ch in enumerate(s)]
+
+
+def bench():
+    """公園・歩道のベンチ（木の座板＋鋳物脚）。座る向き+X。"""
+    m = M()
+    wood = mat('SP_BenchWood', '#8a6038', rough=0.7)
+    iron = mat('SP_Iron', '#2c2e2f', metal=0.6, rough=0.5)
+    p = []
+    for k in range(4):
+        p.append(box('seat', (0.09, 1.7, 0.035), (0.12 - k * 0.11, 0, 0.44), wood, bevel=0.008))
+    for k in range(3):
+        p.append(box('back', (0.03, 1.7, 0.09), (-0.24 - k * 0.025, 0, 0.58 + k * 0.12), wood, bevel=0.008))
+    for y in (-0.72, 0.72):
+        p.append(prism('leg', [(0.22, 0), (0.17, 0), (0.0, 0.42), (-0.26, 0.42), (-0.34, 0.0), (-0.28, 0.0), (-0.2, 0.4), (-0.32, 0.86), (-0.28, 0.86), (-0.12, 0.42), (0.1, 0.42)],
+                       y - 0.025, y + 0.025, iron))
+    return join(p, 'bench', smooth_angle=40)
+
+
+def map_board():
+    """観光案内板（瓦屋根付きの掲示板）。正面+X。"""
+    m = M()
+    wood = mat('SP_DarkWood', '#4a3424', rough=0.7)
+    kawara = mat('SP_Kawara', '#4a5056', rough=0.5, metal=0.2)
+    p = []
+    for y in (-0.95, 0.95):
+        p.append(box('post', (0.12, 0.12, 2.3), (0, y, 1.15), wood))
+    p.append(box('board', (0.06, 1.8, 1.1), (0, 0, 1.35), wood))
+    # 地図面（色分けした街区）
+    face = mat('SP_MapBase', '#e9e2cc', rough=0.6)
+    p.append(box('face', (0.012, 1.66, 0.96), (0.035, 0, 1.35), face))
+    rr = random.Random(3)
+    cols = [mat('SP_MapG', '#8fbf7a'), mat('SP_MapB', '#7fb2d8'), mat('SP_MapY', '#e8cf7a'), mat('SP_MapR', '#d9786a'), mat('SP_MapW', '#ffffff')]
+    for i in range(26):
+        c = cols[rr.randrange(len(cols))]
+        sy, sz = rr.uniform(0.08, 0.32), rr.uniform(0.06, 0.22)
+        p.append(box('blk', (0.006, sy, sz), (0.043, rr.uniform(-0.7, 0.7), 1.35 + rr.uniform(-0.38, 0.33)), c))
+    p.append(box('title', (0.006, 1.66, 0.12), (0.043, 0, 1.76), wood))
+    p.append(text3d('tt', '松山市 観光案内図', 0.08, (0.047, 0, 1.76), '+X', m['signw'], depth=0.003))
+    p.append(prism('roof', [(-0.5, 2.3), (0.5, 2.3), (0, 2.55)], -1.15, 1.15, kawara, axis='Y'))
+    p.append(prism('roof2', [(-0.45, 2.25), (0.45, 2.25), (0.45, 2.3), (-0.45, 2.3)], -1.12, 1.12, wood, axis='Y'))
+    return join(p, 'map_board', smooth_angle=30)
+
+
+def planter_box():
+    """商店街のコンクリートプランター（季節の花）。"""
+    m = M()
+    p = [box('box', (1.2, 0.5, 0.45), (0, 0, 0.225), m['granite'], bevel=0.02),
+         box('soil', (1.12, 0.42, 0.04), (0, 0, 0.44), m['soil'])]
+    rr = random.Random(9)
+    leaf = mat('SP_Leaf', '#3b7a33', rough=0.8)
+    fl = [mat('SP_FlR', '#e2384a', rough=0.6), mat('SP_FlY', '#f2c43a', rough=0.6), mat('SP_FlP', '#d65aa6', rough=0.6), mat('SP_FlW', '#f4f2ee', rough=0.6)]
+    for i in range(9):
+        x, y = -0.45 + i * 0.11 + rr.uniform(-0.03, 0.03), rr.uniform(-0.12, 0.12)
+        p.append(ico('lf', 0.12, (x, y, 0.52), leaf, sub=1, scale=(1, 1, 0.7)))
+    for i in range(16):
+        x, y = rr.uniform(-0.5, 0.5), rr.uniform(-0.16, 0.16)
+        p.append(ico('fl', 0.04, (x, y, 0.6 + rr.uniform(0, 0.06)), fl[i % 4], sub=1))
+    return join(p, 'planter_box', smooth_angle=60)
+
+
+def parking_sign():
+    """コインパーキングの看板（Pマーク・黄色）と精算機。"""
+    m = M()
+    yel = mat('SP_ParkYellow', '#f2c22a', rough=0.4)
+    p = [cyl('pole', 0.06, 3.6, (0, 0, 1.8), m['galv'], verts=12),
+         box('board', (0.12, 1.0, 1.2), (0, 0, 3.4), yel, bevel=0.02),
+         box('blue', (0.124, 0.8, 0.78), (0, 0, 3.52), m['blue']),
+         box('lit', (0.126, 0.92, 0.26), (0, 0, 2.95), mat('NightGlow_Light', '#f2f2ec', emit='#fff6e0', estr=0.0))]
+    for f, x in (('+X', 0.065), ('-X', -0.065)):
+        p.append(text3d('P', 'P', 0.62, (x, 0, 3.5), f, m['signw'], depth=0.005))
+        p.append(text3d('t', '24H 駐車場', 0.12, (x, 0, 2.95), f, m['dark'], depth=0.004))
+    # 精算機
+    p.append(box('mach', (0.4, 0.45, 1.3), (0.9, 0, 0.65), mat('SP_MachGrey', '#d4d6d8', rough=0.4), bevel=0.02))
+    p.append(box('mhood', (0.5, 0.55, 0.06), (0.9, 0, 1.33), yel))
+    p.append(box('mscr', (0.01, 0.3, 0.2), (1.105, 0, 1.0), mat('SP_Screen', '#1a2a3a', rough=0.1, emit='#4a8acc', estr=0.3)))
+    return join(p, 'parking_sign', smooth_angle=40)
+
+
+def car_stop():
+    """駐車場の車止めブロック。"""
+    m = M()
+    return join([box('cs', (0.15, 1.2, 0.12), (0, 0, 0.06), m['conc'], bevel=0.02),
+                 box('y', (0.152, 0.3, 0.122), (0, 0.3, 0.06), m['yellow']), box('y2', (0.152, 0.3, 0.122), (0, -0.3, 0.06), m['yellow'])],
+                'car_stop', smooth_angle=40)
+
+
+def clock_pole():
+    """駅前広場の時計塔（丸時計）。"""
+    m = M()
+    face = mat('NightGlow_Clock', '#f6f4ec', rough=0.3, emit='#fff8e8', estr=0.0)
+    p = [cyl('pole', 0.09, 4.0, (0, 0, 2.0), m['steel'], verts=14),
+         cyl('base', 0.22, 0.3, (0, 0, 0.15), m['granite'], verts=14),
+         cyl('case', 0.42, 0.18, (0, 0, 4.3), m['steel'], verts=32, axis='X'),
+         cyl('face', 0.37, 0.19, (0, 0, 4.3), face, verts=32, axis='X')]
+    for f in (1, -1):
+        for k in range(12):
+            a = k / 12 * math.tau
+            p.append(box('tick', (0.004, 0.02, 0.05), (f * 0.097, math.cos(a) * 0.31, 4.3 + math.sin(a) * 0.31), m['black'], rot=('X', a)))
+        p.append(box('hh', (0.004, 0.02, 0.2), (f * 0.098, 0.05, 4.36), m['black'], rot=('X', -0.5)))
+        p.append(box('mh', (0.004, 0.014, 0.3), (f * 0.099, -0.08, 4.39), m['black'], rot=('X', 0.9)))
+    p.append(sphere('top', 0.1, (0, 0, 4.55), m['steel'], seg=12, rings=6))
+    return join(p, 'clock_pole', smooth_angle=40)
+
+
+def build_stage2():
+    return [post_round(), post_square(), phone_booth(), bicycle('bicycle_a', '#c8c9cc'), bicycle('bicycle_b', '#2a4f8e'),
+            bicycle('bicycle_c', '#8a2a2a'), bike_rack(), recycle_box(), utility_box(), hydrant_sign(), bench(), map_board(),
+            planter_box(), parking_sign(), car_stop(), clock_pole()]
+
+
+
 def layout_preview(roots, path, cols=7, gap=2.2, big=()):
     small = [o for o in roots if o.name not in big]
     for i, o in enumerate(small):
@@ -399,9 +683,14 @@ LINEAR = ('guard_pipe', 'guardrail', 'hedge_planter', 'tram_stop')
 if __name__ == '__main__':
     reset()
     fonts()
-    roots = build_stage1()
+    roots1 = build_stage1()
+    roots2 = build_stage2()
+    roots = roots1 + roots2
     export_glb(os.path.join(ASSETS, 'glb', 'street.glb'), roots)
-    layout_preview(roots, os.path.join(PREV, 'street1.png'), big=('guide_gantry', 'tram_stop'))
+    for o in roots1:
+        o.location = (0, 60, 0)
+    layout_preview(roots2, os.path.join(PREV, 'street2.png'), cols=8, gap=2.0, big=('parking_sign',))
+    layout_preview(roots1, os.path.join(PREV, 'street1.png'), big=('guide_gantry', 'tram_stop'))
     for o in roots:
         o.location = (0, 40, 0)
     g = bpy.data.objects['guide_gantry']; g.location = (-6, 0, 0)

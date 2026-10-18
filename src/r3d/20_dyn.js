@@ -331,7 +331,7 @@ G3.dyn = (function () {
   function onSidewalkY(x, y) {
     const h = heightAt(x, y);
     const ri = roadInfo(x, y);
-    if (ri && ri.road.kind !== 'arcade' && ri.d > ri.road.w / 2 - 0.2 &&
+    if (ri && ri.road.kind !== 'arcade' && ri.road.kind !== 'lane' && ri.d > ri.road.w / 2 - 0.2 &&
       ri.d < ri.road.w / 2 + (typeof INFILL_BLVD !== 'undefined' && INFILL_BLVD.has(ri.road.n) && INFILL_AREA(x, y) ? INFILL_FRONT + 0.3 : SW + 0.2)) return h + CURB;
     if (ri && ri.road.kind === 'arcade' && ri.d < ri.road.w / 2) return h + 0.12;
     return h + (ri && ri.d < ri.road.w / 2 ? 0.05 : 0);

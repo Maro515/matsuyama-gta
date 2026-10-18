@@ -665,7 +665,8 @@ G3.world = (function () {
       const s = Math.max(0.35, Math.abs(Math.sin(tb - ta)));
       const half = (o.w / 2 + 0.5) / s;
       const iv = [j.d - half, j.d + half];
-      mark.push([j.d - half - 1.5, j.d + half + 1.5]);
+      // 幹線・一般道の中央線や車線境界は、路地が取り付くだけの所では途切れさせない
+      if (o.kind !== 'lane' || r.kind === 'lane') mark.push([j.d - half - 1.5, j.d + half + 1.5]);
       // 相手がこの道路で終わる(T字)なら片側だけ切る
       const oEnd = j.od < 10 || j.od > o.pl.len - 10;
       if (oEnd) {
@@ -698,6 +699,18 @@ G3.world = (function () {
       anim.wet.push(mat);
       const m = gb.mesh(mat, false);
       scene.add(m);
+      if (r.kind === 'lane') {
+        // 路地: 歩道なし。両端に白い外側線（交差点で切る）
+        const cl = roadCuts(r);
+        for (const [a, b] of minusIntervals(r.pl.len, cl.mark)) {
+          const pts = subPts(r.pl, a, b);
+          if (pts.length < 2) continue;
+          const eo = r.w / 2 - 0.9;
+          ribbon(gbW, pts, eo - 0.22, eo + 0.22, flatY(0.07), 10);
+          ribbon(gbW, pts, -eo - 0.22, -eo + 0.22, flatY(0.07), 10);
+        }
+        return;
+      }
       // 歩道（交差点で切る）
       const cuts = roadCuts(r);
       for (const [side, cl] of [[1, cuts.cutsL], [-1, cuts.cutsR]]) {

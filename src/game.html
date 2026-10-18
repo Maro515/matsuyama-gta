@@ -751,6 +751,79 @@ const GREENH=[];
   GREENH.push({x:f.x+f.w/2,y:f.y+f.h/2,a:f.w>=f.h?0:Math.PI/2});
  }}
 
+/* ---------- 生活道路・路地（既存の建物のすき間を通し、既存の道路につなぐ） ----------
+   ほかの配置が全部決まった後に追加するので、建物・みかん等の位置は変わらない。歩道なし・幅6.4m */
+const LANE_W=16;
+{
+  const lr=mulberry32(8101);
+  const PTS=[...LAMPS.map(l=>[l[0],l[1],5]),...POLES.map(p=>[p.x,p.y,5]),...VENDING.map(v=>[v.x,v.y,6]),
+    ...BUSSTOPS.map(b=>[b[0],b[1],10]),...SIGNALS.map(q=>[q.x,q.y,5]),...TREES.map(t=>[t[0],t[1],6])];
+  const ptGrid=makeGrid();for(const q of PTS)gridAdd(ptGrid,q[0]-q[2],q[1]-q[2],q[0]+q[2],q[1]+q[2],q);
+  const _pq=[];
+  const free=(x,y)=>{
+    gridNear(bldGrid,x,y,_ov);
+    for(const b of _ov)if(x>b.x0-LANE_W/2-2&&x<b.x1+LANE_W/2+2&&y>b.y0-LANE_W/2-2&&y<b.y1+LANE_W/2+2)return false;
+    if(inWaterRaw(x,y)||hillAt(x,y)||inPark(x,y,6)||railDist(x,y)<14)return false;
+    for(const f of FIELDS)if(x>f.x-LANE_W&&x<f.x+f.w+LANE_W&&y>f.y-LANE_W&&y<f.y+f.h+LANE_W)return false;
+    for(const e of EXCLUDE)if(x>e[0]&&x<e[2]&&y>e[1]&&y<e[3])return false;
+    gridNear(ptGrid,x,y,_pq);
+    for(const q of _pq)if(hyp(q[0]-x,q[1]-y)<q[2]+LANE_W/2)return false;
+    return true;
+  };
+  const onRoad=(x,y)=>{const ri=roadInfo(x,y);return ri&&ri.d<ri.road.w/2+(ri.road.kind==='lane'?1:2)?ri:null;};
+  const lanes=[];
+  const nearLane=(ax,ay,bx,by)=>{ // 平行して近すぎる路地を避ける
+    for(const l of lanes){
+      const par=Math.abs((bx-ax)*(l[3]-l[1])-(by-ay)*(l[2]-l[0]))<1e-6*1e6?true:false;
+      const m1=seg((ax+bx)/2,(ay+by)/2,l[0],l[1],l[2],l[3]).d;
+      if(m1<46&&Math.abs(Math.abs((bx-ax)/(hyp(bx-ax,by-ay)||1))-Math.abs((l[2]-l[0])/(hyp(l[2]-l[0],l[3]-l[1])||1)))<0.2)return true;
+    }
+    return false;
+  };
+  for(const z of ZONES){
+    const [zx0,zy0,zx1,zy1]=z.r;
+    for(const vert of [false,true]){
+      const sp=62+lr()*16;
+      for(let c=(vert?zx0:zy0)+sp*(0.3+lr()*0.4);c<(vert?zx1:zy1);c+=sp*(0.85+lr()*0.3)){
+        const s0=(vert?zy0:zx0)-160,s1=(vert?zy1:zx1)+160;
+        let run=null,startType=null;
+        const flushRun=(endType,ex,ey)=>{
+          if(!run)return;
+          const [ax,ay]=run, L=hyp(ex-ax,ey-ay);
+          const ok=(startType==='road'&&endType==='road'&&L>=40)||((startType==='road'||endType==='road')&&L>=70&&lr()<0.55);
+          if(ok){
+            // 既存の道路と平行に近接していないか
+            let par=0,n=0;
+            for(let t=0.15;t<=0.85;t+=0.1){const x=lerp(ax,ex,t),y=lerp(ay,ey,t);const ri=roadInfo(x,y);n++;if(ri&&ri.d<ri.road.w/2+30)par++;}
+            if(par/n<0.3&&!nearLane(ax,ay,ex,ey)){
+              lanes.push([ax,ay,ex,ey]);
+              const r={n:'生活道路',kind:'lane',w:LANE_W,pts:[[ax,ay],[ex,ey]]};
+              r.pl=buildPl(r.pts);ROADS.push(r);
+              const sg={ax,ay,bx:ex,by:ey,road:r};
+              gridAdd(roadGrid,Math.min(ax,ex)-60,Math.min(ay,ey)-60,Math.max(ax,ex)+60,Math.max(ay,ey)+60,sg);
+            }
+          }
+          run=null;
+        };
+        let prevRoad=false;
+        for(let t=s0;t<=s1;t+=4){
+          const x=vert?c:t,y=vert?t:c;
+          const rd=onRoad(x,y);
+          if(rd){ // 道路に出たら区切り（そこが接続点）
+            if(run)flushRun('road',x,y);
+            prevRoad=true;continue;
+          }
+          const f=free(x,y);
+          if(f){if(!run){run=[x,y];startType=prevRoad?'road':'block';if(prevRoad){run=[vert?c:t-4,vert?t-4:c];}}}
+          else{if(run)flushRun('block',x,y);}
+          prevRoad=false;
+        }
+        if(run)flushRun('block',vert?c:s1,vert?s1:c);
+      }
+    }
+  }
+}
+
 
 /* =========================================================
    道路ネットワーク（交差点グラフ・横断歩道投影・電停）
@@ -910,7 +983,7 @@ function INFILL_AREA(x,y){
 // 建物の正面までの距離（中心線から w/2+…）。並木のある大通りは歩道＋植樹・街灯の帯をとる。ほかは歩道のすぐ外
 const INFILL_BLVD=new Set(['平和通り','花園町通り','空港通り','千舟町通り']);
 const INFILL_FRONT=17;
-function infillFront(r){return r.kind==='arcade'?r.w/2+0.4:INFILL_BLVD.has(r.n)?r.w/2+INFILL_FRONT:r.w/2+8.2;}
+function infillFront(r){return r.kind==='arcade'?r.w/2+0.4:r.kind==='lane'?r.w/2+1.4:INFILL_BLVD.has(r.n)?r.w/2+INFILL_FRONT:r.w/2+8.2;}
 {
   const ir=mulberry32(7301);
   const KEY=[[5880,3560],[6382,3428],[6355,2655]];
@@ -937,8 +1010,20 @@ function infillFront(r){return r.kind==='arcade'?r.w/2+0.4:INFILL_BLVD.has(r.n)?
     }
     for(const k of KEY)if(k[0]>x0-10&&k[0]<x1+10&&k[1]>y0-10&&k[1]<y1+10)return false;
     for(const q of PTS)if(q[0]>x0-q[2]&&q[0]<x1+q[2]&&q[1]>y0-q[2]&&q[1]<y1+q[2])return false;
+    // どの道路（路地を含む）も区画に食い込まないこと（点の抜き取りでは細い路地を見逃すため線分で調べる）
+    gridNear(roadGrid,cx,cy,_rq);
+    for(const sg of _rq){
+      const need=infillFront(sg.road)-0.6,L=hyp(sg.bx-sg.ax,sg.by-sg.ay)||1;
+      for(let t=0;t<=L;t+=3){
+        const px=sg.ax+(sg.bx-sg.ax)*t/L,py=sg.ay+(sg.by-sg.ay)*t/L;
+        if(px<x0-need-40||px>x1+need+40||py<y0-need-40||py>y1+need+40)continue;
+        const dx=Math.max(x0-px,0,px-x1),dy=Math.max(y0-py,0,py-y1);
+        if(hyp(dx,dy)<need)return false;
+      }
+    }
     return true;
   };
+  const _rq=[];
   for(const r of ROADS){
     const arc=r.kind==='arcade';
     for(const sg of [1,-1]){
@@ -1525,6 +1610,7 @@ function updTraffic(dt){
         const dirPref=Math.cos(na-c.a)>=0?1:-1;
         c.road=j.road;c.d=clamp(j.od+dirPref*2,0,j.road.pl.len);
         c.dir=Math.random()<0.85?dirPref:-dirPref;
+        if(j.road.kind==='lane')c.cruise=Math.min(c.cruise,70);
       }
       break;
     }
@@ -1566,7 +1652,8 @@ function pedGreen(g){ // 歩行者信号（車両の赤の間、最後の1.5秒�
   const t=tSec%16;
   return g===0?(t>=9&&t<14.5):(t>=0.5&&t<7);
 }
-function pedOffFor(r,side){ // 歩道上のオフセット
+function pedOffFor(r,side){ // 歩道上のオフセット（路地は歩道がないので道の端）
+  if(r.kind==='lane')return (r.w/2-2.2-Math.random()*1.2)*side;
   return r.kind==='arcade'?(Math.random()-.5)*r.w*.5:(r.w/2+4.5+Math.random()*2)*side;
 }
 function reattachPed(p){ // 最寄りの歩道へ復帰
@@ -2133,9 +2220,9 @@ function drawRails(c){
 }
 function drawRoads(c,mini){
   // 歩道外縁→歩道（明）→縁石（暗い段差）→外側線（白）→車道アスファルト（暗）
-  for(const r of ROADS)if(r.kind!=='arcade')strokePl(c,r.pl,r.w+16.5,'#90928a');
-  for(const r of ROADS)if(r.kind!=='arcade')strokePl(c,r.pl,r.w+14,'#bcbdb6');
-  for(const r of ROADS)if(r.kind!=='arcade')strokePl(c,r.pl,r.w+4,'#74766e');
+  for(const r of ROADS)if(r.kind!=='arcade'&&r.kind!=='lane')strokePl(c,r.pl,r.w+16.5,'#90928a');
+  for(const r of ROADS)if(r.kind!=='arcade'&&r.kind!=='lane')strokePl(c,r.pl,r.w+14,'#bcbdb6');
+  for(const r of ROADS)if(r.kind!=='arcade')strokePl(c,r.pl,r.w+(r.kind==='lane'?1.5:4),'#74766e');
   for(const r of ROADS){
     if(r.kind==='arcade'){strokePl(c,r.pl,r.w,'#d5cbb9');continue;}
     if(r.kind==='main'){
@@ -2145,7 +2232,7 @@ function drawRoads(c,mini){
   }
   if(!mini){
     for(const r of ROADS){
-      if(r.kind==='arcade')continue;
+        if(r.kind==='arcade'||r.kind==='lane')continue;
       if(r.kind==='main')strokePl(c,r.pl,1.5,'#c0ad58');
       else strokePl(c,r.pl,1.4,'#c6c9cd',[8,10]);
     }

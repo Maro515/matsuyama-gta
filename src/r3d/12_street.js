@@ -36,7 +36,7 @@ G3.street = (function () {
     phone_booth: [[0, 0, 0.46, 0.46, 3]], bicycle_a: [[0.05, 0, 0.88, 0.2, 3]], bicycle_b: [[0.05, 0, 0.88, 0.2, 3]], bicycle_c: [[0.05, 0, 0.88, 0.2, 3]],
     bike_rack: [[1.5, 0, 1.8, 0.4, 3]], recycle_box: [[0, 0, 0.21, 0.46, 3]], utility_box: [[0, 0, 0.3, 0.62, 3]], bench: [[-0.08, 0, 0.3, 0.85, 3]],
     map_board: [[0, 0, 0.12, 1.0, 3]], planter_box: [[0, 0, 0.6, 0.25, 3]], parking_sign: [[0, 0, 0.08, 3], [0.9, 0, 0.2, 0.23, 3]],
-    car_stop: [[0, 0, 0.08, 0.6, 2]], xlamp: [[0, 0, 0.16, 3]], clock_pole: [[0, 0, 0.22, 3]], stand_sign: [[0, 0, 0.25, 3]], iron_fence: [[1.0, 0, 1.0, 0.05, 3]],
+    car_stop: [[0, 0, 0.08, 0.6, 2]], xlamp: [[0, 0, 0.16, 3]], xpole: [[0, 0, 0.2, 3]], clock_pole: [[0, 0, 0.22, 3]], stand_sign: [[0, 0, 0.25, 3]], iron_fence: [[1.0, 0, 1.0, 0.05, 3]],
     stone_lantern: [[0, 0, 0.42, 3]], karakuri_clock: [[0, 0, 1.7, 3]], block_wall: [[1.0, 0, 1.0, 0.1, 3]], propane: [[0, 0, 0.2, 0.42, 3]],
     ac_unit: [[0, 0, 0.17, 0.42, 3]], gomi_station: [[0, 0, 0.5, 0.9, 3]], mooring_bollard: [[0, 0, 0.3, 3]], potted_plant: [[0, 0, 0.22, 3]],
     container_a: [[0, 0, 3.03, 1.22, 3]], container_b: [[0, 0, 3.03, 1.22, 3]], container_c: [[0, 0, 3.03, 1.22, 3]], container_d: [[0, 0, 3.03, 1.22, 3]],
@@ -129,6 +129,7 @@ G3.street = (function () {
     for (const s of SIGNALS) take(s.x, s.y, 3);
     // ゲーム上の大事な地点（みかん・ギグ・ミッション）は空けておく
     for (const k of KEYPTS) take(k[0], k[1], 7);
+    for (const r of ROADS) if (r.kind === 'lane') for (let d = 0; d <= r.pl.len; d += 6) { const p = plAt(r.pl, d); take(p.x, p.y, r.w / 2 - 0.5); }
   }
   // 建物（bldGrid）と、3D時に bldGrid から外したランドマークの敷地（LMS.solid）の両方を見る
   const nearBld = (x, y, m) => {
@@ -143,7 +144,7 @@ G3.street = (function () {
   function roadEdges() {
     const rr = mulberry32(5101);
     for (const r of ROADS) {
-      if (r.kind === 'arcade') continue;
+      if (r.kind === 'arcade' || r.kind === 'lane') continue;
       const cuts = G3.roadCuts(r);
       for (const [sg, cl] of [[1, cuts.cutsL], [-1, cuts.cutsR]]) {
         const ivs = G3.minusIntervals(r.pl.len, cl);
@@ -465,7 +466,7 @@ G3.street = (function () {
       take(x, y, 1.5);
     }
     for (const r of ROADS) {
-      if (r.kind === 'arcade') continue;
+      if (r.kind === 'arcade' || r.kind === 'lane') continue;
       // ポスト
       walkSpots(r, 520, 260, rr, (sg, d) => {
         const p = walkAt(r, sg, d, 2.0);
@@ -507,7 +508,7 @@ G3.street = (function () {
       const ri = roadInfo(x, y);
       if (!ri) continue;
       const r = ri.road;
-      if (r.kind === 'arcade') continue;
+      if (r.kind === 'arcade' || r.kind === 'lane') continue;
       const d0 = dOnPl(r.pl, x, y);
       for (const sg of [1, -1]) for (const dd of [-34, 22]) bikeRack(r, sg, d0 + dd, 2, rr);
     }
@@ -688,7 +689,7 @@ G3.street = (function () {
   };
   // ランドマーク（モデルの敷地）の近くか
   const nearLM = (x, y, m) => LMS.some(l => (l.solid ? (x > l.solid[0] - m && x < l.solid[2] + m && y > l.solid[1] - m && y < l.solid[3] + m) : hyp(l.x - x, l.y - y) < m));
-  const clearOfRoad = (x, y, m) => { const ri = roadInfo(x, y); return !ri || ri.d > ri.road.w / 2 + G3.SW + m; };
+  const clearOfRoad = (x, y, m) => { const ri = roadInfo(x, y); return !ri || ri.d > ri.road.w / 2 + (ri.road.kind === 'lane' ? 0.6 : G3.SW) + m; };
 
   function buildingDetails() {
     const rr = mulberry32(5304);
@@ -783,9 +784,9 @@ G3.street = (function () {
   function gomiStations() {
     const rr = mulberry32(5305);
     for (const r of ROADS) {
-      if (r.kind !== 'minor') continue;
-      walkSpots(r, 420, 220, rr, (sg, d) => {
-        const p = walkAt(r, sg, d, G3.SW + 2.2);
+      if (r.kind !== 'minor' && r.kind !== 'lane') continue;
+      walkSpots(r, r.kind === 'lane' ? 260 : 420, 220, rr, (sg, d) => {
+        const p = walkAt(r, sg, d, r.kind === 'lane' ? 2.6 : G3.SW + 2.2);
         const z = zoneOf(p.x, p.y);
         if (z === 'center') return;
         if (nearBld(p.x, p.y, 2) || !free(p.x, p.y, 4) || inWaterRaw(p.x, p.y)) return;
@@ -808,7 +809,7 @@ G3.street = (function () {
     // 道後温泉駅前の黒い鋳鉄柵（道路沿いの歩道の外側）
     const st = [7352, 2292];
     for (const r of ROADS) {
-      if (r.kind === 'arcade') continue;
+      if (r.kind === 'arcade' || r.kind === 'lane') continue;
       const cuts = G3.roadCuts(r);
       for (const [sg, cl] of [[1, cuts.cutsL], [-1, cuts.cutsR]]) {
         for (const [a, b] of G3.minusIntervals(r.pl.len, cl)) {
@@ -1007,7 +1008,7 @@ G3.street = (function () {
     for (const r of ROADS) {
       if (r.kind === 'arcade') continue;
       // 車線: 幹線は片側2車線（境界 = w/4(+軌道1.5)）、生活道路は片側1車線
-      const edge = r.w / 2 - (r.kind === 'main' ? 1.6 : 1.0);
+      const edge = r.w / 2 - (r.kind === 'main' ? 1.6 : r.kind === 'lane' ? 0.9 : 1.0);
       const inner0 = r.tram ? 4.2 : 0.7;
       const bnd = r.w / 4 + (r.tram ? 1.5 : 0);
       const lanes = r.kind === 'main' ? [[(inner0 + bnd) / 2, (bnd - inner0) / 2 - 0.6], [(bnd + edge) / 2, (edge - bnd) / 2 - 0.6]]
@@ -1025,7 +1026,7 @@ G3.street = (function () {
           const ps = lane(dStop, all[0]);
           decal(ps.x, ps.y, head(dStop), all[1], 0.45, 5); n++;
           for (const L of lanes) { const po = lane(dStop - dir * 9, L[0]); decal(po.x, po.y, head(dStop), 1.6, 2.6, 9); n++; }
-          if (r.kind === 'minor' && j.road.kind === 'main') {
+          if ((r.kind === 'minor' && j.road.kind === 'main') || (r.kind === 'lane' && j.road.kind !== 'lane' && j.road.kind !== 'arcade')) {
             const d = dStop - dir * 15, p = lane(d, lanes[0][0]);
             decal(p.x, p.y, head(d), Math.min(lanes[0][1], 3.6), 11, 1); n++;
           } else if (r.kind === 'main') {
@@ -1337,7 +1338,7 @@ G3.street = (function () {
     let n = 0;
     for (let t = 0; t < 600 && n < 12; t++) {
       const r = ROADS[(rr() * ROADS.length) | 0];
-      if (r.kind === 'arcade') continue;
+      if (r.kind === 'arcade' || r.kind === 'lane') continue;
       const sg = rr() < 0.5 ? 1 : -1, d = 30 + rr() * (r.pl.len - 60);
       const cuts = G3.roadCuts(r);
       const ivs = G3.minusIntervals(r.pl.len, sg > 0 ? cuts.cutsL : cuts.cutsR);
@@ -1845,7 +1846,7 @@ G3.street = (function () {
   function nightLights(scene) {
     const rr = mulberry32(5801);
     for (const r of ROADS) {
-      if (r.kind === 'arcade') continue;
+      if (r.kind === 'arcade' || r.kind === 'lane') continue;
       const cuts = G3.roadCuts(r);
       for (const [sg, cl] of [[1, cuts.cutsL], [-1, cuts.cutsR]]) {
         for (const [a, b] of G3.minusIntervals(r.pl.len, cl)) {
@@ -1906,9 +1907,90 @@ G3.street = (function () {
     scene.add(m);
   }
 
+
+  /* ---------- 路地: 電柱と電線・止まれ標識・カーブミラー・中心部は小さな街灯 ---------- */
+  function laneFurniture(scene) {
+    const rr = mulberry32(8201);
+    const wire = [];
+    for (const r of ROADS) {
+      if (r.kind !== 'lane') continue;
+      const sgPole = rr() < 0.5 ? 1 : -1;
+      let prev = null;
+      for (let d = 12 + rr() * 20; d < r.pl.len - 8; d += 55 + rr() * 12) {
+        if (r.junc.some(j => Math.abs(j.d - d) < j.road.w / 2 + 4)) { prev = null; continue; }
+        const p = walkAt(r, sgPole, d, 1.4);
+        if (!free(p.x, p.y, 1.2) || nearBld(p.x, p.y, 0.6)) { prev = null; continue; }
+        put('xpole', p.x, p.y, -(p.a + (sgPole > 0 ? Math.PI : 0)), 0);
+        take(p.x, p.y, 1.5);
+        const top = heightAt(p.x, p.y) + 21.5;
+        if (prev) for (const off of [-2.2, 0, 2.2]) {
+          const nx = Math.cos(p.a), ny = Math.sin(p.a), ox = -ny * off, oy = nx * off;
+          let px = prev[0] + ox, py = prev[1], pz = prev[2] + oy;
+          for (let k = 1; k <= 6; k++) {
+            const t = k / 6, x = lerp(prev[0], p.x, t) + ox, z = lerp(prev[2], p.y, t) + oy, y = lerp(prev[1], top, t) - Math.sin(t * Math.PI) * 1.4;
+            wire.push(px, py, pz, x, y, z); px = x; py = y; pz = z;
+          }
+        }
+        prev = [p.x, top, p.y];
+        const z = zoneOf(p.x, p.y);
+        if ((z === 'center' || z === 'dogo') && rr() < 0.5) {
+          const q = walkAt(r, -sgPole, d + 20, 1.2);
+          if (free(q.x, q.y, 1.2) && !nearBld(q.x, q.y, 0.6)) { put('xlamp', q.x, q.y, roadFace(r, -sgPole, d + 20, q), 0); take(q.x, q.y, 1.2); }
+        }
+      }
+      // 大きな道に出る手前の止まれ標識と、見通しの悪い角のカーブミラー
+      for (const j of r.junc) {
+        if (j.road.kind === 'arcade') continue;
+        const atEnd = j.d < 12 ? 1 : j.d > r.pl.len - 12 ? -1 : 0;
+        for (const dir of atEnd ? [-atEnd] : [1, -1]) {
+          const back = j.road.w / 2 + (j.road.kind === 'lane' ? 2 : G3.SW + 3);
+          const d = j.d - dir * back;
+          if (d < 2 || d > r.pl.len - 2) continue;
+          const p = at(r, d, -dir * (r.w / 2 + 1.2));
+          if (j.road.kind !== 'lane' && free(p.x, p.y, 1.2) && !nearBld(p.x, p.y, 0.5)) {
+            put('sign_stop', p.x, p.y, faceRot(p.a + (dir > 0 ? Math.PI : 0)), 0); take(p.x, p.y, 1.2);
+          }
+          if (rr() < 0.55) {
+            const m = at(r, d, dir * (r.w / 2 + 1.2)), pj = at(r, j.d, 0);
+            if (free(m.x, m.y, 1.2) && !nearBld(m.x, m.y, 0.5)) { put('curve_mirror', m.x, m.y, -Math.atan2(pj.y - m.y, pj.x - m.x), 0); take(m.x, m.y, 1.2); }
+          }
+        }
+      }
+    }
+    const wg = new THREE.BufferGeometry();
+    wg.setAttribute('position', new THREE.Float32BufferAttribute(wire, 3));
+    scene.add(new THREE.LineSegments(wg, new THREE.LineBasicMaterial({ color: 0x23262a, transparent: true, opacity: 0.75 })));
+  }
+
+
+  /* ---------- 住宅の庭（芝生・砂利・駐車スペース）: 家のまわりの地面 ---------- */
+  function houseYards(scene) {
+    const gbG = new G3.GB(true);
+    const rr = mulberry32(8301);
+    const cols = [[0.42, 0.55, 0.30], [0.47, 0.58, 0.34], [0.62, 0.60, 0.55], [0.58, 0.55, 0.50]];
+    for (const b of buildings) {
+      if (b.noDraw || b.kind !== 'house') continue;
+      const m = 4.6;
+      const x0 = b.x0 - m, x1 = b.x1 + m, y0 = b.y0 - m, y1 = b.y1 + m;
+      let ok = true;
+      for (const [x, y] of [[x0, y0], [x1, y0], [x0, y1], [x1, y1]]) if (!clearOfRoad(x, y, 0.3) || inWaterRaw(x, y)) { ok = false; break; }
+      if (!ok) continue;
+      const c = cols[(rr() * cols.length) | 0];
+      const yy = heightAt((x0 + x1) / 2, (y0 + y1) / 2) + 0.04;
+      gbG.quad([[x0, yy, y1], [x1, yy, y1], [x1, yy, y0], [x0, yy, y0]], [[x0 / 8, y1 / 8], [x1 / 8, y1 / 8], [x1 / 8, y0 / 8], [x0 / 8, y0 / 8]], c);
+    }
+    let tx = G3.tex.gravel || null;
+    if (tx) { tx = tx.clone(); tx.wrapS = tx.wrapT = THREE.RepeatWrapping; tx.needsUpdate = true; }
+    const mat = new THREE.MeshStandardMaterial({ map: tx, vertexColors: true, roughness: 0.95,
+      polygonOffset: true, polygonOffsetFactor: -1, polygonOffsetUnits: -3 });
+    const mesh = gbG.mesh(mat, false);
+    mesh.castShadow = false;
+    scene.add(mesh);
+  }
+
   /* ---------- インスタンス化 ---------- */
   const cnodes = {}, brkMap = new Map();
-  const NODE_ALIAS = { xlamp: ['props', 'lamp'] };
+  const NODE_ALIAS = { xlamp: ['props', 'lamp'], xpole: ['props', 'pole'] };
   let blockMat = null;
   function streetMat(m) {
     if (m && m.name === 'SP_BlockTex') {
@@ -2107,6 +2189,7 @@ G3.street = (function () {
     if (!G3.glb.street) return;
     seedOcc();
     tramStops();
+    laneFurniture(scene);
     roadMarks(scene);
     guideSigns(scene);
     signs();
@@ -2131,6 +2214,7 @@ G3.street = (function () {
     gomiStations();
     roadEdges();
     buildingDetails();
+    houseYards(scene);
     nightLights(scene);
     shopLights(scene);
     roofs();

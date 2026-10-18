@@ -352,13 +352,62 @@ const R3 = { ok: false, state: 'idle' };
       lx = e.clientX; cam.orbitHold = 2.2;
     });
   }
-  function blockedCam(x, y) {
-    if (x < 0 || y < 0 || x > W || y > H) return false;
-    gridNear(bldGrid, x, y, _camQ);
-    for (const b of _camQ) if (x > b.x0 - 2 && x < b.x1 + 2 && y > b.y0 - 2 && y < b.y1 + 2) return true;
-    return false;
+  /* カメラの遮り: 点 (x, y) の高さ h（絶対）が物の中なら、その物の天端の高さを返す（なければ 0）。
+     建物・ランドマーク・車（大きい車の中にカメラが入ると内装で画面が埋まる）・大きな街具を高さ込みで見る */
+  const VEH_H = { sedan: 3.7, kei: 4.5, taxi: 4.2, truck: 7.5, sports: 3.2, bus: 8.4, bike: 3.2, police: 4.1, minivan: 4.7, keitruck: 4.6, van: 5.6 };
+  const _camQ = [], _camCars = [];
+  function camCarsNear(x, y) {   // 1 フレームに 1 回、近くの車だけ集める
+    _camCars.length = 0;
+    const add = c => { if (c && Math.abs(c.x - x) < 45 && Math.abs(c.y - y) < 45) _camCars.push(c); };
+    for (const c of parked) add(c);
+    for (const c of traffic) add(c);
+    for (const c of polices) add(c);
+    if (S.mode !== 'car' && S.pcar && !parked.includes(S.pcar)) add(S.pcar);
   }
-  const _camQ = [];
+  function camHit(x, y, h) {
+    if (x < 0 || y < 0 || x > W || y > H) return 0;
+    gridNear(bldGrid, x, y, _camQ);
+    for (const b of _camQ) {
+      if (b.noDraw || x < b.x0 - 1.2 || x > b.x1 + 1.2 || y < b.y0 - 1.2 || y > b.y1 + 1.2) continue;
+      const top = heightAt((b.x0 + b.x1) / 2, (b.y0 + b.y1) / 2) + b.hW + 2.5;   // 屋根の分も
+      if (h < top) return top;
+    }
+    for (const l of LMS) {
+      const s = l.solid;
+      if (!s || x < s[0] - 1 || x > s[2] + 1 || y < s[1] - 1 || y > s[3] + 1) continue;
+      const top = heightAt(l.x, l.y) + (LMH[l.t] || 20);
+      if (h < top) return top;
+    }
+    for (const c of _camCars) {
+      const t = CARTYPES[c.type] || CARTYPES.sedan, ca = Math.cos(c.a), sa = Math.sin(c.a), dx = x - c.x, dy = y - c.y;
+      if (Math.abs(dx * ca + dy * sa) > t.l / 2 + 1.0 || Math.abs(-dx * sa + dy * ca) > t.w / 2 + 1.0) continue;
+      const top = heightAt(c.x, c.y) + (VEH_H[c.type] || 4) + 0.6;
+      if (h < top) return top;
+    }
+    // ランドマークの細かい形（歩く高さの占有格子 OCC）。中身の詰まった所だけ見る（細い柵や灯籠ではカメラを寄せない）
+    if (typeof OCC !== 'undefined' && OCC.size) {
+      const ox = Math.floor(x / OCELL), oy = Math.floor(y / OCELL);
+      if (OCC.has(ox + oy * 16384)) {
+        let k = 0;
+        for (let j = -1; j <= 1; j++) for (let i = -1; i <= 1; i++) if (OCC.has(ox + i + (oy + j) * 16384)) k++;
+        if (k >= 6) { const top = heightAt(x, y) + 9; if (h < top) return top; }
+      }
+    }
+    // 大きな街具（コンビニ・待合所など、幅も奥行きもある当たり判定）
+    const a = propGrid.get(Math.floor(y / 40) * 4096 + Math.floor(x / 40));
+    if (a) for (const c of a) {
+      const big = c.r != null ? c.r >= 2.2 : Math.min(c.hx, c.hy) >= 2.2;
+      if (!big) continue;
+      let inside;
+      if (c.r != null) inside = hyp(x - c.x, y - c.y) < c.r + 0.8;
+      else { const ca = Math.cos(c.a || 0), sa = Math.sin(c.a || 0), dx = x - c.x, dy = y - c.y; inside = Math.abs(dx * ca + dy * sa) < c.hx + 0.8 && Math.abs(-dx * sa + dy * ca) < c.hy + 0.8; }
+      if (!inside) continue;
+      const top = heightAt(c.x, c.y) + 9;
+      if (h < top) return top;
+    }
+    return 0;
+  }
+  G3.camHit = camHit;
   function updCamera(dt) {
     const inCar = S.mode === 'car';
     const pc = S.pcar;
@@ -377,18 +426,27 @@ const R3 = { ok: false, state: 'idle' };
     } else {
       dist = 13; hgt = 6.4; lead = 6; lookH = 3.8;
     }
-    // 建物で遮られたらカメラを寄せる
+    // 遮る物があればカメラを寄せる: 頭から外へ腕をたどり、最初に当たった手前で止める（高さも見る）
+    let lift = 0;
     if (S.view !== 'top') {
-      for (let t = 0.25; t <= 1.0001; t += 0.125) {
-        const x = gx - fx * dist * t, y = gy - fz * dist * t;
-        if (blockedCam(x, y)) { dist = Math.max(inCar ? 9 : 4, dist * (t - 0.14)); break; }
+      camCarsNear(gx, gy);
+      const minD = inCar ? 5 : 2.6, step = 0.6;
+      for (let s = inCar ? 3 : 1.2; s <= dist + 1.2; s += step) {
+        const t = Math.min(1, s / dist), x = gx - fx * s, y = gy - fz * s;
+        if (camHit(x, y, ph + lookH + (hgt - lookH) * t)) { dist = Math.max(minD, s - 1.3); break; }
       }
+      // 寄せきっても物の中なら、その物の上へ持ち上げる（背の高い車にぴったり寄った時など。重なった物は外に出るまで）
+      let cy = ph + hgt;
+      for (let i = 0; i < 4; i++) { const top = camHit(gx - fx * dist, gy - fz * dist, cy); if (!top) break; cy = top + 1.2; }
+      lift = cy - (ph + hgt);
     }
     const tx = gx - fx * dist, tz = gy - fz * dist;
-    const ty = Math.max(ph + hgt, heightAt(tx, tz) + 2.5);
+    const ty = Math.max(ph + hgt + lift, heightAt(tx, tz) + 2.5);
     const lx = gx + fx * lead, lz = gy + fz * lead, ly = ph + lookH;
     const k = cam.init ? 1 - Math.exp(-dt * (S.view === 'top' ? 3.5 : 5)) : 1;
     cam.x += (tx - cam.x) * k; cam.y += (ty - cam.y) * k; cam.z += (tz - cam.z) * k;
+    // なめらかに追う途中で物の中に入るなら、待たずに目標の位置へ寄せる（暗い壁が一瞬映るのを防ぐ）
+    if (S.view !== 'top' && camHit(cam.x, cam.z, cam.y)) { cam.x = tx; cam.y = ty; cam.z = tz; }
     cam.lx += (lx - cam.lx) * k; cam.ly += (ly - cam.ly) * k; cam.lz += (lz - cam.lz) * k;
     cam.init = true;
     const sh = S.shake * 0.12;

@@ -44,6 +44,9 @@ const R3 = { ok: false, state: 'idle' };
     TEX_LIST['fac_' + f] = ['tex/fac_' + f + '.jpg', 1];
     TEX_LIST['facm_' + f] = ['tex/fac_' + f + '_m.png', 0];
   }
+  // 画像テクスチャは KTX2（Basis ETC1S、build/compress_textures.sh で作る）を使う。GPU に圧縮のまま載る（RGBA の 1/4〜1/8）。
+  // 水の法線と窓のマスク（R・G に別々の窓を入れている）は ETC1S だとチャンネルが混ざるので元の画像のまま
+  for (const k in TEX_LIST) if (k !== 'water_n' && !k.startsWith('facm_')) TEX_LIST[k][0] = TEX_LIST[k][0].replace(/\.(jpg|png)$/, '.ktx2');
   const GLB_LIST = ['vehicles', 'human', 'trains', 'trees', 'props', 'street', 'landmarks', 'misc'];
   G3.tex = {}; G3.glb = {};
 
@@ -57,32 +60,75 @@ const R3 = { ok: false, state: 'idle' };
   }
   G3.setLoad = setLoad;
 
+  // 量子化した 3D モデル（build/compress_models.mjs）を、読み込み直後に元の float の座標へ戻す。
+  // 位置は部品ごとの中心と幅（extras.dq）、UV は原点と幅（extras.dqTEXCOORD_n）、法線は 8bit をそのまま float へ。
+  // ノードの変換は変えていないので、ここで戻せば描画コードは量子化を意識しなくてよい
+  function dequantize(gltf) {
+    const conv = new WeakMap();   // 同じ属性を同じ戻し方で使う部品は、戻した結果も共有する
+    const toFloat = (a, d, fn) => {
+      const key = d ? d.join(',') : '-';
+      let m = conv.get(a);
+      if (!m) conv.set(a, m = new Map());
+      if (m.has(key)) return m.get(key);
+      const n = a.count, sz = a.itemSize, out = new Float32Array(n * sz);
+      for (let i = 0; i < n; i++) for (let k = 0; k < sz; k++) out[i * sz + k] = fn(a.getComponent(i, k), k);
+      const r = new THREE.BufferAttribute(out, sz);
+      m.set(key, r);
+      return r;
+    };
+    gltf.scene.traverse(o => {
+      const g = o.isMesh && o.geometry;
+      if (!g || g.userData.dqDone) return;
+      const ud = g.userData, isF = a => a.array instanceof Float32Array && !a.isInterleavedBufferAttribute;
+      const p = g.attributes.position;
+      if (ud.dq && p && !isF(p)) { const d = ud.dq; g.setAttribute('position', toFloat(p, d, (v, k) => d[k] + v * d[3 + k])); }
+      for (const [nm, key] of [['uv', 'dqTEXCOORD_0'], ['uv1', 'dqTEXCOORD_1']]) {
+        const a = g.attributes[nm];
+        if (ud[key] && a && !isF(a)) { const d = ud[key]; g.setAttribute(nm, toFloat(a, d, (v, k) => d[k] + v * d[2 + k])); }
+      }
+      const nr = g.attributes.normal;
+      if (nr && !isF(nr)) g.setAttribute('normal', toFloat(nr, null, v => v));
+      ud.dqDone = true;
+      g.boundingBox = null; g.boundingSphere = null;
+    });
+    delete gltf.parser;   // 読み込み用の作業データ（整数のままの頂点など）を手放す
+    return gltf;
+  }
   async function loadAssets() {
     const texLoader = new THREE.TextureLoader();
     const gl = new T.GLTFLoader();
     if (T.MeshoptDecoder) gl.setMeshoptDecoder(T.MeshoptDecoder);
+    // KTX2 の展開プログラム（basis_transcoder.js/.wasm）は素材と同じ経路から渡す（1ファイル版では埋め込み、オフラインでも動く）
+    const ktxMgr = new THREE.LoadingManager();
+    ktxMgr.setURLModifier(u => /basis_transcoder\.(js|wasm)$/.test(u) ? assetURL('basis/' + u.split('/').pop()) : u);
+    const ktx2 = T.KTX2Loader && !/[?&]ktx=0/.test(location.search) ? new T.KTX2Loader(ktxMgr).setTranscoderPath('basis/').detectSupport(renderer) : null;   // ?ktx=0 で元の画像（見比べ用、開発版のみ）
     const keys = Object.keys(TEX_LIST);
     const total = keys.length + GLB_LIST.length;
     let done = 0;
     const tick = txt => setLoad(0.75 * (++done) / total, txt);
     const aniso = Math.min(8, renderer.capabilities.getMaxAnisotropy());
+    // KTX2 の展開は別スレッドなので、その間に 3D モデルも読む
     await Promise.all(keys.map(async k => {
       const [file, srgb] = TEX_LIST[k];
       try {
-        const t = await texLoader.loadAsync(assetURL(file));
+        const isKtx = /\.ktx2$/.test(file) && ktx2;
+        const t = await (isKtx ? ktx2 : texLoader).loadAsync(assetURL(isKtx ? file : file.replace(/\.ktx2$/, '.jpg')));
         t.wrapS = t.wrapT = THREE.RepeatWrapping;
         t.anisotropy = aniso;
-        if (srgb) t.colorSpace = THREE.SRGBColorSpace;
+        t.colorSpace = srgb ? THREE.SRGBColorSpace : THREE.NoColorSpace;
         G3.tex[k] = t;
-      } catch (e) { console.warn('tex missing', file); }
+      } catch (e) { console.warn('tex missing', file, e); }
       tick('テクスチャ読み込み中…');
-    }));
-    for (const n of GLB_LIST) {
+    }).concat(GLB_LIST.map(async n => {
       try {
-        G3.glb[n] = await gl.loadAsync(assetURL('glb/' + n + '.glb'));
+        G3.glb[n] = dequantize(await gl.loadAsync(assetURL('glb/' + n + '.glb')));
       } catch (e) { console.warn('glb missing', n); G3.glb[n] = null; }
       tick('3Dモデル読み込み中…（' + n + '）');
-    }
+    })));
+    // 1ファイル版: 埋め込みの素材（base64 の文字列）は読み終えたら手放す（ページ内の script 要素ごと。約 10MB）
+    const ad = document.getElementById('assetdata');
+    if (ad) ad.remove();
+    if (window.ASSET_DATA) for (const key of Object.keys(window.ASSET_DATA)) if (key !== 'tex/title.jpg') delete window.ASSET_DATA[key];
   }
 
   /* ---------- レンダラー ---------- */

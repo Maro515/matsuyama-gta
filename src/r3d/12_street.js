@@ -515,7 +515,10 @@ G3.street = (function () {
     keys.forEach((k, i) => { cell[k] = [(i % COLS) * CW, ((i / COLS) | 0) * CH]; });
     const fit = (g, t, max, sz, wt, fam) => { g.font = `${wt} ${sz}px ${fam}`; while (g.measureText(t).width > max && sz > 9) { sz -= 1; g.font = `${wt} ${sz}px ${fam}`; } };
     const SANS = '"Hiragino Sans","Hiragino Kaku Gothic ProN","Noto Sans JP","Yu Gothic","Meiryo",sans-serif';
-    const tex = G3.world.canvasTex(AW, AH, g => {
+    // 画像は 0.75 倍の解像度で描く（座標・UV は元の大きさのまま。名標は小さいので文字は十分読める。GPU メモリ 22MB→13MB）
+    const TK = 0.75;
+    const tex = G3.world.canvasTex(Math.round(AW * TK), Math.round(AH * TK), g => {
+      g.scale(TK, TK);
       g.textBaseline = 'middle';
       for (const k of keys) {
         const b = cells.get(k), [x, y] = cell[k];

@@ -1,5 +1,6 @@
 """地面テクスチャ（numpyタイル生成）と外壁テクスチャ（Cycles正射影レンダ）を作る。
 実行: Blender -b --factory-startup -P textures.py -- [ground|facade|all]
+作り直した後は sh build/compress_textures.sh で KTX2（ゲームが読む圧縮版）も作り直す。
 """
 import bpy, math, os, sys
 import numpy as np

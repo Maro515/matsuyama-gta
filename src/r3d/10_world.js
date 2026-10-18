@@ -328,7 +328,7 @@ G3.world = (function () {
   }
 
   /* ---------- 地表（土地被覆テクスチャ） ---------- */
-  const LCS = 0.45;
+  const LCS = 0.3;   // 地面の色の地図の解像度（1単位あたりの画素）。0.45→0.3 で GPU メモリ 51MB→23MB（細部は繰り返しテクスチャが担う）
   function landcover() {
     const w = Math.round(W * LCS), h = Math.round(H * LCS);
     return canvasTex(w, h, (g) => {

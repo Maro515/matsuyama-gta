@@ -133,7 +133,7 @@ G3.world = (function () {
       const m = new THREE.MeshStandardMaterial({ map: G3.tex['fac_' + f], vertexColors: true, roughness: 0.8, metalness: 0.0, envMapIntensity: 0.9 });
       const mask = G3.tex['facm_' + f];
       const ground = f[0] === 'g';
-      const uni = { uMask: { value: mask }, uNight: { value: 0 }, uRatio: { value: ground ? 0.75 : 0.38 }, uEmit: { value: ground ? 0.95 : 0.62 } };
+      const uni = { uMask: { value: mask }, uNight: { value: 0 }, uRatio: { value: ground ? 0.7 : 0.38 }, uEmit: { value: ground ? 0.5 : 0.36 } };
       m.onBeforeCompile = sh => {
         Object.assign(sh.uniforms, uni);
         sh.vertexShader = sh.vertexShader

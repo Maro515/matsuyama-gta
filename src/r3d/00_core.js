@@ -108,9 +108,11 @@ const R3 = { ok: false, state: 'idle' };
     // 空（three.js Sky）。HDR出力が明るすぎるのでゲインを掛ける
     const tameSky = sk => {
       sk.material.uniforms.uSkyGain = { value: 0.42 };
+      sk.material.uniforms.uNightGlow = { value: 0 };
       sk.material.fragmentShader = sk.material.fragmentShader
-        .replace('uniform float time;', 'uniform float time;\nuniform float uSkyGain;')
-        .replace('gl_FragColor = vec4( texColor, 1.0 );', 'gl_FragColor = vec4( texColor * uSkyGain, 1.0 );');
+        .replace('uniform float time;', 'uniform float time;\nuniform float uSkyGain;\nuniform float uNightGlow;')
+        .replace('gl_FragColor = vec4( texColor, 1.0 );', `vec3 ng = mix(vec3(0.010, 0.016, 0.040), vec3(0.075, 0.068, 0.110), pow(1.0 - clamp(direction.y, 0.0, 1.0), 5.0));
+          gl_FragColor = vec4( texColor * uSkyGain + ng * uNightGlow, 1.0 );`);
       sk.material.needsUpdate = true;
       return sk;
     };
@@ -235,6 +237,8 @@ const R3 = { ok: false, state: 'idle' };
   G3.day = 1; G3.wet = 0;
   const DAYLEN = 960;
 
+  // 夜の明るさ（月明かり・空の照り返し・街明かりの地面からの照り返し）。GTAの夜のように暗くても形が見える程度
+  const NT = G3.nightTune = { hemi: 1.35, moon: 0.85, exp: 0.5, env: 0.25, ao: 1.1, fog: 0x243252, gnd: 0x58462f, sky: 0x6a7aaa };
   function updEnv(dt) {
     const ph = (S.time / DAYLEN) % 1;   // 1日 = 16分
     NIGHT = Math.pow(.5 - .5 * Math.cos(ph * TAU), 1.4) * .58;
@@ -257,6 +261,7 @@ const R3 = { ok: false, state: 'idle' };
     u.cloudCoverage.value = 0.32 + 0.55 * cloud;
     u.cloudDensity.value = 0.45 + 0.45 * cloud;
     u.time.value += dt;
+    u.uNightGlow.value = G3.skyEnvSky.material.uniforms.uNightGlow.value = clamp(1 - day * 1.4, 0, 1) * (1 - 0.5 * cloud);
     // 太陽／月
     const target = sun.target.position;
     target.set(S.px, heightAt(S.px, S.py), S.py);
@@ -269,24 +274,24 @@ const R3 = { ok: false, state: 'idle' };
       const md = new THREE.Vector3(sd.x * -0.6, Math.max(0.45, -sd.y), sd.z * -0.6).normalize();
       sun.position.copy(target).addScaledVector(md, 1600);
       sun.color.copy(C_MOON);
-      sun.intensity = 0.32 * (1 - 0.8 * cloud);
+      sun.intensity = NT.moon * (1 - 0.8 * cloud);
     }
     // シャドウマップのテクセルにスナップ（揺らぎ防止）
     const tx = 2 * Q.shadowR / Q.shadow;
     sun.position.x = Math.round(sun.position.x / tx) * tx; sun.target.position.x = Math.round(target.x / tx) * tx;
     sun.position.z = Math.round(sun.position.z / tx) * tx; sun.target.position.z = Math.round(target.z / tx) * tx;
-    hemi.color.copy(C_NIGHT_SKY).lerp(C_DAY_SKY, day);
-    hemi.groundColor.copy(C_NIGHT_GND).lerp(C_DAY_GND, day);
-    hemi.intensity = (0.42 + 0.8 * day) * (1 + 0.35 * cloud * day) + S.flash * 6;   // 夜も月明かりと街明かりで真っ暗にしない
+    hemi.color.set(NT.sky).lerp(C_DAY_SKY, day);
+    hemi.groundColor.set(NT.gnd).lerp(C_DAY_GND, day);
+    hemi.intensity = lerp(NT.hemi, 1.22, day) * (1 + 0.35 * cloud * day) + S.flash * 6;   // 夜も月明かりと街明かりで真っ暗にしない
     // 霧
     const fog = scene.fog;
-    fog.color.copy(C_FOG_NIGHT).lerp(C_FOG_DAY, day);
+    fog.color.set(NT.fog).lerp(C_FOG_DAY, day);
     fog.color.lerp(C_FOG_DUSK, dusk * 0.55 * day);
     fog.color.lerp(C_FOG_RAIN, wet * 0.7 * Math.max(0.25, day));
     fog.near = lerp(900, 160, wet);
     fog.far = lerp(5400, 1700, wet) * (day > 0.05 ? 1 : 0.85);
     // 露出・ブルーム
-    renderer.toneMappingExposure = 0.9 + 0.5 * (1 - day);
+    renderer.toneMappingExposure = 0.9 + NT.exp * (1 - day);
     // 昼は空全体が閾値を超えるのでブルームを切り、夕方〜夜だけ発光体を滲ませる
     bloomPass.enabled = day < 0.9;
     if (gradePass) {
@@ -295,7 +300,7 @@ const R3 = { ok: false, state: 'idle' };
       u2.uSat.value = lerp(1.04, 1.12, day) * (1 - 0.18 * wet);
       u2.uWarm.value = (0.4 + 0.8 * dusk + 0.4 * day) * (1 - 0.6 * wet);
     }
-    if (aoPass) { const ai = +(lerp(0.7, 2.4, day) * (1 - 0.3 * cloud)).toFixed(2); if (ai !== aoPass.configuration.intensity) aoPass.configuration.intensity = ai; }
+    if (aoPass) { const ai = +(lerp(NT.ao, 2.4, day) * (1 - 0.3 * cloud)).toFixed(2); if (ai !== aoPass.configuration.intensity) aoPass.configuration.intensity = ai; }
     bloomPass.strength = 0.32 * (1 - day);
     bloomPass.threshold = lerp(1.15, 3.0, day);
     bloomPass.radius = 0.22;
@@ -311,7 +316,7 @@ const R3 = { ok: false, state: 'idle' };
       G3.envCam.update(renderer, skyScene);
       G3.envRT.texture.needsPMREMUpdate = true;
       if (!skyEnv) { skyEnv = G3.envRT; scene.environment = G3.envRT.texture; }
-      scene.environmentIntensity = 0.08 + 0.72 * day;
+      scene.environmentIntensity = lerp(NT.env, 0.8, day);
     }
     // 雨
     rain.material.opacity = S.rainI * 0.55;

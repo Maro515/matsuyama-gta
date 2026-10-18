@@ -377,6 +377,69 @@ G3.world = (function () {
     scene.add(sw.mesh(WM.stone, false));
     buildBridges(scene);
   }
+  /* ---------- 用水路（CANALS: 田畑のあいだのコンクリート水路・板橋・暗渠の口・水門） ---------- */
+  function buildCanals(scene) {
+    if (typeof CANALS === 'undefined' || !CANALS.length) return;
+    const gbW = new GB(false), gbC = new GB(true), gbM = new GB(true);
+    const h = CANAL_W / 2, th = 0.55, top = 1.0, wy = 0.07;
+    const cOut = C('#bdbab0'), cTop = C('#cfccc2'), cIn = C('#7c8074'), cBr = C('#c4c1b7'), cHole = C('#1c1e1d');
+    // 軸に沿った座標 t と横方向 o から (x, z) へ
+    const P = (cn, t, o, y) => cn.vert ? [cn.c + o, y, t] : [t, y, cn.c + o];
+    const face = (gb, a, b, c, d, col, uw, uh) => gb.quad([a, b, c, d], [[0, 0], [uw / 3, 0], [uw / 3, uh / 3], [0, uh / 3]], col);
+    const crossWall = (cn, t, dir, hole) => {   // 水路を横切る壁（端・暗渠の口）。dir は水のある側
+      const t0 = Math.min(t, t + dir * th), t1 = Math.max(t, t + dir * th);
+      face(gbC, P(cn, t0, -h, 0), P(cn, t0, h, 0), P(cn, t0, h, top), P(cn, t0, -h, top), cOut, CANAL_W, top);
+      face(gbC, P(cn, t1, -h, 0), P(cn, t1, h, 0), P(cn, t1, h, top), P(cn, t1, -h, top), cOut, CANAL_W, top);
+      face(gbC, P(cn, t0, -h, top), P(cn, t1, -h, top), P(cn, t1, h, top), P(cn, t0, h, top), cTop, th, CANAL_W);
+      if (hole) { const tf = dir > 0 ? t1 + 0.02 : t0 - 0.02; face(gbC, P(cn, tf, -1.1, wy), P(cn, tf, 1.1, wy), P(cn, tf, 1.1, wy + 0.75), P(cn, tf, -1.1, wy + 0.75), cHole, 2.2, 0.75); }
+    };
+    let nb = 0, ng = 0;
+    for (const cn of CANALS) {
+      cn.parts.forEach((p, i) => {
+        const [k, a, b] = p;
+        if (k === 'c') return;
+        if (k === 'b') {   // 板橋（地面とほぼ同じ高さのコンクリート板）
+          const A = P(cn, a, -h - 0.4, 0), B = P(cn, b, h + 0.4, 0);
+          gbC.box(Math.min(A[0], B[0]), 0, Math.min(A[2], B[2]), Math.max(A[0], B[0]), 0.22, Math.max(A[2], B[2]), cBr, 3);
+          // 3つに1つは小さな水門（ハンドル付き）
+          if (nb++ % 3 === 1) {
+            const g0 = P(cn, b + 0.6, -h, 0), g1 = P(cn, b + 0.6, h, 0);
+            const st = C('#5f7f96');
+            for (const q of [g0, g1]) gbM.box(q[0] - 0.18, 0, q[2] - 0.18, q[0] + 0.18, 3.4, q[2] + 0.18, st, 3);
+            const m0 = P(cn, b + 0.42, -h, 3.0), m1 = P(cn, b + 0.78, h, 3.4);
+            gbM.box(Math.min(m0[0], m1[0]), 3.0, Math.min(m0[2], m1[2]), Math.max(m0[0], m1[0]), 3.4, Math.max(m0[2], m1[2]), st, 3);
+            const p0 = P(cn, b + 0.5, -h + th, 0.2), p1 = P(cn, b + 0.7, h - th, 1.6);
+            gbM.box(Math.min(p0[0], p1[0]), 0.2, Math.min(p0[2], p1[2]), Math.max(p0[0], p1[0]), 1.6, Math.max(p0[2], p1[2]), C('#6a6e6c'), 3);
+            const w0 = P(cn, b + 0.6, -0.5, 3.4), w1 = P(cn, b + 0.6, 0.5, 3.5);
+            gbM.box(Math.min(w0[0], w1[0]) - 0.5 * !cn.vert, 3.4, Math.min(w0[2], w1[2]) - 0.5 * cn.vert, Math.max(w0[0], w1[0]) + 0.5 * !cn.vert, 3.55, Math.max(w0[2], w1[2]) + 0.5 * cn.vert, C('#c23a2e'), 3);
+            ng++;
+          }
+          return;
+        }
+        // 水面
+        const q = [P(cn, a, -h + th, wy), P(cn, b, -h + th, wy), P(cn, b, h - th, wy), P(cn, a, h - th, wy)];
+        gbW.quad(q, q.map(v => [v[0] / 8, v[2] / 8]));
+        // 両側の壁: 外面・天端・内面（湿って暗い）
+        for (const s of [-1, 1]) {
+          const oO = s * h, oI = s * (h - th);
+          face(gbC, P(cn, a, oO, 0), P(cn, b, oO, 0), P(cn, b, oO, top), P(cn, a, oO, top), cOut, b - a, top);
+          face(gbC, P(cn, a, oO, top), P(cn, b, oO, top), P(cn, b, oI, top), P(cn, a, oI, top), cTop, b - a, th);
+          face(gbC, P(cn, a, oI, wy), P(cn, b, oI, wy), P(cn, b, oI, top), P(cn, a, oI, top), cIn, b - a, top);
+          for (const t of [a, b]) face(gbC, P(cn, t, oO, 0), P(cn, t, oI, 0), P(cn, t, oI, top), P(cn, t, oO, top), cOut, th, top);
+        }
+        // 端は横壁で閉じ、暗渠の手前には管の口をつける
+        const prev = cn.parts[i - 1], next = cn.parts[i + 1];
+        if (!prev) crossWall(cn, a, 1, false); else if (prev[0] === 'c') crossWall(cn, a, 1, true);
+        if (!next) crossWall(cn, b, -1, false); else if (next[0] === 'c') crossWall(cn, b, -1, true);
+      });
+    }
+    const mc = new THREE.MeshStandardMaterial({ map: G3.tex.concrete, vertexColors: true, roughness: 0.92, side: THREE.DoubleSide });
+    const mw = WM.water.clone();
+    mw.color.set(0x34503f); mw.polygonOffset = true; mw.polygonOffsetFactor = -2; mw.polygonOffsetUnits = -4;
+    const wm = gbW.mesh(mw, false); wm.receiveShadow = true;
+    scene.add(wm, gbC.mesh(mc, true), gbM.mesh(WM.metal, true));
+    G3.canalStats = { canals: CANALS.length, bridges: nb, gates: ng };
+  }
   /* ---------- 橋（道路×川・堀、鉄道×川、堀の歩道橋） ---------- */
   function riverAt(x, y) {
     for (const rv of RIVERS) {
@@ -1636,6 +1699,7 @@ G3.world = (function () {
     buildHills(scene);
     buildBackdrop(scene);
     buildFields(scene);
+    buildCanals(scene);
     buildRoads(scene);
     buildFrontage(scene);
     buildRailways(scene);

@@ -131,6 +131,8 @@ G3.street = (function () {
     // ゲーム上の大事な地点（みかん・ギグ・ミッション）は空けておく
     for (const k of KEYPTS) take(k[0], k[1], 7);
     for (const r of ROADS) if (r.kind === 'lane') for (let d = 0; d <= r.pl.len; d += 6) { const p = plAt(r.pl, d); take(p.x, p.y, r.w / 2 - 0.5); }
+    // 用水路の上と縁には物を置かない
+    if (typeof CANALS !== 'undefined') for (const cn of CANALS) for (let t = cn.t0; t <= cn.t1; t += 4) take(cn.vert ? cn.c : t, cn.vert ? t : cn.c, CANAL_W / 2 + 1);
   }
   // 建物（bldGrid）と、3D時に bldGrid から外したランドマークの敷地（LMS.solid）の両方を見る
   const nearBld = (x, y, m) => {

@@ -1064,6 +1064,105 @@ function infillFront(r){return r.kind==='arcade'?r.w/2+0.4:r.kind==='lane'?r.w/2
   }
 }
 
+/* ---------- 用水路（田畑のあいだを流れるコンクリート水路。道路の下は暗渠、所々に板橋） ----------
+   ほかの配置が全部決まった後に追加するので、既存の位置は変わらない。幅2m（外寸5単位）、縁は地面から約40cm立ち上がる */
+const CANAL_W=5,CANALS=[];
+{
+  const cr=mulberry32(9101);
+  const FZ=[[2600,3860,4700,4420],[1600,4640,3400,5120],[4400,620,5600,1560],
+    [6700,3560,8150,4340],[2200,2450,3500,3420],[5600,4560,7200,5320]];
+  const PTS=[...LAMPS.map(l=>[l[0],l[1],3]),...POLES.map(p=>[p.x,p.y,3]),...VENDING.map(v=>[v.x,v.y,4]),
+    ...BUSSTOPS.map(b=>[b[0],b[1],8]),...SIGNALS.map(q=>[q.x,q.y,4]),...TREES.map(t=>[t[0],t[1],5]),
+    ...MIKANS.map(m=>[m.x,m.y,8]),...GIGSPOTS.map(g=>[g[1],g[2],16]),...GREENH.map(g=>[g.x,g.y,34]),
+    ...MISSIONS.flatMap(m=>[[m.start[0],m.start[1],14],...(m.goal?[[m.goal[0],m.goal[1],16]]:[]),...(m.cps||[]).map(c=>[c[0],c[1],14])])];
+  const ptGrid=makeGrid();for(const q of PTS)gridAdd(ptGrid,q[0]-q[2],q[1]-q[2],q[0]+q[2],q[1]+q[2],q);
+  const _pq=[],h=CANAL_W/2;
+  // 'F'=水路を引ける 'R'=道路（暗渠でくぐる） 'X'=引けない
+  const cls=(x,y)=>{
+    if(x<20||y<20||x>W-20||y>H-20)return 'X';
+    const ri=roadInfo(x,y);
+    if(ri&&ri.d<ri.road.w/2+(ri.road.kind==='lane'?1.5:8)+h)return ri.road.kind==='arcade'?'X':'R';
+    if(inWaterRaw(x,y)||hillAt(x,y)||inPark(x,y,4)||railDist(x,y)<h+6)return 'X';
+    gridNear(bldGrid,x,y,_ov);
+    for(const b of _ov)if(x>b.x0-h-2.5&&x<b.x1+h+2.5&&y>b.y0-h-2.5&&y<b.y1+h+2.5)return 'X';
+    for(const f of FIELDS)if(x>f.x-h-0.6&&x<f.x+f.w+h+0.6&&y>f.y-h-0.6&&y<f.y+f.h+h+0.6)return 'X';
+    for(const e of EXCLUDE)if(x>e[0]-h&&x<e[2]+h&&y>e[1]-h&&y<e[3]+h)return 'X';
+    for(const l of LMS)if(l.solid){const q=l.solid;if(x>q[0]-12&&x<q[2]+12&&y>q[1]-12&&y<q[3]+12)return 'X';}
+    gridNear(ptGrid,x,y,_pq);
+    for(const q of _pq)if(hyp(q[0]-x,q[1]-y)<q[2]+h)return 'X';
+    return 'F';
+  };
+  // 畑の帯に重なる長さ（行・列の位置合わせ用。安い判定だけで最良の位置を選ぶ）
+  const fieldHit=(vert,c,s0,s1)=>{
+    let L=0;
+    for(const f of FIELDS){
+      const a0=vert?f.x:f.y,a1=vert?f.x+f.w:f.y+f.h;
+      if(c<a0-h-0.6||c>a1+h+0.6)continue;
+      const b0=Math.max(s0,vert?f.y:f.x),b1=Math.min(s1,vert?f.y+f.h:f.x+f.w);
+      if(b1>b0)L+=b1-b0;
+    }
+    return L;
+  };
+  const nearField=(x,y)=>{for(const f of FIELDS)if(x>f.x-h-10&&x<f.x+f.w+h+10&&y>f.y-h-10&&y<f.y+f.h+h+10)return true;return false;};
+  const lines=[];
+  for(const z of FZ){
+    for(const vert of [false,true]){
+      const step=vert?104:76, base=vert?z[0]:z[1], end=vert?z[2]:z[3];
+      const s0=(vert?z[1]:z[0])-60,s1=(vert?z[3]:z[2])+60;
+      for(let k=0;base+step*k<end;k++){
+        if(cr()>(vert?0.26:0.48))continue;
+        let best=null,bh=1e9;
+        for(let o=(vert?88:54);o<=(vert?110:84);o+=2){const c=base+step*k+o,hh=fieldHit(vert,c,s0,s1);if(hh<bh){bh=hh;best=c;}}
+        lines.push({vert,c:best,s0,s1});
+      }
+    }
+  }
+  for(const ln of lines){
+    // 2単位刻みで分類して区間にまとめる
+    const sg=[];
+    for(let t=ln.s0;t<=ln.s1;t+=2){
+      const x=ln.vert?ln.c:t,y=ln.vert?t:ln.c;
+      const k=cls(x,y);
+      const last=sg[sg.length-1];
+      if(last&&last.k===k)last.t1=t;else sg.push({k,t0:t,t1:t,nf:0});
+      if(k==='F'&&nearField(x,y))sg[sg.length-1].nf+=2;
+    }
+    // 'X' で区切った各グループ: 端の道路は落とし、短い水路片は暗渠扱い。長い道路区間（道路と平行）は区切る
+    const groups=[];let cur=[];
+    for(const s of sg){
+      if(s.k==='X'||(s.k==='R'&&s.t1-s.t0>70)){if(cur.length)groups.push(cur);cur=[];continue;}
+      cur.push(s);
+    }
+    if(cur.length)groups.push(cur);
+    for(let g of groups){
+      while(g.length&&g[0].k==='R')g.shift();
+      while(g.length&&g[g.length-1].k==='R')g.pop();
+      g.forEach(s=>{if(s.k==='F'&&s.t1-s.t0<14)s.k='R';});
+      while(g.length&&g[0].k==='R')g.shift();
+      while(g.length&&g[g.length-1].k==='R')g.pop();
+      const wet=g.filter(s=>s.k==='F').reduce((a,s)=>a+s.t1-s.t0,0);
+      const nf=g.filter(s=>s.k==='F').reduce((a,s)=>a+s.nf,0);
+      if(wet<90||nf<wet*0.5)continue;   // 田畑に沿う水路だけ
+      // 板橋（50〜80ごと、幅7）で区切る
+      const parts=[];
+      for(const s of g){
+        if(s.k==='R'){parts.push(['c',s.t0-1,s.t1+1]);continue;}
+        let a=s.t0;
+        const L=s.t1-s.t0;
+        if(L<60){parts.push(['w',a,s.t1]);continue;}
+        let next=a+22+cr()*30;
+        while(next+30<s.t1){
+          parts.push(['w',a,next-3.5]);parts.push(['b',next-3.5,next+3.5]);
+          a=next+3.5;next+=50+cr()*30;
+        }
+        parts.push(['w',a,s.t1]);
+      }
+      const t0=g[0].t0,t1=g[g.length-1].t1;
+      CANALS.push({vert:ln.vert,c:ln.c,t0,t1,parts});
+    }
+  }
+}
+
 /* ---------- セーブ ---------- */
 const SAVEKEY='matsuyama-gta-save';
 function save(){
@@ -1330,6 +1429,14 @@ function addCollider(c){ // 円 {x,y,r} / 回転箱 {x,y,hx,hy,a}、m: 1=歩行�
   const R=c.r!=null?c.r:Math.hypot(c.hx,c.hy);
   const x0=Math.floor((c.x-R)/PCELL),x1=Math.floor((c.x+R)/PCELL),y0=Math.floor((c.y-R)/PCELL),y1=Math.floor((c.y+R)/PCELL);
   for(let gy=y0;gy<=y1;gy++)for(let gx=x0;gx<=x1;gx++){const k=gy*4096+gx;let a=propGrid.get(k);if(!a){a=[];propGrid.set(k,a);}a.push(c);}
+}
+// 用水路: 水のある区間は縁ごと進入不可（板橋・暗渠の所は通れる）
+for(const cn of CANALS)for(const p of cn.parts){
+  if(p[0]!=='w')continue;
+  for(let a=p[1];a<p[2];a+=40){
+    const b=Math.min(p[2],a+40),m=(a+b)/2;
+    addCollider(cn.vert?{x:cn.c,y:m,hx:(b-a)/2,hy:CANAL_W/2,a:Math.PI/2,m:3}:{x:m,y:cn.c,hx:(b-a)/2,hy:CANAL_W/2,a:0,m:3});
+  }
 }
 // ランドマークの当たり判定: モデルの「体の高さ」にある面を 1.5 単位のマス目に焼いたもの（3D描画時に作る）
 const OCC=new Set(),OCELL=1.5,OCC_HIT={occ:1};
@@ -2130,6 +2237,13 @@ function drawTerrain(c,mini){
       else for(let gy=f.y+5;gy<f.y+f.h;gy+=7){c.moveTo(f.x+2,gy);c.lineTo(f.x+f.w-2,gy);}
       c.stroke();
     }
+  }
+  // 用水路（コンクリートの縁＋水面、板橋）
+  for(const cn of CANALS)for(const p of cn.parts){
+    if(p[0]==='c')continue;
+    const rect=(o,col)=>{c.fillStyle=col;if(cn.vert)c.fillRect(cn.c-o,p[1],o*2,p[2]-p[1]);else c.fillRect(p[1],cn.c-o,p[2]-p[1],o*2);};
+    if(p[0]==='w'){rect(CANAL_W/2,'#a3a198');rect(CANAL_W/2-0.6,'#4d7f8c');}
+    else rect(CANAL_W/2+0.6,'#b9b6ac');
   }
   // 海
   c.fillStyle='#5da4cd';poly(c,SEA);c.fill();

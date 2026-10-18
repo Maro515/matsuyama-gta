@@ -1921,6 +1921,93 @@ def build_stage12():
             shrub('shrub_b', 6, 0.5, '#456e36', flower='#e86aa8'), niwaki()]
 
 
+
+# ======================================================================
+# 第13段: 建物の外まわり（竪樋・メーター・外階段・テナント看板・洗濯物）
+# ======================================================================
+def drainpipe():
+    """竪樋（高さ1mの単位。配置時に建物の高さへ縦に伸ばす）。壁は -X 側、+X が外。"""
+    pm = mat('SP_Pipe', '#b8b4a8', rough=0.5)
+    return join([cyl('pipe', 0.05, 1.0, (0.08, 0, 0.5), pm, verts=8)], 'drainpipe', smooth_angle=60)
+
+
+def meter_box():
+    """電気・ガスのメーター（壁付け）。+X が外。"""
+    m = M()
+    p = [box('elec', (0.14, 0.3, 0.42), (0.07, -0.2, 1.35), mat('SP_Meter', '#d8d8d2', rough=0.5)),
+         box('glass', (0.02, 0.22, 0.16), (0.15, -0.2, 1.42), mat('SP_MeterGlass', '#2a3440', rough=0.1)),
+         box('gas', (0.18, 0.26, 0.3), (0.09, 0.25, 1.05), mat('SP_GasMeter', '#c8c4b8', rough=0.5)),
+         cyl('gaspipe', 0.025, 1.0, (0.06, 0.25, 0.5), mat('SP_GasPipe', '#d8c25a', rough=0.5), verts=6)]
+    return join(p, 'meter_box', smooth_angle=30)
+
+
+def stair_flight():
+    """アパートの鉄骨外階段（1階分: 高さ2.8m）。壁は X=0、外へ +X に幅1m。Y=-2.0→+2.0 で上り、+Y 側に踊り場。"""
+    st = mat('SP_StairSteel', '#6a7a86', metal=0.5, rough=0.5)
+    tread = mat('SP_StairTread', '#8a8e90', metal=0.4, rough=0.6)
+    p = []
+    n = 14
+    for i in range(n):
+        y = -2.0 + 4.0 * (i + 0.5) / n
+        p.append(box('tread', (1.0, 4.0 / n + 0.02, 0.05), (0.6, y, 2.8 * (i + 1) / n), tread))
+    ang = math.atan2(2.8, 4.0)
+    for x in (0.1, 1.1):
+        o = box('stringer', (0.06, math.hypot(4.0, 2.8) + 0.1, 0.22), (x, 0, 1.4), st)
+        o.rotation_euler = (ang, 0, 0)
+        p.append(o)
+    p.append(box('landing', (1.0, 1.3, 0.08), (0.6, 2.65, 2.8), tread))
+    for (x, y) in ((1.1, 2.0), (1.1, 3.3)):
+        p.append(box('post', (0.06, 0.06, 3.9), (x, y, 1.95), st))
+    o = box('rail', (0.04, math.hypot(4.0, 2.8), 0.04), (1.12, 0, 2.4), st); o.rotation_euler = (ang, 0, 0); p.append(o)
+    p.append(box('lrail', (0.04, 1.3, 0.04), (1.12, 2.65, 3.8), st))
+    return join(p, 'stair_flight', smooth_angle=30)
+
+
+TENANTS = [('tenant_a', ['喫茶 みかん', '歯科', '英会話', '学習塾', '司法書士']), ('tenant_b', ['不動産', 'ネイル', '整骨院', 'カラオケ', '居酒屋']),
+           ('tenant_c', ['美容室', '税理士', 'ヨガ', '眼科', '保険'])]
+
+
+def tenant_sign(name, labels):
+    """ビルの縦型テナント看板（袖看板、高さ約7.5m）。壁から +X へ突き出し、文字は ±Y の面。"""
+    m = M()
+    cols = ['#f2f2ea', '#2a5aa8', '#c83a2a', '#f2c23a', '#2a8a5a', '#6a3a8a']
+    frame = mat('SP_TenantFrame', '#3a3e44', metal=0.5, rough=0.4)
+    lit = mat('NightGlow_Sign_' + name, '#f2f2ea', rough=0.4, emit='#ffffff', estr=0.0)
+    p = [box('frame', (1.3, 0.3, 7.6), (0.75, 0, 3.8), frame)]
+    rr = random.Random(len(name) * 7 + ord(name[-1]))
+    for k, lab in enumerate(labels):
+        z = 0.75 + k * 1.45
+        bg = mat('SP_Ten_%s_%d' % (name, k), cols[1 + rr.randrange(len(cols) - 1)], rough=0.4)   # 白文字の段は色地にする
+        p.append(box('panel', (1.15, 0.32, 1.3), (0.75, 0, z), bg if k % 2 else lit))
+        ink = m['black'] if k % 2 == 0 else m['signw']
+        for f, y in (('+Y', 0.165), ('-Y', -0.165)):
+            p.append(text3d('t', lab, 0.2 if len(lab) <= 4 else 0.15, (0.75, y, z), f, ink))
+            p.append(text3d('f', '%dF' % (k + 1), 0.13, (0.75, y, z + 0.47), f, ink))
+    return join(p, name, smooth_angle=30)
+
+
+def laundry():
+    """ベランダの物干し（竿と洗濯物）。竿は Y 方向、+X が外。"""
+    m = M()
+    pole = mat('SP_LaundryPole', '#c8ccd0', metal=0.6, rough=0.4)
+    p = [cyl('pole', 0.018, 1.9, (0.5, 0, 1.55), pole, verts=6, axis='Y')]
+    for y in (-0.85, 0.85):
+        p.append(cyl('stand', 0.015, 1.55, (0.5, y, 0.78), pole, verts=5))
+    cols = ['#f2f2ee', '#5a8ad8', '#e86a6a', '#f2d24a', '#7a9a5a', '#d8a8c8']
+    rr = random.Random(21)
+    y = -0.7
+    while y < 0.7:
+        w = rr.uniform(0.25, 0.45)
+        h = rr.uniform(0.45, 0.8)
+        p.append(box('cloth', (0.02, w, h), (0.5, y + w / 2, 1.55 - h / 2), mat('SP_Cloth%d' % (int(y * 10) % 6), cols[rr.randrange(len(cols))], rough=0.9)))
+        y += w + 0.06
+    return join(p, 'laundry', smooth_angle=30)
+
+
+def build_stage13():
+    return [drainpipe(), meter_box(), stair_flight()] + [tenant_sign(n, l) for n, l in TENANTS] + [laundry()]
+
+
 def layout_preview(roots, path, cols=7, gap=2.2, big=()):
     small = [o for o in roots if o.name not in big]
     for i, o in enumerate(small):
@@ -1947,7 +2034,8 @@ if __name__ == '__main__':
     roots10 = build_stage10()
     roots11 = build_stage11()
     roots12 = build_stage12()
-    roots = roots1 + roots2 + roots3 + roots5 + roots6 + roots7 + roots8 + roots9 + roots10 + roots11 + roots12
+    roots13 = build_stage13()
+    roots = roots1 + roots2 + roots3 + roots5 + roots6 + roots7 + roots8 + roots9 + roots10 + roots11 + roots12 + roots13
     export_glb(os.path.join(ASSETS, 'glb', 'street.glb'), roots)
     only = argv_after()
     def away():
@@ -1961,6 +2049,11 @@ if __name__ == '__main__':
             continue
         away()
         layout_preview(grp, os.path.join(PREV, 'street%s.png' % tag), **kw)
+    if only and '13' in only:
+        away()
+        for i, o in enumerate(roots13):
+            o.location = (i * 2.6 - 9, 0, 0)
+        preview(os.path.join(PREV, 'street13.png'), target=(0, 0, 3), dist=20, elev=12, azim=-60, lens=45, res=(1400, 800), samples=48)
     if only and '12' in only:
         away()
         for i, o in enumerate(roots12):

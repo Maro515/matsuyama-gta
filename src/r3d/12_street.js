@@ -2283,7 +2283,7 @@ G3.street = (function () {
     return G3.lmMat(m);
   }
   // 種類ごとの描画距離（これより遠いチャンクは描かない）。大物は常に描く。
-  const FAR = { guide_gantry: 1e9, tram_stop: 2200, karakuri_clock: 1e9, arcade_gate_okaido: 1600, arcade_gate_gintengai: 1600, arcade_gate_dogo: 1600, container_a: 2400, container_b: 2400, container_c: 2400, container_d: 2400, weed_a: 260, weed_b: 260, shrub_a: 600, shrub_b: 600, niwaki: 1000, lighthouse_red: 3000, lighthouse_white: 3000, tetrapod: 650, wcont_a: 700, wcont_b: 700, wcont_c: 700, gs_canopy: 1600, gs_sign: 1600, fishing_boat: 1800,
+  const FAR = { guide_gantry: 1e9, tram_stop: 2200, karakuri_clock: 1e9, arcade_gate_okaido: 1600, arcade_gate_gintengai: 1600, arcade_gate_dogo: 1600, container_a: 2400, container_b: 2400, container_c: 2400, container_d: 2400, weed_a: 260, weed_b: 260, drainpipe: 700, meter_box: 300, laundry: 700, stair_flight: 900, tenant_a: 1400, tenant_b: 1400, tenant_c: 1400, shrub_a: 600, shrub_b: 600, niwaki: 1000, lighthouse_red: 3000, lighthouse_white: 3000, tetrapod: 650, wcont_a: 700, wcont_b: 700, wcont_c: 700, gs_canopy: 1600, gs_sign: 1600, fishing_boat: 1800,
     catenary_pole: 1100, park_toilet: 1000, solar_panel: 900, tv_antenna: 700, bus_shelter: 1000,
     guardrail: 1300, guard_pipe: 1000, hedge_planter: 1200, block_wall: 1000, awning_red: 1100, awning_green: 1100, awning_blue: 1100, awning_orange: 1100,
     sign_speed: 900, sign_stop: 900, curve_mirror: 900, parking_sign: 1200, clock_pole: 1400, map_board: 900 };
@@ -2393,6 +2393,59 @@ G3.street = (function () {
 
 
 
+
+
+  /* ---------- 建物の外まわり: 竪樋・メーター・アパートの外階段・テナントの縦看板・ベランダの洗濯物 ---------- */
+  function exteriors() {
+    const rr = mulberry32(9801);
+    const q = new THREE.Quaternion(), e = new THREE.Euler(), v = new THREE.Vector3(), sc = new THREE.Vector3();
+    const n = { pipe: 0, meter: 0, stair: 0, tenant: 0, laundry: 0 };
+    const FL = FLOORH;
+    for (const b of buildings) {
+      if (b.noDraw) continue;
+      const top = b.hW, nf = b.sty === 'machiya' ? 1 : b.hgt, gH = Math.max(6, top - FL * nf), f = frontOf(b);
+      // 竪樋: 建物の角（1〜2本）。屋根の高さまで縦に伸ばす
+      for (const [ff, t] of [[(f + 1) % 4, 0.02], [(f + 3) % 4, 0.98]].slice(0, b.kind === 'house' ? 1 : 2)) {
+        const w = wallPt(b, ff, t, 0.05);
+        if (!clearOfRoad(w.x, w.y, -0.5)) continue;
+        q.setFromEuler(e.set(0, w.rot, 0)); sc.set(U, top - 0.6, U);
+        putM('drainpipe', new THREE.Matrix4().compose(v.set(w.x, heightAt(w.x, w.y), w.y).clone(), q.clone(), sc.clone())); n.pipe++;
+      }
+      // 戸建て: 横の壁にメーター
+      if (b.kind === 'house' && b.sty !== 'warehouse') {
+        const sf = (f + (b.seed % 2 ? 3 : 1)) % 4, w = wallPt(b, sf, 0.2 + rr() * 0.2, 0.02);
+        if (free(w.x, w.y, 0.6)) { put('meter_box', w.x, w.y, w.rot, 0); n.meter++; }
+      }
+      // 低層のアパート（マンション・団地で3階まで）: 端の壁に鉄骨の外階段を各階に
+      if ((b.kind === 'mansion') && b.hgt <= 3) {
+        const ef = (f + 1) % 4, w = wallPt(b, ef, 0.5, 0);
+        if (faceLen(b, ef) > 14 && clearOfRoad(w.x, w.y, 3) && !overlapsOther(b, w.x, w.y, 4) && free(w.x, w.y, 2)) {
+          // 1階分は 2.8m の階段なので、最初の1本は1階の高さ（gH）まで縦に伸ばし、当たり判定は足元の箱で
+          q.setFromEuler(e.set(0, w.rot, 0)); sc.set(U, U * gH / 7, U);
+          putM('stair_flight', new THREE.Matrix4().compose(v.set(w.x, heightAt(w.x, w.y), w.y).clone(), q.clone(), sc.clone()));
+          const ox = Math.cos(-w.rot), oy = Math.sin(-w.rot);   // 外向き
+          if (typeof addCollider === 'function') addCollider({ x: w.x + ox * 0.6 * U, y: w.y + oy * 0.6 * U, hx: 0.55 * U, hy: 2.1 * U, a: -w.rot, m: 3 });
+          for (let k = 1; k < b.hgt; k++) put('stair_flight', w.x, w.y, w.rot, gH + (k - 1) * FL);
+          take(w.x, w.y, 4); n.stair++;
+        }
+      }
+      // 事務所ビル（4階以上）: 正面の角に縦型のテナント看板
+      if (b.kind === 'office' && b.hgt >= 4 && top - gH > 20 && rr() < 0.6) {
+        const w = wallPt(b, f, rr() < 0.5 ? 0.08 : 0.92, 0);
+        put('tenant_' + 'abc'[b.seed % 3], w.x, w.y, w.rot, gH + 1); n.tenant++;
+      }
+      // マンションのベランダ（正面）に洗濯物
+      if (b.kind === 'mansion' && b.sty !== 'danchi') {
+        const len = faceLen(b, f), bays = Math.max(1, Math.floor(len / 9));
+        for (let k = 1; k < nf; k++) for (let i = 0; i < bays; i++) {
+          if (rr() > 0.28) continue;
+          const w = wallPt(b, f, (i + 0.5) / bays, 1.1);
+          put('laundry', w.x, w.y, w.rot, gH + k * FL); n.laundry++;
+        }
+      }
+    }
+    stats.exteriors = n;
+  }
 
   /* ---------- 緑: 家の庭の植え込みと松、路地の端・電柱の根元の雑草 ---------- */
   function greenery() {
@@ -2661,6 +2714,7 @@ G3.street = (function () {
     buildingDetails();
     houseYards(scene);
     greenery();
+    exteriors();
     nightLights(scene);
     shopLights(scene);
     roofs();

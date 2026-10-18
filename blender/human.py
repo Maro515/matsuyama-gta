@@ -304,8 +304,9 @@ def anim_sit(arm, f, t):
         pose_key(arm, 'hand.' + s, f, X, 0)
 
 
-def build():
-    reset()
+def build(do_reset=True):
+    if do_reset:
+        reset()
     M = dict(
         skin=mat('Skin', '#e8c8a0', rough=0.6, spec=0.35),
         hair=mat('Hair', '#2c2620', rough=0.55, spec=0.4),

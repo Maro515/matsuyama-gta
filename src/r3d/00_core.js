@@ -12,6 +12,12 @@ const R3 = { ok: false, state: 'idle' };
   const readyP = new Promise(r => readyRes = r);
   R3.whenReady = () => readyP;
   R3.render = () => {};
+  // タイトル画面の背景（Blender/Cyclesでレンダリングしたキービジュアル）
+  {
+    const url = (window.ASSET_DATA && window.ASSET_DATA['tex/title.jpg']) || ((window.ASSET_BASE || 'assets/') + 'tex/title.jpg');
+    const ti = document.getElementById('title');
+    if (ti) ti.style.background = 'linear-gradient(180deg,rgba(6,12,20,.62) 0%,rgba(6,12,20,.30) 42%,rgba(6,12,20,.86) 100%),url(' + url + ') center 65%/cover no-repeat,#15242f';
+  }
   if (!T) { R3.state = 'failed'; readyRes(); return; }
   const THREE = T.THREE;
   G3.THREE = THREE; G3.T = T;
@@ -95,7 +101,7 @@ const R3 = { ok: false, state: 'idle' };
     renderer.shadowMap.enabled = true;
     renderer.shadowMap.type = THREE.PCFSoftShadowMap;
     scene = new THREE.Scene();
-    camera = new THREE.PerspectiveCamera(58, innerWidth / innerHeight, 0.8, 16000);
+    camera = new THREE.PerspectiveCamera(58, innerWidth / innerHeight, 0.8, 22000);
     G3.renderer = renderer; G3.scene = scene; G3.camera = camera;
 
     // 空
@@ -161,7 +167,10 @@ const R3 = { ok: false, state: 'idle' };
     }
 
     // ポストプロセス
-    composer = new T.EffectComposer(renderer);
+    // ポストエフェクト経由でもMSAAが効くよう、マルチサンプルのレンダーターゲットを使う
+    const rt = new THREE.WebGLRenderTarget(innerWidth * renderer.getPixelRatio(), innerHeight * renderer.getPixelRatio(),
+      { type: THREE.HalfFloatType, samples: isTouch ? 2 : 4 });
+    composer = new T.EffectComposer(renderer, rt);
     composer.addPass(new T.RenderPass(scene, camera));
     bloomPass = new T.UnrealBloomPass(new THREE.Vector2(innerWidth, innerHeight), 0.35, 0.55, 0.88);
     composer.addPass(bloomPass);

@@ -114,7 +114,7 @@ G3.world = (function () {
     WM.paver = new THREE.MeshStandardMaterial({ map: G3.tex.sidewalk, color: 0xe7ddc8, roughness: 0.8, polygonOffset: true, polygonOffsetFactor: -1, polygonOffsetUnits: -6 });
     WM.markW = new THREE.MeshStandardMaterial({ color: 0xf2f2ee, roughness: 0.6, polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -40 });
     WM.markY = new THREE.MeshStandardMaterial({ color: 0xf0b020, roughness: 0.6, polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -40 });
-    WM.rail = new THREE.MeshStandardMaterial({ color: 0x8c8f92, roughness: 0.3, metalness: 0.85, polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -50 });
+    WM.rail = new THREE.MeshStandardMaterial({ color: 0x7d7f80, roughness: 0.55, metalness: 0.7, envMapIntensity: 0.4, polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -50 });
     WM.ballast = new THREE.MeshStandardMaterial({ map: texRep('gravel', 1, 1), roughness: 0.95, polygonOffset: true, polygonOffsetFactor: -1, polygonOffsetUnits: -3 });
     WM.sleeper = new THREE.MeshStandardMaterial({ color: 0x8a8378, roughness: 0.9 });
     WM.hill = worldUV(new THREE.MeshStandardMaterial({ map: G3.tex.grass, vertexColors: true, roughness: 0.95 }), 40);
@@ -138,10 +138,11 @@ G3.world = (function () {
         Object.assign(sh.uniforms, uni);
         sh.vertexShader = sh.vertexShader
           .replace('#include <common>', '#include <common>\nattribute float seed;\nvarying float vSeed;')
-          .replace('#include <begin_vertex>', '#include <begin_vertex>\nvSeed=seed;');
+          .replace('#include <begin_vertex>', '#include <begin_vertex>\nvSeed=seed;vFacY=(modelMatrix*vec4(transformed,1.0)).y;')
+          .replace('varying float vSeed;', 'varying float vSeed;varying float vFacY;');
         sh.fragmentShader = sh.fragmentShader
-          .replace('#include <common>', '#include <common>\nuniform sampler2D uMask;uniform float uNight,uRatio,uEmit;varying float vSeed;\nfloat h21(vec2 p){return fract(sin(dot(p,vec2(127.1,311.7)))*43758.5453);}')
-          .replace('#include <map_fragment>', '#include <map_fragment>\nvec4 facM=texture2D(uMask,vMapUv);float glassM=max(facM.r,facM.g);')
+          .replace('#include <common>', '#include <common>\nuniform sampler2D uMask;uniform float uNight,uRatio,uEmit;varying float vSeed;varying float vFacY;\nfloat h21(vec2 p){return fract(sin(dot(p,vec2(127.1,311.7)))*43758.5453);}')
+          .replace('#include <map_fragment>', '#include <map_fragment>\nvec4 facM=texture2D(uMask,vMapUv);float glassM=max(facM.r,facM.g);\ndiffuseColor.rgb*=mix(0.62,1.0,smoothstep(0.0,4.5,vFacY));')
           .replace('#include <roughnessmap_fragment>', '#include <roughnessmap_fragment>\nroughnessFactor=mix(roughnessFactor,0.1,glassM);')
           .replace('#include <emissivemap_fragment>', `#include <emissivemap_fragment>
             vec2 cel=floor(vMapUv)+vec2(vSeed*7.13,vSeed*3.71);
@@ -472,6 +473,47 @@ G3.world = (function () {
     const m = new THREE.Mesh(g, WM.hill);
     m.receiveShadow = true;
     scene.add(m);
+  }
+
+  /* ---------- 遠景（四国山地・伊予灘の島々） ---------- */
+  function buildBackdrop(scene) {
+    const gb = new GB(true);
+    const cx = W / 2 + 600, cz = H / 2;
+    const nz = mulberry32(31);
+    const ridge = [];
+    for (let i = 0; i < 64; i++) ridge.push(nz());
+    const hAt = (a) => {   // 方位角に沿った稜線の高さ（滑らかな乱数）
+      const t = ((a / TAU) % 1 + 1) % 1 * 64;
+      const i0 = Math.floor(t), f = t - i0;
+      const sm = f * f * (3 - 2 * f);
+      return ridge[i0 % 64] * (1 - sm) + ridge[(i0 + 1) % 64] * sm;
+    };
+    // 方位: 0=東, π/2=南。北西〜西は海なので山を低く/なし
+    const N = 160;
+    for (let i = 0; i < N; i++) {
+      const a0 = -Math.PI * 0.55 + i / N * Math.PI * 1.45, a1 = -Math.PI * 0.55 + (i + 1) / N * Math.PI * 1.45;
+      for (const [R, amp, base, col] of [[9500, 900, 160, '#56705a'], [12500, 1500, 250, '#6f8590'], [15500, 2100, 300, '#8fa0ab']]) {
+        const k0 = Math.sin((i / N) * Math.PI), k1 = Math.sin(((i + 1) / N) * Math.PI);
+        const h0 = base + amp * (0.35 + 0.65 * hAt(a0 * 3 + R)) * (0.4 + 0.6 * k0);
+        const h1 = base + amp * (0.35 + 0.65 * hAt(a1 * 3 + R)) * (0.4 + 0.6 * k1);
+        const P = (a, r, y) => [cx + Math.cos(a) * r, y, cz + Math.sin(a) * r];
+        gb.quad([P(a0, R, -50), P(a1, R, -50), P(a1, R + 900, h1), P(a0, R + 900, h0)], [[0, 0], [1, 0], [1, 1], [0, 1]], C(col));
+      }
+    }
+    // 伊予灘・瀬戸内の島影（西〜北）
+    const isl = [[-3200, 900, 700, 150], [-2600, 2600, 500, 110], [-1800, -1600, 900, 170], [600, -2600, 1200, 220], [3200, -3400, 1600, 260], [-4200, 4200, 1300, 200]];
+    for (const [ix, iz, r, h] of isl) {
+      const S2 = 14;
+      for (let k = 0; k < S2; k++) {
+        const a0 = k / S2 * TAU, a1 = (k + 1) / S2 * TAU;
+        const p0 = [ix + Math.cos(a0) * r, -1, iz + Math.sin(a0) * r * 0.6], p1 = [ix + Math.cos(a1) * r, -1, iz + Math.sin(a1) * r * 0.6];
+        gb.tri([p0, p1, [ix, h, iz]], [[0, 0], [1, 0], [.5, 1]], C('#5b7262'));
+      }
+    }
+    const m = new THREE.MeshLambertMaterial({ vertexColors: true, side: THREE.DoubleSide, fog: false });
+    const mesh = new THREE.Mesh(gb.geo(), m);
+    mesh.geometry.computeVertexNormals();
+    scene.add(mesh);
   }
 
   /* ---------- 田畑・ビニールハウス ---------- */
@@ -986,6 +1028,21 @@ G3.world = (function () {
       const g = instanceNode(node, groups[k], { shadow: k !== 'far' });
       scene.add(g);
     }
+    // 樹冠の下の柔らかい接地影（AOの代わり）
+    const blobs = [];
+    for (const k of ['broad_a', 'broad_b', 'pine', 'street', 'mikan']) for (const M of groups[k]) blobs.push([M, k === 'mikan' ? 1.6 : k === 'street' ? 3.0 : 3.8]);
+    const bg = new THREE.PlaneGeometry(2, 2); bg.rotateX(-Math.PI / 2);
+    const bm = new THREE.MeshBasicMaterial({ color: 0x000000, alphaMap: G3.radialTex(), transparent: true, opacity: 0.42, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -3, polygonOffsetUnits: -60 });
+    const bi = new THREE.InstancedMesh(bg, bm, blobs.length);
+    const pos = new THREE.Vector3(), q = new THREE.Quaternion(), sc = new THREE.Vector3();
+    blobs.forEach(([M, r], i) => {
+      M.decompose(pos, q, sc);
+      pos.y += 0.15;
+      bi.setMatrixAt(i, new THREE.Matrix4().compose(pos, new THREE.Quaternion(), new THREE.Vector3(r * sc.x, 1, r * sc.x)));
+    });
+    bi.frustumCulled = false;
+    bi.renderOrder = 1;
+    scene.add(bi);
   }
   function fallbackTree(k) {
     const g = new THREE.Group();
@@ -1245,6 +1302,7 @@ G3.world = (function () {
     buildGround(scene);
     buildWater(scene);
     buildHills(scene);
+    buildBackdrop(scene);
     buildFields(scene);
     buildRoads(scene);
     buildRailways(scene);

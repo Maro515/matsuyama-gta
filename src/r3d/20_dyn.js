@@ -56,6 +56,17 @@ G3.dyn = (function () {
       }
       if (/^wheel_/.test(c.name)) ud.wheels.push({ o: c, front: /F/.test(c.name.slice(6)) });
     });
+    // 車体下の接地影
+    {
+      const t = CARTYPES[type];
+      const bg = new THREE.PlaneGeometry(t.l / U + 0.5, t.w / U + 0.35);
+      bg.rotateX(-Math.PI / 2);
+      if (!G3._carBlobMat) G3._carBlobMat = new THREE.MeshBasicMaterial({ color: 0x000000, alphaMap: G3.radialTex(), transparent: true, opacity: 0.55, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -3, polygonOffsetUnits: -65 });
+      const blob = new THREE.Mesh(bg, G3._carBlobMat);
+      blob.position.y = 0.03;
+      blob.renderOrder = 1;
+      o.add(blob);
+    }
     if (type === 'bike') {
       // 乗り手（座り姿勢）
       ud.rider = makeHuman(true);
@@ -458,7 +469,7 @@ G3.dyn = (function () {
     scene = G3.scene;
     player = makeHuman(false, true);
     dressHuman(player, { c: '#2e6e46', pc: '#33404e', hc: '#2c2620', sk: '#e8c8a0' });
-    for (let i = 0; i < 24; i++) { const o = makeHuman(false); o.visible = false; pedPool.push(o); }
+    for (let i = 0; i < 36; i++) { const o = makeHuman(false); o.visible = false; pedPool.push(o); }
     headSpot = new THREE.SpotLight(0xfff1d0, 0, 190, 0.5, 0.6, 1.2);
     headSpot.castShadow = false;
     scene.add(headSpot, headSpot.target);

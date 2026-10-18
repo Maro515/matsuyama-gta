@@ -65,7 +65,7 @@
     background:linear-gradient(180deg,#ffe37a,#ff9d2e 60%,#ff7b3c);-webkit-background-clip:text;background-clip:text;color:transparent;
     filter:drop-shadow(0 3px 6px rgba(0,0,0,.6))}
   .screen h2{font-size:min(5.4vw,24px);margin:4px 0 0;color:#8fd8ff;font-weight:800}
-  .screen .sub{font-size:13px;opacity:.85;margin-top:12px;line-height:1.8;max-width:560px}
+  .screen .sub{font-size:13px;margin-top:12px;line-height:1.8;max-width:600px;text-shadow:0 1px 3px #000;background:rgba(6,12,20,.55);padding:12px 18px;border-radius:12px;backdrop-filter:blur(2px)}
   .btn{margin-top:22px;font-size:20px;font-weight:800;color:#1c2b17;background:linear-gradient(180deg,#ffe37a,#ffb02e);
     border:none;border-radius:14px;padding:14px 46px;cursor:pointer;box-shadow:0 4px 14px rgba(0,0,0,.5);pointer-events:auto}
   .btn.sm{font-size:15px;padding:9px 26px;margin-top:12px;background:linear-gradient(180deg,#d8e6f2,#a9c2d6)}
@@ -121,7 +121,7 @@
   <h1 style="font-size:34px">PAUSE</h1>
   <div class="sub">WASD/矢印: 移動・運転　　E: 車に乗る/降りる　　Shift: ダッシュ<br>
   Space: ブレーキ/ハンドブレーキ　　M: マップ　　H: クラクション　　X: ミッション中止<br>
-  <b>C: チェイスカメラ切替</b>　　<b>R: カーラジオ</b>　　N: 時間を進める<br>
+  <b>C: 三人称／上空視点の切替</b>　　マウスドラッグ: 視点を回す　　<b>R: カーラジオ</b>　　N: 時間を進める<br>
   車を奪って松山の街を走り回ろう。悪さをすると手配度★が上がりパトカーが追ってくる。<br>
   天気は晴れ→曇り→雨と変化し、雨の日は路面が滑りやすい。</div>
   <button class="btn" id="btnResume">再開する</button>
@@ -137,6 +137,7 @@
     実際の松山の街並みを再現したマップを、車を乗り換えながら自由に走り回れるオープンワールド。<br>
     ミッションをこなして賞金を稼ぎ、街に落ちている🍊みかんを集めよう。<br><br>
     <b>操作</b>：WASD/矢印キーで移動、<b>E</b>で車に乗る/降りる、Shiftでダッシュ、Spaceでブレーキ、<b>M</b>で全域マップ<br>
+    マウスをドラッグで視点を回す、<b>C</b>で上空視点に切替<br>
     スマホ/iPad：左側の画面でスティック操作、右側のボタンで乗車・ブレーキ
   </div>
   <button class="btn" id="btnStart">松山へ GO！</button>
@@ -1211,7 +1212,7 @@ function tryEnterExit(){
 
 /* ---------- 通行車両 ---------- */
 function spawnTraffic(){
-  if(traffic.length>=13)return;
+  if(traffic.length>=(window.R3&&R3.ok?26:13))return;
   for(let t=0;t<14;t++){
     const r=DRIVE_ROADS[(Math.random()*DRIVE_ROADS.length)|0];
     const d=Math.random()*r.pl.len;
@@ -1309,7 +1310,7 @@ function reattachPed(p){ // 最寄りの歩道へ復帰
   p.rdir=Math.random()<.5?1:-1;
 }
 function spawnPed(){
-  if(peds.length>=22)return;
+  if(peds.length>=(window.R3&&R3.ok?34:22))return;
   for(let t=0;t<10;t++){
     const arc=Math.random()<0.4;
     const list=arc?ROADS.filter(r=>r.kind==='arcade'):ROADS;
@@ -1479,6 +1480,7 @@ function busted(){
   wastedFx('確保','BUSTED ― 罰金 ¥'+fine+'　松山東警察署で釈放…');
   if(S.mode==='car'){parked.push(S.pcar);S.pcar=null;S.mode='foot';}
   S.px=6382;S.py=3428;S.hp=100;
+  S.pa=S.tpsYaw=-Math.PI/2;if(window.G3&&G3.cam)G3.cam.init=false;  // 建物を見る向き＝カメラは道路側
   updStarsUI();updMoneyUI();save();
   document.getElementById('btnE').textContent='乗る';
 }
@@ -1488,6 +1490,7 @@ function hospital(){
   wastedFx('WASTED','病院送り…松山赤十字病院で手当てを受けた（¥1000）');
   if(S.mode==='car'){parked.push(S.pcar);S.pcar=null;S.mode='foot';}
   S.px=6355;S.py=2655;
+  S.pa=S.tpsYaw=-Math.PI/2;if(window.G3&&G3.cam)G3.cam.init=false;
   updStarsUI();updMoneyUI();save();
   document.getElementById('btnE').textContent='乗る';
 }

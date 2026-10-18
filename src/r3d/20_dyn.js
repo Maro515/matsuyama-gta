@@ -119,7 +119,9 @@ G3.dyn = (function () {
     const ud = o.userData = { type, wheels: [], paint: [], tail: [], head: [], siren: [], andon: [], rider: null, pitch: 0, roll: 0, prevV: 0, prevA: 0, spin: 0 };
     o.traverse(c => {
       if (c.isMesh) {
-        c.castShadow = true; c.receiveShadow = true;
+        c.castShadow = !/^wheel_/.test(c.parent && c.parent.name);   // ホイールの影は車体の影に含まれるので省く
+        c.receiveShadow = true;
+        if (c.name === 'car_lights') { c.material = lightMat(c.material.userData.emC); ud.lightI = c.material.userData.I; return; }
         const mats = Array.isArray(c.material) ? c.material : [c.material];
         const nm = mats.map(m => {
           const n = m.name || '';
@@ -137,7 +139,7 @@ G3.dyn = (function () {
         c.material = Array.isArray(c.material) ? nm : nm[0];
       }
       if (/^wheel_/.test(c.name)) ud.wheels.push({ o: c, front: /F/.test(c.name.slice(6)) });
-      if (c.name === 'plate_quads' && plateMats.length) c.material = plateMats[(PLATE_KIND[type] || 0) * 8 + ((Math.random() * 8) | 0)];
+      if (c.name === 'plate_quads' && plateMats.length) { c.material = plateMats[(PLATE_KIND[type] || 0) * 8 + ((Math.random() * 8) | 0)]; ud.plate = c; }
     });
     // 車体下の接地影
     {
@@ -160,44 +162,96 @@ G3.dyn = (function () {
     scene.add(o);
     return o;
   }
-  // 単色の部品（黒・クロム・タイヤ・ホイール等）を車体／各ホイールごとに頂点カラー1〜2枚へまとめる。
-  // 塗装・ガラス・灯火は実行時に色や発光を変えるので別のまま
-  const carPlainMats = {};
+  // 単色の部品（黒・クロム・タイヤ・ホイール等）を車体／各ホイールごとに頂点カラーの1枚へまとめる（金属っぽさ・粗さは頂点ごと）。
+  // 灯火（ヘッド・テール・ウインカー）も1枚にまとめ、光の強さは車ごとのユニフォームで変える。塗装（クリアコート）・ガラスは別のまま
+  let carMixMat = null;
+  function mixMat() {
+    if (carMixMat) return carMixMat;
+    const m = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 1, metalness: 1 });
+    m.name = 'CarMix';
+    m.onBeforeCompile = sh => {
+      sh.vertexShader = sh.vertexShader.replace('#include <common>', '#include <common>\nattribute vec2 mr;\nvarying vec2 vMR;')
+        .replace('#include <begin_vertex>', '#include <begin_vertex>\nvMR = mr;');
+      sh.fragmentShader = sh.fragmentShader.replace('#include <common>', '#include <common>\nvarying vec2 vMR;')
+        .replace('#include <roughnessmap_fragment>', '#include <roughnessmap_fragment>\nroughnessFactor = vMR.y;')
+        .replace('#include <metalnessmap_fragment>', '#include <metalnessmap_fragment>\nmetalnessFactor = vMR.x;');
+    };
+    m.customProgramCacheKey = () => 'car-mix-1';
+    return (carMixMat = m);
+  }
+  const LIGHT_KINDS = ['HeadLight', 'TailLight', 'Amber'];
+  // 車ごとの灯火マテリアル（I = ヘッド・テール・ウインカーの発光の強さ）
+  function lightMat(emC) {
+    const I = new THREE.Vector3(0.2, 0.05, 1);
+    const m = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.15, metalness: 0.1 });
+    m.name = 'CarLights';
+    m.onBeforeCompile = sh => {
+      sh.uniforms.uEmC = { value: emC }; sh.uniforms.uEmI = { value: I };
+      sh.vertexShader = sh.vertexShader.replace('#include <common>', '#include <common>\nattribute float lt;\nvarying float vLt;')
+        .replace('#include <begin_vertex>', '#include <begin_vertex>\nvLt = lt;');
+      sh.fragmentShader = sh.fragmentShader.replace('#include <common>', '#include <common>\nuniform vec3 uEmC[3];\nuniform vec3 uEmI;\nvarying float vLt;')
+        .replace('vec3 totalEmissiveRadiance = emissive;', 'vec3 totalEmissiveRadiance = vLt < 0.5 ? uEmC[0] * uEmI.x : vLt < 1.5 ? uEmC[1] * uEmI.y : uEmC[2] * uEmI.z;');
+    };
+    m.customProgramCacheKey = () => 'car-lights-1';
+    m.userData.I = I; m.userData.emC = emC;
+    return m;
+  }
   function compactCar(o) {
     o.updateMatrixWorld(true);
-    const hosts = new Map();
-    const special = m => !m || /^(Paint|Glass|HeadLight|TailLight|Siren|Andon|Window)/.test(m.name || '') || m.transparent || m.map ||
+    const special = m => !m || /^(Paint|Glass|HeadLight|TailLight|Amber|Siren|Andon|Window)/.test(m.name || '') || m.transparent || m.map ||
       (m.emissive && m.emissive.getHex() !== 0);
+    // 部品を host（車体かホイール）の座標へ移し、色と（金属・粗さ）を頂点に焼く
+    const bake = (m, host, extra) => {
+      const inv = new THREE.Matrix4().copy(host.matrixWorld).invert();
+      let g = m.geometry.clone();
+      g.applyMatrix4(new THREE.Matrix4().multiplyMatrices(inv, m.matrixWorld));
+      if (g.index) g = g.toNonIndexed();
+      for (const k2 of Object.keys(g.attributes)) if (k2 !== 'position' && k2 !== 'normal') g.deleteAttribute(k2);
+      const c = m.material.color || new THREE.Color(1, 1, 1), n = g.attributes.position.count, col = new Float32Array(n * 3);
+      for (let i = 0; i < n; i++) { col[i * 3] = c.r; col[i * 3 + 1] = c.g; col[i * 3 + 2] = c.b; }
+      g.setAttribute('color', new THREE.BufferAttribute(col, 3));
+      for (const [nm, sz, val] of extra) {
+        const a = new Float32Array(n * sz);
+        for (let i = 0; i < n; i++) for (let k = 0; k < sz; k++) a[i * sz + k] = val[k];
+        g.setAttribute(nm, new THREE.BufferAttribute(a, sz));
+      }
+      return g;
+    };
+    const hosts = new Map();
     const list = [];
     o.traverse(m => { if (m.isMesh && !m.isSkinnedMesh && !Array.isArray(m.material) && !special(m.material)) list.push(m); });
     for (const m of list) {
       let host = m.parent;
       for (let p = m.parent; p && p !== o; p = p.parent) if (/^wheel_/.test(p.name)) { host = p; break; }
       if (!host || host === m) host = o;
-      const key = (m.material.metalness || 0) > 0.5 ? 'metal' : 'plain';
-      if (!hosts.has(host)) hosts.set(host, { plain: [], metal: [], rough: { plain: [], metal: [] } });
-      const h = hosts.get(host);
-      const inv = new THREE.Matrix4().copy(host.matrixWorld).invert();
-      const rel = new THREE.Matrix4().multiplyMatrices(inv, m.matrixWorld);
-      let g = m.geometry.clone();
-      g.applyMatrix4(rel);
-      if (g.index) g = g.toNonIndexed();
-      for (const k2 of Object.keys(g.attributes)) if (k2 !== 'position' && k2 !== 'normal') g.deleteAttribute(k2);
-      const c = m.material.color || new THREE.Color(1, 1, 1), n = g.attributes.position.count, col = new Float32Array(n * 3);
-      for (let i = 0; i < n; i++) { col[i * 3] = c.r; col[i * 3 + 1] = c.g; col[i * 3 + 2] = c.b; }
-      g.setAttribute('color', new THREE.BufferAttribute(col, 3));
-      h[key].push(g); h.rough[key].push(m.material.roughness == null ? 0.6 : m.material.roughness);
+      const mt = m.material, met = (mt.metalness || 0) > 0.5 ? Math.max(0.8, mt.metalness) : Math.min(0.05, mt.metalness || 0);
+      if (!hosts.has(host)) hosts.set(host, []);
+      hosts.get(host).push(bake(m, host, [['mr', 2, [met, mt.roughness == null ? 0.6 : mt.roughness]]]));
       m.parent.remove(m);
     }
-    for (const [host, h] of hosts) for (const key of ['plain', 'metal']) {
-      if (!h[key].length) continue;
-      const geo = G3.T.mergeGeometries(h[key], false);
+    for (const [host, gs] of hosts) {
+      const geo = G3.T.mergeGeometries(gs, false);
       if (!geo) continue;
-      const r = h.rough[key].reduce((a, b) => a + b, 0) / h.rough[key].length, mk = key + Math.round(r * 10);
-      const mat = carPlainMats[mk] || (carPlainMats[mk] = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: r, metalness: key === 'metal' ? 0.8 : 0.05 }));
-      const mesh = new THREE.Mesh(geo, mat);
+      const mesh = new THREE.Mesh(geo, mixMat());
       mesh.castShadow = true; mesh.receiveShadow = true;
       host.add(mesh);
+    }
+    // 灯火を1枚に
+    const lights = [], emC = [new THREE.Color(0, 0, 0), new THREE.Color(0, 0, 0), new THREE.Color(0, 0, 0)];
+    o.traverse(m => {
+      if (!m.isMesh || Array.isArray(m.material)) return;
+      const k = LIGHT_KINDS.findIndex(nm => (m.material.name || '').startsWith(nm));
+      if (k >= 0) lights.push([m, k]);
+    });
+    if (lights.length) {
+      const gs = lights.map(([m, k]) => { if (m.material.emissive) emC[k].copy(m.material.emissive); return bake(m, o, [['lt', 1, [k]]]); });
+      for (const [m] of lights) m.parent.remove(m);
+      const geo = G3.T.mergeGeometries(gs, false);
+      if (geo) {
+        const mesh = new THREE.Mesh(geo, lightMat(emC));
+        mesh.name = 'car_lights'; mesh.userData.emC = emC;
+        o.add(mesh);
+      }
     }
   }
   function acquireCar(car, police) {
@@ -246,13 +300,17 @@ G3.dyn = (function () {
     const r = WHEEL_R[ud.type] || 0.33;
     ud.spin -= car.v * VK * dt / (r * U);
     const steer = isPlayer ? clamp(-(inputVec().x) * 0.45, -0.45, 0.45) : clamp(-yawRate * 0.25, -0.4, 0.4);
-    for (const w of ud.wheels) {
+    // 遠くの車はホイールとナンバーを省く（画面上で数画素。描画回数を減らす）
+    const cdx = car.x - G3.camera.position.x, cdz = car.y - G3.camera.position.z, far = cdx * cdx + cdz * cdz > 450 * 450 && !isPlayer;
+    if (ud.far !== far) { ud.far = far; for (const w of ud.wheels) w.o.visible = !far; if (ud.plate) ud.plate.visible = !far; }
+    if (!far) for (const w of ud.wheels) {
       w.o.rotation.set(0, w.front ? steer : 0, ud.spin, 'YXZ');
       w.o.rotation.order = 'YXZ';
     }
     // ライト
     const night = 1 - G3.day;
     const brake = !!car.brakeL;
+    if (ud.lightI) ud.lightI.set(ud.headBroken ? 0 : night * 6 + 0.2, brake ? 6 : night * 1.6 + 0.05, 1);
     for (const m of ud.tail) m.emissiveIntensity = brake ? 6 : night * 1.6 + 0.05;
     for (const m of ud.head) m.emissiveIntensity = ud.headBroken ? 0 : night * 6 + 0.2;
     // 夜は路面にヘッドライトの光を落とす（プレイヤー車はスポットライトがあるので除く）
@@ -352,13 +410,58 @@ G3.dyn = (function () {
     mk(new THREE.SphereGeometry(0.12, 12, 8), 0xe8c8a0, 1.62, 'Skin');
     return g;
   }
+  // 歩行者は 6 部位（服・ズボン・靴・肌・目・髪）を1つのスキンメッシュにまとめて1回で描く（部位の色はユニフォーム）。
+  // 6 部位は同じ骨格・同じバインド行列を共有している（human.glb の Body の各プリミティブ）
+  const PED_PARTS = ['Shirt', 'Pants', 'Shoes', 'Skin', 'Eye', 'Hair'];
+  let pedGeo;
+  function pedGeometry(src) {
+    if (pedGeo !== undefined) return pedGeo;
+    const gs = [];
+    src.scene.traverse(c => {
+      const k = c.isSkinnedMesh ? PED_PARTS.indexOf(c.material.name) : -1;
+      if (k < 0) return;
+      const g = c.geometry.clone();
+      g.setAttribute('part', new THREE.BufferAttribute(new Float32Array(g.attributes.position.count).fill(k), 1));
+      gs[k] = g;
+    });
+    pedGeo = gs.filter(Boolean).length === PED_PARTS.length ? G3.T.mergeGeometries(gs, false) : null;
+    if (pedGeo) { pedGeo.computeBoundingSphere(); pedGeo.boundingSphere.radius *= 1.6; }   // 歩く・走る・倒れる姿勢の分だけ大きめに
+    return pedGeo;
+  }
+  function pedMaterial() {
+    const cols = PED_PARTS.map(() => new THREE.Color(1, 1, 1));
+    const m = new THREE.MeshStandardMaterial({ roughness: 0.8, metalness: 0 });
+    m.name = 'PedMerged';
+    m.onBeforeCompile = sh => {
+      sh.uniforms.uPart = { value: cols };
+      sh.vertexShader = sh.vertexShader.replace('#include <common>', '#include <common>\nattribute float part;\nvarying float vPart;')
+        .replace('#include <begin_vertex>', '#include <begin_vertex>\nvPart = part;');
+      sh.fragmentShader = sh.fragmentShader.replace('#include <common>', '#include <common>\nuniform vec3 uPart[6];\nvarying float vPart;')
+        .replace('vec4 diffuseColor = vec4( diffuse, opacity );', 'int pedPart = int(vPart + 0.5);\nvec4 diffuseColor = vec4( uPart[pedPart], opacity );')
+        .replace('#include <roughnessmap_fragment>', '#include <roughnessmap_fragment>\nroughnessFactor = pedPart == 4 ? 0.2 : pedPart == 2 ? 0.5 : pedPart == 5 ? 0.55 : pedPart == 3 ? 0.6 : 0.85;');
+    };
+    m.customProgramCacheKey = () => 'ped-merged-1';
+    m.userData.cols = cols;
+    return m;
+  }
   function makeHuman(isRider, isPlayer) {
     const src = G3.glb.human;
     let o;
     if (src) o = G3.T.SkeletonUtils.clone(src.scene);
     else o = fallbackHuman();
     const ud = o.userData = { mats: {}, mixer: null, acts: {}, cur: null };
-    o.traverse(c => {
+    const merged = src && !isRider && !isPlayer && pedGeometry(src);
+    if (merged) {
+      let body = null;
+      const rm = [];
+      o.traverse(c => { if (c.isSkinnedMesh) { if (!body && PED_PARTS.includes(c.material.name)) body = c; else rm.push(c); } });
+      for (const c of rm) c.parent.remove(c);
+      body.geometry = merged;
+      body.material = pedMaterial();
+      body.boundingSphere = merged.boundingSphere.clone();   // 画面外の人は描かない
+      body.castShadow = true; body.receiveShadow = true;
+      ud.pedCols = body.material.userData.cols;
+    } else o.traverse(c => {
       if (c.isMesh || c.isSkinnedMesh) {
         c.castShadow = true; c.receiveShadow = true;
         c.frustumCulled = false;
@@ -375,20 +478,27 @@ G3.dyn = (function () {
     if (!isRider) { o.scale.setScalar(U); scene.add(o); }
     if (!isRider && !isPlayer) {
       // 雨の日に差す傘（体に付けておき、雨の時だけ見せる）
-      if (!G3._umbMats) G3._umbMats = ['#2a3e8a', '#c8302a', '#f2f2ee', '#3a8a5a', '#151619', '#e8a020'].map(c => new THREE.MeshStandardMaterial({ color: c, roughness: 0.5, side: THREE.DoubleSide, transparent: c === '#f2f2ee', opacity: c === '#f2f2ee' ? 0.6 : 1 }));
-      if (!G3._umbGeo) { G3._umbGeo = new THREE.ConeGeometry(0.56, 0.26, 10, 1, true); G3._stickGeo = new THREE.CylinderGeometry(0.012, 0.012, 0.75, 5); }
-      const u = new THREE.Group();
-      const c = new THREE.Mesh(G3._umbGeo, G3._umbMats[(Math.random() * G3._umbMats.length) | 0]);
-      c.position.set(0.1, 2.02, 0.04); c.castShadow = true;
-      const st = new THREE.Mesh(G3._stickGeo, G3._umbMats[4]);
-      st.position.set(0.1, 1.6, 0.04);
-      u.add(c, st); u.visible = false;
+      // 傘の布と柄は1枚に（柄は頂点カラーで暗く）
+      if (!G3._umbMats) G3._umbMats = ['#2a3e8a', '#c8302a', '#f2f2ee', '#3a8a5a', '#151619', '#e8a020'].map(c => new THREE.MeshStandardMaterial({ color: c, vertexColors: true, roughness: 0.5, side: THREE.DoubleSide, transparent: c === '#f2f2ee', opacity: c === '#f2f2ee' ? 0.6 : 1 }));
+      if (!G3._umbGeo) {
+        const cone = new THREE.ConeGeometry(0.56, 0.26, 10, 1, true); cone.translate(0.1, 2.02, 0.04);
+        const stick = new THREE.CylinderGeometry(0.012, 0.012, 0.75, 5); stick.translate(0.1, 1.6, 0.04);
+        for (const [g, v] of [[cone, 1], [stick, 0.12]]) g.setAttribute('color', new THREE.BufferAttribute(new Float32Array(g.attributes.position.count * 3).fill(v), 3));
+        G3._umbGeo = G3.T.mergeGeometries([cone, stick], false);
+      }
+      const u = new THREE.Mesh(G3._umbGeo, G3._umbMats[(Math.random() * G3._umbMats.length) | 0]);
+      u.castShadow = true; u.visible = false;
       o.add(u);
       o.userData.umb = u;
     }
     return o;
   }
   function dressHuman(o, p) {
+    const pc = o.userData.pedCols;
+    if (pc) {
+      pc[0].set(p.c); pc[1].set(p.pc || '#3c4250'); pc[2].set('#2a2522'); pc[3].set(p.sk || '#e8c8a0'); pc[4].set('#151515'); pc[5].set(p.hc || '#2c2620');
+      return;
+    }
     const m = o.userData.mats;
     if (m.Shirt) m.Shirt.color.set(p.c);
     if (m.Pants) m.Pants.color.set(p.pc || '#3c4250');
@@ -690,12 +800,12 @@ G3.dyn = (function () {
     scene = G3.scene;
     player = makeHuman(false, true);
     dressHuman(player, { c: '#2e6e46', pc: '#33404e', hc: '#2c2620', sk: '#e8c8a0' });
-    for (let i = 0; i < 36; i++) { const o = makeHuman(false); o.visible = false; pedPool.push(o); }
+    for (let i = 0; i < 98; i++) { const o = makeHuman(false); o.visible = false; pedPool.push(o); }   // 歩く人 70＋立ち止まる人 24 ＋予備
     // 車も先に作って置いておく（走行中に初めて出てくる車種で引っかからないように）
     const need = {};
     for (const c of parked) need[c.type] = (need[c.type] || 0) + 1;
     for (const t of Object.keys(CARTYPES)) {
-      const n = (need[t] || 0) + (t === 'police' ? 6 : t === 'bus' ? 2 : 5);
+      const n = (need[t] || 0) + (t === 'police' ? 6 : t === 'bus' ? 4 : 11);   // 通行車 64 台ぶんの予備
       const pool = carPool[t] || (carPool[t] = []);
       for (let i = 0; i < n; i++) { const o = makeCar(t); o.visible = false; pool.push(o); }
     }

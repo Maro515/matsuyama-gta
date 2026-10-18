@@ -7759,29 +7759,52 @@ function tryEnterExit(){
 }
 
 /* ---------- 通行車両 ---------- */
+// 3D 表示の時のにぎわい（台数・人数）。湧く範囲はプレイヤーの周り、見えている前方の近くには出さない
+const CROWD={cars:64,carR0:240,carR1:1140,carOut:1350,peds:70,pedR0:60,pedR1:500,pedOut:760};
+function crowd3d(){return typeof R3!=='undefined'&&R3.ok;}
+function inViewAhead(x,y,near,occl){ // カメラの前方 ±52° かつ near より近い（occl: 建物の陰で見えない所は除く）
+  if(!crowd3d()||typeof G3==='undefined'||!G3.camera)return false;
+  const dx=x-S.px,dy=y-S.py,dl=hyp(dx,dy);if(dl>near)return false;
+  const e=G3.camera.matrixWorld.elements,fx=-e[8],fy=-e[10],fl=hyp(fx,fy)||1;
+  if((dx*fx+dy*fy)/(dl*fl+1e-6)<=0.62)return false;
+  if(occl&&G3.refl&&G3.refl.los){const c=G3.camera.position;return G3.refl.los(c.x,c.y,c.z,x,heightAt(x,y)+3,y);}
+  return true;
+}
 function spawnTraffic(){
-  if(traffic.length>=(typeof R3!=='undefined'&&R3.ok?26:13))return;
-  for(let t=0;t<14;t++){
-    const r=DRIVE_ROADS[(Math.random()*DRIVE_ROADS.length)|0];
-    const d=Math.random()*r.pl.len;
-    const p=plAt(r.pl,d);
-    const dist=hyp(p.x-S.px,p.y-S.py);
-    if(dist<450||dist>1500)continue;
+  const r3=crowd3d(),max=r3?CROWD.cars:13;
+  for(let made=0,t=0;t<24&&made<(traffic.length<max*0.6?2:1);t++){
+    if(traffic.length>=max)return;
+    let r,d,p,dist;
+    if(r3){
+      // 周りの道路から面積に比例して選ぶ（幹線ほど車が多い）
+      const ang=Math.random()*TAU,dd=CROWD.carR0+Math.random()*(CROWD.carR1-CROWD.carR0);
+      const ri=roadInfo(S.px+Math.cos(ang)*dd,S.py+Math.sin(ang)*dd);
+      if(!ri||ri.road.kind==='arcade'||ri.d>ri.road.w/2)continue;
+      if(Math.random()>(ri.road.kind==='main'?1:ri.road.kind==='minor'?0.55:0.2))continue;   // 幹線ほど車が多い
+      r=ri.road;d=dOnPl(r.pl,ri.x,ri.y);p=plAt(r.pl,d);dist=hyp(p.x-S.px,p.y-S.py);
+      if(dist<CROWD.carR0*0.85||inViewAhead(p.x,p.y,330,true))continue;   // 見えている近くには出さない（建物の陰・遠くはよい）
+      if(traffic.some(o=>hyp(o.x-p.x,o.y-p.y)<30))continue;
+    }else{
+      r=DRIVE_ROADS[(Math.random()*DRIVE_ROADS.length)|0];
+      d=Math.random()*r.pl.len;p=plAt(r.pl,d);dist=hyp(p.x-S.px,p.y-S.py);
+      if(dist<450||dist>1500)continue;
+    }
     const types=r.kind==='main'?['sedan','sedan','kei','kei','taxi','truck','sports','bus','bike','minivan','minivan','van']
       :['sedan','kei','kei','kei','taxi','truck','bike','minivan','keitruck','keitruck','van'];
     const c=mkCar(p.x,p.y,p.a,types[(Math.random()*types.length)|0]);
-    c.road=r;c.d=d;c.dir=Math.random()<.5?1:-1;
-    c.cruise=(r.kind==='main'?50+Math.random()*12:35+Math.random()*10)/0.72;   // km/h → 内部速度
+    c.road=r;c.d=d;c.dir=Math.random()<.5?1:-1;c.lane=Math.random()<.5?0:1;
+    c.cruise=(r.kind==='main'?50+Math.random()*12:r.kind==='lane'?24+Math.random()*6:35+Math.random()*10)/0.72;   // km/h → 内部速度
     if(c.type==='bus'||c.type==='truck')c.cruise*=.9;
     c.v=c.cruise;c.stun=0;
     traffic.push(c);
-    return;
+    made++;
   }
 }
 function updTraffic(dt){
   for(let i=traffic.length-1;i>=0;i--){
     const c=traffic[i];
-    if(hyp(c.x-S.px,c.y-S.py)>1900){traffic.splice(i,1);continue;}
+    {const dc=hyp(c.x-S.px,c.y-S.py),R=crowd3d()?CROWD.carOut:1900;   // 見えている遠くの車は少し長く残す
+     if(dc>R*1.5||(dc>R&&!inViewAhead(c.x,c.y,1e9))){traffic.splice(i,1);continue;}}
     if(c.loose)continue;   // はねられて滑っている（frame で処理）
     if(c.stun>0){c.stun-=dt;c.v=0;continue;}
     // 前方チェック（見る距離は速度に応じて: 止まれる距離＋余裕）
@@ -7791,7 +7814,13 @@ function updTraffic(dt){
     const look=16+c.v*0.42,ax=c.x+hx*look,ay=c.y+hy*look;
     if(S.mode==='car'&&hyp(S.pcar.x-ax,S.pcar.y-ay)<look*0.55+6)slow=true;
     if(S.mode==='foot'&&hyp(S.px-ax,S.py-ay)<look*0.5+4)slow=true;
-    for(const o of traffic)if(o!==c&&Math.cos(c.a-o.a)>-0.5&&hyp(o.x-ax,o.y-ay)<look*0.5+5){slow=true;break;}
+    // 同じ車線の前の車（前方 2〜look+6、横のずれは遠いほど少し許す）。曲がった先で重なった時は後の番号の車が譲る
+    for(let k=0;k<traffic.length;k++){
+      const o=traffic[k];
+      if(o===c||Math.cos(c.a-o.a)<=-0.5)continue;
+      const rx=o.x-c.x,ry=o.y-c.y,f=rx*hx+ry*hy;
+      if((f>2||(f>=-2&&k<i))&&f<look+6&&Math.abs(-rx*hy+ry*hx)<3.2+Math.max(0,f)*0.06){slow=true;break;}
+    }
     if(!slow)for(const o of parked)if(o.wreck&&hyp(o.x-ax,o.y-ay)<look*0.5+5){slow=true;break;}
     // 横断中の歩行者の前では止まる
     if(!slow)for(const p of peds)if((p.crossing||p.flee>0)&&hyp(p.x-(c.x+hx*16),p.y-(c.y+hy*16))<15){slow=true;break;}
@@ -7848,7 +7877,7 @@ function updTraffic(dt){
     const q=plAt(c.road.pl,c.d);
     const ta=q.a+(c.dir<0?Math.PI:0);
     const lx=Math.sin(ta),ly=-Math.cos(ta); // 左側通行オフセット
-    const off=c.road.w*0.22;
+    const off=c.road.w*(c.road.kind==='main'&&c.road.w>=30?(c.lane?0.32:0.14):0.22);   // 幅の広い幹線は片側2車線
     c.x=q.x+lx*off;c.y=q.y+ly*off;c.a=ta;
   }
 }
@@ -7883,25 +7912,37 @@ function reattachPed(p){ // 最寄りの歩道へ復帰
   p.off=p.toff=pedOffFor(ri.road,sideSign);
   p.rdir=Math.random()<.5?1:-1;
 }
+const ARCADES=ROADS.filter(r=>r.kind==='arcade');
 function spawnPed(){
+  const r3=crowd3d(),max=r3?CROWD.peds:22;
   let moving=0;for(const p of peds)if(!p.static)moving++;
-  if(moving>=(typeof R3!=='undefined'&&R3.ok?30:22))return;
-  for(let t=0;t<10;t++){
-    const u=Math.random(),arc=u<0.4,aly=!arc&&u<0.62&&ALLEYS.length;
-    const list=arc?ROADS.filter(r=>r.kind==='arcade'):aly?ALLEYS:ROADS;   // 小道を歩く人も
-    const r=list[(Math.random()*list.length)|0];
-    const d=Math.random()*r.pl.len;
+  for(let made=0,t=0;t<14&&made<(moving<max*0.6?3:1);t++){
+    if(moving>=max)return;
+    let r,d;
+    const u=Math.random();
+    if(r3&&u<0.55){
+      // 周りの歩道から（人の多い通りほど多く）
+      const ang=Math.random()*TAU,dd=CROWD.pedR0+Math.random()*(CROWD.pedR1-CROWD.pedR0);
+      const ri=roadInfo(S.px+Math.cos(ang)*dd,S.py+Math.sin(ang)*dd);
+      if(!ri||ri.d>ri.road.w/2+12)continue;
+      r=ri.road;d=dOnPl(r.pl,ri.x,ri.y);
+    }else{
+      const arc=u<0.75,aly=!arc&&ALLEYS.length;
+      const list=arc?ARCADES:aly?ALLEYS:ROADS;   // 商店街・小道を歩く人も
+      r=list[(Math.random()*list.length)|0];d=Math.random()*r.pl.len;
+    }
     const q=plAt(r.pl,d);
     const off=pedOffFor(r,Math.random()<.5?1:-1);
     const x=q.x+Math.sin(q.a)*off,y=q.y-Math.cos(q.a)*off;
     const dist=hyp(x-S.px,y-S.py);
-    if(dist<120||dist>900)continue;
+    if(dist<(r3?CROWD.pedR0:120)||dist>(r3?CROWD.pedR1:900))continue;
+    if(inViewAhead(x,y,170,true))continue;
     const pp=spawnPedAt(x,y,false);
     pp.road=r;pp.d=d;pp.rdir=Math.random()<.5?1:-1;pp.off=off;pp.toff=off;
-    return;
+    moving++;made++;
   }
 }
-const AMB_MAX=16;
+const AMB_MAX=24;
 let ambT=0;
 function spawnAmbient(dt){
   if(typeof G3==='undefined'||!G3.street||!G3.street.amb)return;
@@ -7923,7 +7964,8 @@ const PEDSAY=['ようおいでたなもし','ぬくい日じゃねぇ','みか�
 function updPeds(dt){
   for(let i=peds.length-1;i>=0;i--){
     const p=peds[i];
-    if(hyp(p.x-S.px,p.y-S.py)>(p.static?760:1400)){if(p.spot)p.spot.used=false;peds.splice(i,1);continue;}
+    {const dp=hyp(p.x-S.px,p.y-S.py),R=p.static?760:crowd3d()?CROWD.pedOut:1400;
+     if(dp>R*1.5||(dp>R&&!inViewAhead(p.x,p.y,1e9))){if(p.spot)p.spot.used=false;peds.splice(i,1);continue;}}
     if(p.say){p.say.t-=dt;if(p.say.t<=0)p.say=null;}
     if(p.down>0){p.down-=dt;continue;}
     p.t+=dt;
@@ -17269,7 +17311,9 @@ G3.dyn = (function () {
     const ud = o.userData = { type, wheels: [], paint: [], tail: [], head: [], siren: [], andon: [], rider: null, pitch: 0, roll: 0, prevV: 0, prevA: 0, spin: 0 };
     o.traverse(c => {
       if (c.isMesh) {
-        c.castShadow = true; c.receiveShadow = true;
+        c.castShadow = !/^wheel_/.test(c.parent && c.parent.name);   // ホイールの影は車体の影に含まれるので省く
+        c.receiveShadow = true;
+        if (c.name === 'car_lights') { c.material = lightMat(c.material.userData.emC); ud.lightI = c.material.userData.I; return; }
         const mats = Array.isArray(c.material) ? c.material : [c.material];
         const nm = mats.map(m => {
           const n = m.name || '';
@@ -17287,7 +17331,7 @@ G3.dyn = (function () {
         c.material = Array.isArray(c.material) ? nm : nm[0];
       }
       if (/^wheel_/.test(c.name)) ud.wheels.push({ o: c, front: /F/.test(c.name.slice(6)) });
-      if (c.name === 'plate_quads' && plateMats.length) c.material = plateMats[(PLATE_KIND[type] || 0) * 8 + ((Math.random() * 8) | 0)];
+      if (c.name === 'plate_quads' && plateMats.length) { c.material = plateMats[(PLATE_KIND[type] || 0) * 8 + ((Math.random() * 8) | 0)]; ud.plate = c; }
     });
     // 車体下の接地影
     {
@@ -17310,44 +17354,96 @@ G3.dyn = (function () {
     scene.add(o);
     return o;
   }
-  // 単色の部品（黒・クロム・タイヤ・ホイール等）を車体／各ホイールごとに頂点カラー1〜2枚へまとめる。
-  // 塗装・ガラス・灯火は実行時に色や発光を変えるので別のまま
-  const carPlainMats = {};
+  // 単色の部品（黒・クロム・タイヤ・ホイール等）を車体／各ホイールごとに頂点カラーの1枚へまとめる（金属っぽさ・粗さは頂点ごと）。
+  // 灯火（ヘッド・テール・ウインカー）も1枚にまとめ、光の強さは車ごとのユニフォームで変える。塗装（クリアコート）・ガラスは別のまま
+  let carMixMat = null;
+  function mixMat() {
+    if (carMixMat) return carMixMat;
+    const m = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 1, metalness: 1 });
+    m.name = 'CarMix';
+    m.onBeforeCompile = sh => {
+      sh.vertexShader = sh.vertexShader.replace('#include <common>', '#include <common>\nattribute vec2 mr;\nvarying vec2 vMR;')
+        .replace('#include <begin_vertex>', '#include <begin_vertex>\nvMR = mr;');
+      sh.fragmentShader = sh.fragmentShader.replace('#include <common>', '#include <common>\nvarying vec2 vMR;')
+        .replace('#include <roughnessmap_fragment>', '#include <roughnessmap_fragment>\nroughnessFactor = vMR.y;')
+        .replace('#include <metalnessmap_fragment>', '#include <metalnessmap_fragment>\nmetalnessFactor = vMR.x;');
+    };
+    m.customProgramCacheKey = () => 'car-mix-1';
+    return (carMixMat = m);
+  }
+  const LIGHT_KINDS = ['HeadLight', 'TailLight', 'Amber'];
+  // 車ごとの灯火マテリアル（I = ヘッド・テール・ウインカーの発光の強さ）
+  function lightMat(emC) {
+    const I = new THREE.Vector3(0.2, 0.05, 1);
+    const m = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.15, metalness: 0.1 });
+    m.name = 'CarLights';
+    m.onBeforeCompile = sh => {
+      sh.uniforms.uEmC = { value: emC }; sh.uniforms.uEmI = { value: I };
+      sh.vertexShader = sh.vertexShader.replace('#include <common>', '#include <common>\nattribute float lt;\nvarying float vLt;')
+        .replace('#include <begin_vertex>', '#include <begin_vertex>\nvLt = lt;');
+      sh.fragmentShader = sh.fragmentShader.replace('#include <common>', '#include <common>\nuniform vec3 uEmC[3];\nuniform vec3 uEmI;\nvarying float vLt;')
+        .replace('vec3 totalEmissiveRadiance = emissive;', 'vec3 totalEmissiveRadiance = vLt < 0.5 ? uEmC[0] * uEmI.x : vLt < 1.5 ? uEmC[1] * uEmI.y : uEmC[2] * uEmI.z;');
+    };
+    m.customProgramCacheKey = () => 'car-lights-1';
+    m.userData.I = I; m.userData.emC = emC;
+    return m;
+  }
   function compactCar(o) {
     o.updateMatrixWorld(true);
-    const hosts = new Map();
-    const special = m => !m || /^(Paint|Glass|HeadLight|TailLight|Siren|Andon|Window)/.test(m.name || '') || m.transparent || m.map ||
+    const special = m => !m || /^(Paint|Glass|HeadLight|TailLight|Amber|Siren|Andon|Window)/.test(m.name || '') || m.transparent || m.map ||
       (m.emissive && m.emissive.getHex() !== 0);
+    // 部品を host（車体かホイール）の座標へ移し、色と（金属・粗さ）を頂点に焼く
+    const bake = (m, host, extra) => {
+      const inv = new THREE.Matrix4().copy(host.matrixWorld).invert();
+      let g = m.geometry.clone();
+      g.applyMatrix4(new THREE.Matrix4().multiplyMatrices(inv, m.matrixWorld));
+      if (g.index) g = g.toNonIndexed();
+      for (const k2 of Object.keys(g.attributes)) if (k2 !== 'position' && k2 !== 'normal') g.deleteAttribute(k2);
+      const c = m.material.color || new THREE.Color(1, 1, 1), n = g.attributes.position.count, col = new Float32Array(n * 3);
+      for (let i = 0; i < n; i++) { col[i * 3] = c.r; col[i * 3 + 1] = c.g; col[i * 3 + 2] = c.b; }
+      g.setAttribute('color', new THREE.BufferAttribute(col, 3));
+      for (const [nm, sz, val] of extra) {
+        const a = new Float32Array(n * sz);
+        for (let i = 0; i < n; i++) for (let k = 0; k < sz; k++) a[i * sz + k] = val[k];
+        g.setAttribute(nm, new THREE.BufferAttribute(a, sz));
+      }
+      return g;
+    };
+    const hosts = new Map();
     const list = [];
     o.traverse(m => { if (m.isMesh && !m.isSkinnedMesh && !Array.isArray(m.material) && !special(m.material)) list.push(m); });
     for (const m of list) {
       let host = m.parent;
       for (let p = m.parent; p && p !== o; p = p.parent) if (/^wheel_/.test(p.name)) { host = p; break; }
       if (!host || host === m) host = o;
-      const key = (m.material.metalness || 0) > 0.5 ? 'metal' : 'plain';
-      if (!hosts.has(host)) hosts.set(host, { plain: [], metal: [], rough: { plain: [], metal: [] } });
-      const h = hosts.get(host);
-      const inv = new THREE.Matrix4().copy(host.matrixWorld).invert();
-      const rel = new THREE.Matrix4().multiplyMatrices(inv, m.matrixWorld);
-      let g = m.geometry.clone();
-      g.applyMatrix4(rel);
-      if (g.index) g = g.toNonIndexed();
-      for (const k2 of Object.keys(g.attributes)) if (k2 !== 'position' && k2 !== 'normal') g.deleteAttribute(k2);
-      const c = m.material.color || new THREE.Color(1, 1, 1), n = g.attributes.position.count, col = new Float32Array(n * 3);
-      for (let i = 0; i < n; i++) { col[i * 3] = c.r; col[i * 3 + 1] = c.g; col[i * 3 + 2] = c.b; }
-      g.setAttribute('color', new THREE.BufferAttribute(col, 3));
-      h[key].push(g); h.rough[key].push(m.material.roughness == null ? 0.6 : m.material.roughness);
+      const mt = m.material, met = (mt.metalness || 0) > 0.5 ? Math.max(0.8, mt.metalness) : Math.min(0.05, mt.metalness || 0);
+      if (!hosts.has(host)) hosts.set(host, []);
+      hosts.get(host).push(bake(m, host, [['mr', 2, [met, mt.roughness == null ? 0.6 : mt.roughness]]]));
       m.parent.remove(m);
     }
-    for (const [host, h] of hosts) for (const key of ['plain', 'metal']) {
-      if (!h[key].length) continue;
-      const geo = G3.T.mergeGeometries(h[key], false);
+    for (const [host, gs] of hosts) {
+      const geo = G3.T.mergeGeometries(gs, false);
       if (!geo) continue;
-      const r = h.rough[key].reduce((a, b) => a + b, 0) / h.rough[key].length, mk = key + Math.round(r * 10);
-      const mat = carPlainMats[mk] || (carPlainMats[mk] = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: r, metalness: key === 'metal' ? 0.8 : 0.05 }));
-      const mesh = new THREE.Mesh(geo, mat);
+      const mesh = new THREE.Mesh(geo, mixMat());
       mesh.castShadow = true; mesh.receiveShadow = true;
       host.add(mesh);
+    }
+    // 灯火を1枚に
+    const lights = [], emC = [new THREE.Color(0, 0, 0), new THREE.Color(0, 0, 0), new THREE.Color(0, 0, 0)];
+    o.traverse(m => {
+      if (!m.isMesh || Array.isArray(m.material)) return;
+      const k = LIGHT_KINDS.findIndex(nm => (m.material.name || '').startsWith(nm));
+      if (k >= 0) lights.push([m, k]);
+    });
+    if (lights.length) {
+      const gs = lights.map(([m, k]) => { if (m.material.emissive) emC[k].copy(m.material.emissive); return bake(m, o, [['lt', 1, [k]]]); });
+      for (const [m] of lights) m.parent.remove(m);
+      const geo = G3.T.mergeGeometries(gs, false);
+      if (geo) {
+        const mesh = new THREE.Mesh(geo, lightMat(emC));
+        mesh.name = 'car_lights'; mesh.userData.emC = emC;
+        o.add(mesh);
+      }
     }
   }
   function acquireCar(car, police) {
@@ -17396,13 +17492,17 @@ G3.dyn = (function () {
     const r = WHEEL_R[ud.type] || 0.33;
     ud.spin -= car.v * VK * dt / (r * U);
     const steer = isPlayer ? clamp(-(inputVec().x) * 0.45, -0.45, 0.45) : clamp(-yawRate * 0.25, -0.4, 0.4);
-    for (const w of ud.wheels) {
+    // 遠くの車はホイールとナンバーを省く（画面上で数画素。描画回数を減らす）
+    const cdx = car.x - G3.camera.position.x, cdz = car.y - G3.camera.position.z, far = cdx * cdx + cdz * cdz > 450 * 450 && !isPlayer;
+    if (ud.far !== far) { ud.far = far; for (const w of ud.wheels) w.o.visible = !far; if (ud.plate) ud.plate.visible = !far; }
+    if (!far) for (const w of ud.wheels) {
       w.o.rotation.set(0, w.front ? steer : 0, ud.spin, 'YXZ');
       w.o.rotation.order = 'YXZ';
     }
     // ライト
     const night = 1 - G3.day;
     const brake = !!car.brakeL;
+    if (ud.lightI) ud.lightI.set(ud.headBroken ? 0 : night * 6 + 0.2, brake ? 6 : night * 1.6 + 0.05, 1);
     for (const m of ud.tail) m.emissiveIntensity = brake ? 6 : night * 1.6 + 0.05;
     for (const m of ud.head) m.emissiveIntensity = ud.headBroken ? 0 : night * 6 + 0.2;
     // 夜は路面にヘッドライトの光を落とす（プレイヤー車はスポットライトがあるので除く）
@@ -17502,13 +17602,58 @@ G3.dyn = (function () {
     mk(new THREE.SphereGeometry(0.12, 12, 8), 0xe8c8a0, 1.62, 'Skin');
     return g;
   }
+  // 歩行者は 6 部位（服・ズボン・靴・肌・目・髪）を1つのスキンメッシュにまとめて1回で描く（部位の色はユニフォーム）。
+  // 6 部位は同じ骨格・同じバインド行列を共有している（human.glb の Body の各プリミティブ）
+  const PED_PARTS = ['Shirt', 'Pants', 'Shoes', 'Skin', 'Eye', 'Hair'];
+  let pedGeo;
+  function pedGeometry(src) {
+    if (pedGeo !== undefined) return pedGeo;
+    const gs = [];
+    src.scene.traverse(c => {
+      const k = c.isSkinnedMesh ? PED_PARTS.indexOf(c.material.name) : -1;
+      if (k < 0) return;
+      const g = c.geometry.clone();
+      g.setAttribute('part', new THREE.BufferAttribute(new Float32Array(g.attributes.position.count).fill(k), 1));
+      gs[k] = g;
+    });
+    pedGeo = gs.filter(Boolean).length === PED_PARTS.length ? G3.T.mergeGeometries(gs, false) : null;
+    if (pedGeo) { pedGeo.computeBoundingSphere(); pedGeo.boundingSphere.radius *= 1.6; }   // 歩く・走る・倒れる姿勢の分だけ大きめに
+    return pedGeo;
+  }
+  function pedMaterial() {
+    const cols = PED_PARTS.map(() => new THREE.Color(1, 1, 1));
+    const m = new THREE.MeshStandardMaterial({ roughness: 0.8, metalness: 0 });
+    m.name = 'PedMerged';
+    m.onBeforeCompile = sh => {
+      sh.uniforms.uPart = { value: cols };
+      sh.vertexShader = sh.vertexShader.replace('#include <common>', '#include <common>\nattribute float part;\nvarying float vPart;')
+        .replace('#include <begin_vertex>', '#include <begin_vertex>\nvPart = part;');
+      sh.fragmentShader = sh.fragmentShader.replace('#include <common>', '#include <common>\nuniform vec3 uPart[6];\nvarying float vPart;')
+        .replace('vec4 diffuseColor = vec4( diffuse, opacity );', 'int pedPart = int(vPart + 0.5);\nvec4 diffuseColor = vec4( uPart[pedPart], opacity );')
+        .replace('#include <roughnessmap_fragment>', '#include <roughnessmap_fragment>\nroughnessFactor = pedPart == 4 ? 0.2 : pedPart == 2 ? 0.5 : pedPart == 5 ? 0.55 : pedPart == 3 ? 0.6 : 0.85;');
+    };
+    m.customProgramCacheKey = () => 'ped-merged-1';
+    m.userData.cols = cols;
+    return m;
+  }
   function makeHuman(isRider, isPlayer) {
     const src = G3.glb.human;
     let o;
     if (src) o = G3.T.SkeletonUtils.clone(src.scene);
     else o = fallbackHuman();
     const ud = o.userData = { mats: {}, mixer: null, acts: {}, cur: null };
-    o.traverse(c => {
+    const merged = src && !isRider && !isPlayer && pedGeometry(src);
+    if (merged) {
+      let body = null;
+      const rm = [];
+      o.traverse(c => { if (c.isSkinnedMesh) { if (!body && PED_PARTS.includes(c.material.name)) body = c; else rm.push(c); } });
+      for (const c of rm) c.parent.remove(c);
+      body.geometry = merged;
+      body.material = pedMaterial();
+      body.boundingSphere = merged.boundingSphere.clone();   // 画面外の人は描かない
+      body.castShadow = true; body.receiveShadow = true;
+      ud.pedCols = body.material.userData.cols;
+    } else o.traverse(c => {
       if (c.isMesh || c.isSkinnedMesh) {
         c.castShadow = true; c.receiveShadow = true;
         c.frustumCulled = false;
@@ -17525,20 +17670,27 @@ G3.dyn = (function () {
     if (!isRider) { o.scale.setScalar(U); scene.add(o); }
     if (!isRider && !isPlayer) {
       // 雨の日に差す傘（体に付けておき、雨の時だけ見せる）
-      if (!G3._umbMats) G3._umbMats = ['#2a3e8a', '#c8302a', '#f2f2ee', '#3a8a5a', '#151619', '#e8a020'].map(c => new THREE.MeshStandardMaterial({ color: c, roughness: 0.5, side: THREE.DoubleSide, transparent: c === '#f2f2ee', opacity: c === '#f2f2ee' ? 0.6 : 1 }));
-      if (!G3._umbGeo) { G3._umbGeo = new THREE.ConeGeometry(0.56, 0.26, 10, 1, true); G3._stickGeo = new THREE.CylinderGeometry(0.012, 0.012, 0.75, 5); }
-      const u = new THREE.Group();
-      const c = new THREE.Mesh(G3._umbGeo, G3._umbMats[(Math.random() * G3._umbMats.length) | 0]);
-      c.position.set(0.1, 2.02, 0.04); c.castShadow = true;
-      const st = new THREE.Mesh(G3._stickGeo, G3._umbMats[4]);
-      st.position.set(0.1, 1.6, 0.04);
-      u.add(c, st); u.visible = false;
+      // 傘の布と柄は1枚に（柄は頂点カラーで暗く）
+      if (!G3._umbMats) G3._umbMats = ['#2a3e8a', '#c8302a', '#f2f2ee', '#3a8a5a', '#151619', '#e8a020'].map(c => new THREE.MeshStandardMaterial({ color: c, vertexColors: true, roughness: 0.5, side: THREE.DoubleSide, transparent: c === '#f2f2ee', opacity: c === '#f2f2ee' ? 0.6 : 1 }));
+      if (!G3._umbGeo) {
+        const cone = new THREE.ConeGeometry(0.56, 0.26, 10, 1, true); cone.translate(0.1, 2.02, 0.04);
+        const stick = new THREE.CylinderGeometry(0.012, 0.012, 0.75, 5); stick.translate(0.1, 1.6, 0.04);
+        for (const [g, v] of [[cone, 1], [stick, 0.12]]) g.setAttribute('color', new THREE.BufferAttribute(new Float32Array(g.attributes.position.count * 3).fill(v), 3));
+        G3._umbGeo = G3.T.mergeGeometries([cone, stick], false);
+      }
+      const u = new THREE.Mesh(G3._umbGeo, G3._umbMats[(Math.random() * G3._umbMats.length) | 0]);
+      u.castShadow = true; u.visible = false;
       o.add(u);
       o.userData.umb = u;
     }
     return o;
   }
   function dressHuman(o, p) {
+    const pc = o.userData.pedCols;
+    if (pc) {
+      pc[0].set(p.c); pc[1].set(p.pc || '#3c4250'); pc[2].set('#2a2522'); pc[3].set(p.sk || '#e8c8a0'); pc[4].set('#151515'); pc[5].set(p.hc || '#2c2620');
+      return;
+    }
     const m = o.userData.mats;
     if (m.Shirt) m.Shirt.color.set(p.c);
     if (m.Pants) m.Pants.color.set(p.pc || '#3c4250');
@@ -17840,12 +17992,12 @@ G3.dyn = (function () {
     scene = G3.scene;
     player = makeHuman(false, true);
     dressHuman(player, { c: '#2e6e46', pc: '#33404e', hc: '#2c2620', sk: '#e8c8a0' });
-    for (let i = 0; i < 36; i++) { const o = makeHuman(false); o.visible = false; pedPool.push(o); }
+    for (let i = 0; i < 98; i++) { const o = makeHuman(false); o.visible = false; pedPool.push(o); }   // 歩く人 70＋立ち止まる人 24 ＋予備
     // 車も先に作って置いておく（走行中に初めて出てくる車種で引っかからないように）
     const need = {};
     for (const c of parked) need[c.type] = (need[c.type] || 0) + 1;
     for (const t of Object.keys(CARTYPES)) {
-      const n = (need[t] || 0) + (t === 'police' ? 6 : t === 'bus' ? 2 : 5);
+      const n = (need[t] || 0) + (t === 'police' ? 6 : t === 'bus' ? 4 : 11);   // 通行車 64 台ぶんの予備
       const pool = carPool[t] || (carPool[t] = []);
       for (let i = 0; i < n; i++) { const o = makeCar(t); o.visible = false; pool.push(o); }
     }

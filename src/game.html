@@ -826,6 +826,9 @@ const CARTYPES={
  bus:{max:235,acc:130,l:26,w:6.4,cols:['#e8862c','#e8862c','#5b8c46']},
  bike:{max:295,acc:255,l:5,w:1.6,cols:['#d43c3c','#2a2a2e','#3c78d4','#e8e8e8']},
  police:{max:345,acc:280,l:11.5,w:4.7,cols:['#f0f2f4']},
+ minivan:{max:275,acc:200,l:11.8,w:4.3,cols:['#e8e9ea','#2a2c30','#8a9098','#3a4a5a','#b8b0a2']},
+ keitruck:{max:230,acc:185,l:8.5,w:3.7,cols:['#f2f3f1','#e6e7e4','#a8b8c4','#d8d0c0']},
+ van:{max:255,acc:170,l:11.8,w:4.3,cols:['#f0f2f3','#e4e6e8','#c8ccd0','#2e5c8a']},
 };
 function mkCar(x,y,a,type){
   const t=CARTYPES[type||'sedan'];
@@ -1458,15 +1461,15 @@ function tryEnterExit(){
 
 /* ---------- 通行車両 ---------- */
 function spawnTraffic(){
-  if(traffic.length>=(window.R3&&R3.ok?26:13))return;
+  if(traffic.length>=(typeof R3!=='undefined'&&R3.ok?26:13))return;
   for(let t=0;t<14;t++){
     const r=DRIVE_ROADS[(Math.random()*DRIVE_ROADS.length)|0];
     const d=Math.random()*r.pl.len;
     const p=plAt(r.pl,d);
     const dist=hyp(p.x-S.px,p.y-S.py);
     if(dist<450||dist>1500)continue;
-    const types=r.kind==='main'?['sedan','sedan','kei','kei','taxi','truck','sports','bus','bike']
-      :['sedan','sedan','kei','kei','taxi','truck','bike'];
+    const types=r.kind==='main'?['sedan','sedan','kei','kei','taxi','truck','sports','bus','bike','minivan','minivan','van']
+      :['sedan','kei','kei','kei','taxi','truck','bike','minivan','keitruck','keitruck','van'];
     const c=mkCar(p.x,p.y,p.a,types[(Math.random()*types.length)|0]);
     c.road=r;c.d=d;c.dir=Math.random()<.5?1:-1;
     c.cruise=(r.kind==='main'?130:95)+Math.random()*45;
@@ -1578,7 +1581,7 @@ function reattachPed(p){ // 最寄りの歩道へ復帰
 }
 function spawnPed(){
   let moving=0;for(const p of peds)if(!p.static)moving++;
-  if(moving>=(window.R3&&R3.ok?34:22))return;
+  if(moving>=(typeof R3!=='undefined'&&R3.ok?30:22))return;
   for(let t=0;t<10;t++){
     const arc=Math.random()<0.4;
     const list=arc?ROADS.filter(r=>r.kind==='arcade'):ROADS;

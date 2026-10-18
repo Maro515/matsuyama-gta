@@ -645,7 +645,7 @@ G3.street = (function () {
           if (rr() < 0.55 && typeof mkCar === 'function') {
             const cp = at(r, dd + 3.2, sg * (o0 + D * 0.5));
             const into = Math.atan2(cs.y - cp.y, cs.x - cp.x);
-            parked.push(mkCar(cp.x, cp.y, into, ['sedan', 'kei', 'kei', 'sedan', 'taxi'][(rr() * 5) | 0]));
+            parked.push(mkCar(cp.x, cp.y, into, ['sedan', 'kei', 'kei', 'minivan', 'taxi'][(rr() * 5) | 0]));
           }
         }
       }
@@ -1436,7 +1436,7 @@ G3.street = (function () {
           put('car_stop', cs.x, cs.y, -(cs.a + Math.PI / 2), 0.05);
           if (rr() < 0.3 && typeof mkCar === 'function') {
             const cp = Lc(u + 3.8, 8), into = Math.atan2(cs.y - cp.y, cs.x - cp.x);
-            parked.push(mkCar(cp.x, cp.y, into, ['kei', 'sedan', 'kei', 'truck'][(rr() * 4) | 0]));
+            parked.push(mkCar(cp.x, cp.y, into, ['kei', 'minivan', 'keitruck', 'van'][(rr() * 4) | 0]));
           }
         }
       }
@@ -1930,12 +1930,14 @@ G3.street = (function () {
     catenary_pole: 1100, park_toilet: 1000, solar_panel: 900, tv_antenna: 700, bus_shelter: 1000,
     guardrail: 1300, guard_pipe: 1000, hedge_planter: 1200, block_wall: 1000, awning_red: 1100, awning_green: 1100, awning_blue: 1100, awning_orange: 1100,
     sign_speed: 900, sign_stop: 900, curve_mirror: 900, parking_sign: 1200, clock_pole: 1400, map_board: 900 };
-  const FAR_DEF = 650;
+  const FAR_DEF = 430;
   Object.assign(FAR, { konbini: 1500, konbini_sign: 1500, pylon: 1e9, ob_stair: 1400, platform: 1400, billboard: 1800, backstop: 1200,
     soccer_goal: 900, jib_crane: 2400, small_shrine: 1000, farm_hut: 1000 });
   // 影を落とすのは大きな物だけ（小物は影のパスの描画回数を増やすだけ）
   const SHADOW = /konbini|pylon|ob_stair|platform|billboard|crane|shrine|farm_hut|backstop|wall|fence|awning|booth|container|canopy|gs_|tram_stop|guide|karakuri|toilet|shelter|hedge|guardrail|gantry|catenary|boat|lantern|jungle|slide|swing|vending|map_board/;
-  Object.assign(FAR, { bicycle_a: 480, bicycle_b: 480, bicycle_c: 480, ac_unit: 520, potted_plant: 450, propane: 520, tv_antenna: 650 });
+  Object.assign(FAR, { bicycle_a: 330, bicycle_b: 330, bicycle_c: 330, ac_unit: 380, potted_plant: 300, propane: 380, tv_antenna: 500,
+    block_wall: 700, guard_pipe: 650, guardrail: 900, hedge_planter: 800, awning_red: 800, awning_green: 800, awning_blue: 800, awning_orange: 800,
+    xlamp: 900, hydrant: 300, hydrant_sign: 380, stand_sign: 330, nobori_a: 450, nobori_b: 450, nobori_c: 450, nobori_d: 450, nobori_e: 450 });
   const CH = 650;   // チャンク一辺（ゲーム単位 = 260m）
   const chunks = [];
   // 単色マテリアルの部品を頂点カラー1枚（金属は別に1枚）にまとめて描画回数を減らす
@@ -2002,10 +2004,11 @@ G3.street = (function () {
         const g = G3.instanceNode(cnode, mats, { shadow: SHADOW.test(name) });
         if (BREAK[name]) mats.forEach((M, li) => brkMap.set(name + '#' + M.__i, { g, li, M }));
         g.traverse(o => { if (o.isInstancedMesh) { o.computeBoundingSphere(); o.frustumCulled = true; } });
-        let cx = 0, cz = 0;
+        let cx = 0, cz = 0, rad = 0;
         for (const M of mats) { cx += M.elements[12]; cz += M.elements[14]; }
         cx /= mats.length; cz /= mats.length;
-        chunks.push({ g, x: cx, z: cz, far: far + CH * 0.75 });
+        for (const M of mats) rad = Math.max(rad, Math.hypot(M.elements[12] - cx, M.elements[14] - cz));
+        chunks.push({ g, x: cx, z: cz, far: far + rad + 10 });
         for (const M of mats) all.push([M.elements[12], M.elements[14]]);
         scene.add(g);
       }

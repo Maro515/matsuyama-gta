@@ -15,7 +15,7 @@ G3.dyn = (function () {
   let headSpot;
   const trainObjs = [];
   let ferry, plane, mikanIM, marker, markerRing, skidMesh, partSmoke, partFire;
-  const WHEEL_R = { sedan: 0.33, kei: 0.29, taxi: 0.33, truck: 0.4, sports: 0.34, bus: 0.5, bike: 0.27, police: 0.33 };
+  const WHEEL_R = { sedan: 0.33, kei: 0.29, taxi: 0.33, truck: 0.4, sports: 0.34, bus: 0.5, bike: 0.27, police: 0.33, minivan: 0.32, keitruck: 0.28, van: 0.32 };
 
   /* ---------- 乗り物 ---------- */
   function fallbackCar(type) {
@@ -56,6 +56,7 @@ G3.dyn = (function () {
       }
       if (/^wheel_/.test(c.name)) ud.wheels.push({ o: c, front: /F/.test(c.name.slice(6)) });
     });
+    compactCar(o);
     // 車体下の接地影
     {
       const t = CARTYPES[type];
@@ -76,6 +77,46 @@ G3.dyn = (function () {
     }
     scene.add(o);
     return o;
+  }
+  // 単色の部品（黒・クロム・タイヤ・ホイール等）を車体／各ホイールごとに頂点カラー1〜2枚へまとめる。
+  // 塗装・ガラス・灯火は実行時に色や発光を変えるので別のまま
+  const carPlainMats = {};
+  function compactCar(o) {
+    o.updateMatrixWorld(true);
+    const hosts = new Map();
+    const special = m => !m || /^(Paint|Glass|HeadLight|TailLight|Siren|Andon|Window)/.test(m.name || '') || m.transparent || m.map ||
+      (m.emissive && m.emissive.getHex() !== 0);
+    const list = [];
+    o.traverse(m => { if (m.isMesh && !m.isSkinnedMesh && !Array.isArray(m.material) && !special(m.material)) list.push(m); });
+    for (const m of list) {
+      let host = m.parent;
+      for (let p = m.parent; p && p !== o; p = p.parent) if (/^wheel_/.test(p.name)) { host = p; break; }
+      if (!host || host === m) host = o;
+      const key = (m.material.metalness || 0) > 0.5 ? 'metal' : 'plain';
+      if (!hosts.has(host)) hosts.set(host, { plain: [], metal: [], rough: { plain: [], metal: [] } });
+      const h = hosts.get(host);
+      const inv = new THREE.Matrix4().copy(host.matrixWorld).invert();
+      const rel = new THREE.Matrix4().multiplyMatrices(inv, m.matrixWorld);
+      let g = m.geometry.clone();
+      g.applyMatrix4(rel);
+      if (g.index) g = g.toNonIndexed();
+      for (const k2 of Object.keys(g.attributes)) if (k2 !== 'position' && k2 !== 'normal') g.deleteAttribute(k2);
+      const c = m.material.color || new THREE.Color(1, 1, 1), n = g.attributes.position.count, col = new Float32Array(n * 3);
+      for (let i = 0; i < n; i++) { col[i * 3] = c.r; col[i * 3 + 1] = c.g; col[i * 3 + 2] = c.b; }
+      g.setAttribute('color', new THREE.BufferAttribute(col, 3));
+      h[key].push(g); h.rough[key].push(m.material.roughness == null ? 0.6 : m.material.roughness);
+      m.parent.remove(m);
+    }
+    for (const [host, h] of hosts) for (const key of ['plain', 'metal']) {
+      if (!h[key].length) continue;
+      const geo = G3.T.mergeGeometries(h[key], false);
+      if (!geo) continue;
+      const r = h.rough[key].reduce((a, b) => a + b, 0) / h.rough[key].length, mk = key + Math.round(r * 10);
+      const mat = carPlainMats[mk] || (carPlainMats[mk] = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: r, metalness: key === 'metal' ? 0.8 : 0.05 }));
+      const mesh = new THREE.Mesh(geo, mat);
+      mesh.castShadow = true; mesh.receiveShadow = true;
+      host.add(mesh);
+    }
   }
   function acquireCar(car, police) {
     const type = police ? 'police' : car.type;
@@ -250,6 +291,19 @@ G3.dyn = (function () {
       for (const clip of src.animations) ud.acts[clip.name] = ud.mixer.clipAction(clip);
     }
     if (!isRider) { o.scale.setScalar(U); scene.add(o); }
+    if (!isRider && !isPlayer) {
+      // 雨の日に差す傘（体に付けておき、雨の時だけ見せる）
+      if (!G3._umbMats) G3._umbMats = ['#2a3e8a', '#c8302a', '#f2f2ee', '#3a8a5a', '#151619', '#e8a020'].map(c => new THREE.MeshStandardMaterial({ color: c, roughness: 0.5, side: THREE.DoubleSide, transparent: c === '#f2f2ee', opacity: c === '#f2f2ee' ? 0.6 : 1 }));
+      if (!G3._umbGeo) { G3._umbGeo = new THREE.ConeGeometry(0.56, 0.26, 10, 1, true); G3._stickGeo = new THREE.CylinderGeometry(0.012, 0.012, 0.75, 5); }
+      const u = new THREE.Group();
+      const c = new THREE.Mesh(G3._umbGeo, G3._umbMats[(Math.random() * G3._umbMats.length) | 0]);
+      c.position.set(0.1, 2.02, 0.04); c.castShadow = true;
+      const st = new THREE.Mesh(G3._stickGeo, G3._umbMats[4]);
+      st.position.set(0.1, 1.6, 0.04);
+      u.add(c, st); u.visible = false;
+      o.add(u);
+      o.userData.umb = u;
+    }
     return o;
   }
   function dressHuman(o, p) {
@@ -293,6 +347,7 @@ G3.dyn = (function () {
     }
     o.position.set(p.x, p.y3 != null ? p.y3 : onSidewalkY(p.x, p.y), p.y);
     o.rotation.set(0, -p.a, 0);
+    if (o.userData.umb) o.userData.umb.visible = S.rainI > 0.3 && !(p.down > 0) && p.flee <= 0 && p.pose !== 'sit';
     if (p.static) {
       tickHuman(o, p.pose === 'sit' ? 'sit' : 'idle', p.pose === 'sit' ? 1 : 0.6 + (p.t % 1) * 0.4, dt);
     } else if (p.wait) {
@@ -564,8 +619,11 @@ G3.dyn = (function () {
   const seen = new Set();
   function update(dt) {
     seen.clear();
-    for (const c of parked) { placeCar(c, false, dt); seen.add(c); }
-    for (const c of traffic) { placeCar(c, false, dt); seen.add(c); }
+    // 遠くの駐車車両・通行車は描かない（描画回数の節約）
+    const cpx = G3.camera.position.x, cpz = G3.camera.position.z;
+    const nearCam = (c, r) => { const dx = c.x - cpx, dz = c.y - cpz; return dx * dx + dz * dz < r * r || c === S.pcar; };
+    for (const c of parked) { if (!nearCam(c, 650)) continue; placeCar(c, false, dt); seen.add(c); }
+    for (const c of traffic) { if (!nearCam(c, 1000)) continue; placeCar(c, false, dt); seen.add(c); }
     for (const c of polices) { placeCar(c, true, dt); seen.add(c); }
     if (S.mode === 'car' && S.pcar) { placeCar(S.pcar, false, dt, true); seen.add(S.pcar); }
     for (const [car, o] of carObjs) if (!seen.has(car)) releaseCar(car, o);

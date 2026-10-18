@@ -403,10 +403,101 @@ def bike(name='bike'):
     return finish(name, parts, wheels)
 
 
+
+def minivan(name='minivan'):
+    """ミニバン（スライドドア、全長4.7m）。"""
+    M = MATS()
+    W, belt, top = 1.72, 1.05, 1.86
+    prof = [(-2.35, 0.30), (2.30, 0.30), (2.36, 0.46), (2.34, 0.78), (2.16, 0.95), (1.55, 1.08), (1.42, 1.12),
+            (0.55, 1.83), (-2.15, 1.86), (-2.33, 1.72), (-2.37, 0.55)]
+    arches = [(1.45, 0.35), (-1.45, 0.35)]
+    body = body_from_profile('body', prof, W, belt, top, 0.07, 0.42, M['paint'], arches, M['black'])
+    parts = [body]
+    gl = M['glass']
+    sp = [(-2.1, 1.13), (1.3, 1.13), (0.6, 1.75), (-2.05, 1.77)]
+    parts += [glass_side('gls', sp, W, belt, top, 0.07, gl, 1), glass_side('gls', sp, W, belt, top, 0.07, gl, -1)]
+    parts.append(glass_quad('wsh', (1.40, 1.13), (0.58, 1.77), W, belt, top, 0.07, gl, outward=(1, 1)))
+    parts.append(glass_quad('rgl', (-2.34, 1.16), (-2.29, 1.70), W, belt, top, 0.07, gl, outward=(-1, 0)))
+    for s in (1, -1):
+        for x in (0.48, -0.75):
+            parts.append(box('pil', (0.09, 0.012, 0.62), (x, s * (taper_y(1.44, W, belt, top, 0.07) + 0.012), 1.44), M['trim']))
+        parts.append(box('slrail', (1.3, 0.02, 0.03), (-1.35, s * W / 2 * 0.995, 1.1), M['trim']))
+    parts += door_lines([1.38, 0.46, -0.78], 0.38, 1.08, W, belt, M)
+    parts += handles([0.75, -0.55], 0.95, W, M)
+    parts += lamp_pair('head', 2.24, 0.82, 0.6, 0.16, 0.38, 0.14, M['head'], rot=0.35)
+    parts += lamp_pair('tail', -2.35, 1.2, 0.72, 0.06, 0.14, 0.55, M['tail'])
+    parts.append(box('grille', (0.06, 1.1, 0.22), (2.33, 0, 0.68), M['chrome'], bevel=0.01))
+    parts += plates(2.37, 0.48, -2.37, 0.78, M)
+    parts += mirrors(1.36, 1.18, W / 2, M, M['paint'])
+    parts.append(box('under', (4.2, W - 0.25, 0.08), (0, 0, 0.24), M['black']))
+    wheels = [wheel('wheel_FL', 1.45, 0.74, 0.32, 0.21, M), wheel('wheel_FR', 1.45, -0.74, 0.32, 0.21, M),
+              wheel('wheel_RL', -1.45, 0.74, 0.32, 0.21, M), wheel('wheel_RR', -1.45, -0.74, 0.32, 0.21, M)]
+    return finish(name, parts, wheels)
+
+
+def keitruck(name='keitruck'):
+    """軽トラック（キャブ＋平荷台、全長3.4m）。"""
+    M = MATS()
+    W = 1.47
+    cab_prof = [(0.36, 0.36), (1.66, 0.36), (1.71, 0.52), (1.70, 0.96), (1.55, 1.06), (1.42, 1.09), (1.12, 1.78), (0.40, 1.80), (0.36, 1.62)]
+    cab = body_from_profile('cab', cab_prof, W, 1.05, 1.80, 0.05, 0.3, M['paint'], [(1.05, 0.30)], M['black'])
+    parts = [cab]
+    gl = M['glass']
+    parts.append(glass_quad('wsh', (1.42, 1.1), (1.13, 1.72), W, 1.05, 1.80, 0.05, gl, outward=(1, 1)))
+    sp = [(0.55, 1.12), (1.3, 1.12), (1.1, 1.68), (0.55, 1.7)]
+    parts += [glass_side('gls', sp, W, 1.05, 1.80, 0.05, gl, 1), glass_side('gls', sp, W, 1.05, 1.80, 0.05, gl, -1)]
+    parts.append(glass_quad('rgl', (0.37, 1.2), (0.39, 1.62), W, 1.05, 1.80, 0.05, gl, outward=(-1, 0)))
+    parts += lamp_pair('head', 1.68, 0.8, 0.5, 0.08, 0.26, 0.14, M['head'])
+    parts.append(box('grille', (0.05, 0.6, 0.14), (1.71, 0, 0.68), M['trim'], bevel=0.01))
+    parts += mirrors(1.38, 1.15, W / 2, M, M['trim'])
+    # 平荷台とあおり
+    bed = mat('Bed', '#8c9196', metal=0.4, rough=0.5)
+    parts.append(box('bed', (2.0, W, 0.06), (-0.7, 0, 0.72), bed))
+    for s in (1, -1):
+        parts.append(box('gate', (2.0, 0.04, 0.3), (-0.7, s * (W / 2 - 0.02), 0.9), M['paint']))
+    parts.append(box('tgate', (0.04, W, 0.3), (-1.7, 0, 0.9), M['paint']))
+    parts.append(box('guard', (0.05, W, 0.75), (0.3, 0, 1.12), bed))
+    for y in (-0.5, 0, 0.5):
+        parts.append(box('gbar', (0.04, 0.04, 0.75), (0.3, y, 1.12), M['black']))
+    parts.append(box('chassis', (3.2, 0.8, 0.2), (-0.1, 0, 0.5), M['black']))
+    parts += lamp_pair('tail', -1.72, 0.62, 0.62, 0.05, 0.16, 0.14, M['tail'])
+    parts += plates(1.72, 0.5, -1.73, 0.55, M)
+    wheels = [wheel('wheel_FL', 1.05, 0.62, 0.28, 0.17, M), wheel('wheel_FR', 1.05, -0.62, 0.28, 0.17, M),
+              wheel('wheel_RL', -1.0, 0.62, 0.28, 0.17, M), wheel('wheel_RR', -1.0, -0.62, 0.28, 0.17, M)]
+    return finish(name, parts, wheels)
+
+
+def van(name='van'):
+    """ワンボックスの配送バン（ハイルーフ、全長4.7m）。"""
+    M = MATS()
+    W, belt, top = 1.70, 1.12, 2.08
+    prof = [(-2.35, 0.30), (2.30, 0.30), (2.36, 0.46), (2.36, 0.96), (2.26, 1.08), (2.12, 1.12), (1.78, 1.96),
+            (1.58, 2.06), (-2.30, 2.08), (-2.36, 1.96), (-2.38, 0.55)]
+    arches = [(1.45, 0.35), (-1.42, 0.35)]
+    body = body_from_profile('body', prof, W, belt, top, 0.04, 0.25, M['paint'], arches, M['black'])
+    parts = [body]
+    gl = M['glass']
+    parts.append(glass_quad('wsh', (2.12, 1.14), (1.79, 1.95), W, belt, top, 0.04, gl, outward=(1, 1)))
+    sp = [(1.0, 1.16), (2.0, 1.16), (1.75, 1.9), (1.0, 1.92)]
+    parts += [glass_side('gls', sp, W, belt, top, 0.04, gl, 1), glass_side('gls', sp, W, belt, top, 0.04, gl, -1)]
+    parts.append(glass_quad('rgl', (-2.36, 1.3), (-2.32, 1.9), W, belt, top, 0.04, gl, outward=(-1, 0)))
+    parts += door_lines([2.05, 0.95, -0.6], 0.38, 1.95, W, belt, M)
+    parts += lamp_pair('head', 2.33, 0.82, 0.6, 0.06, 0.3, 0.16, M['head'])
+    parts += lamp_pair('tail', -2.37, 0.9, 0.74, 0.05, 0.14, 0.4, M['tail'])
+    parts.append(box('grille', (0.06, 1.0, 0.2), (2.37, 0, 0.66), M['trim'], bevel=0.01))
+    parts.append(box('bumper', (0.12, 1.72, 0.18), (2.36, 0, 0.42), M['black']))
+    parts += plates(2.42, 0.42, -2.38, 0.62, M)
+    parts += mirrors(2.0, 1.25, W / 2, M, M['trim'])
+    parts.append(box('rack', (2.6, 1.4, 0.05), (-0.6, 0, 2.18), M['trim']))
+    wheels = [wheel('wheel_FL', 1.45, 0.73, 0.32, 0.2, M), wheel('wheel_FR', 1.45, -0.73, 0.32, 0.2, M),
+              wheel('wheel_RL', -1.42, 0.73, 0.32, 0.2, M), wheel('wheel_RR', -1.42, -0.73, 0.32, 0.2, M)]
+    return finish(name, parts, wheels)
+
+
 def build_all():
     reset()
     roots = [sedan('sedan'), kei('kei'), sedan('taxi', taxi=True), sedan('police', police=True), sports('sports'),
-             truck('truck'), bus('bus'), bike('bike')]
+             truck('truck'), bus('bus'), bike('bike'), minivan('minivan'), keitruck('keitruck'), van('van')]
     return roots
 
 
@@ -416,7 +507,8 @@ def paint_preview(roots):
     # プレビュー用に並べる（書き出し前に元へ戻す）
     xs = {}
     slots = {'sedan': (-6, 4), 'kei': (0, 4), 'taxi': (6, 4), 'police': (12, 4),
-             'sports': (-6, -1), 'bike': (0, -1), 'truck': (5.5, -1), 'bus': (-4, -7)}
+             'sports': (-6, -1), 'bike': (0, -1), 'truck': (5.5, -1), 'bus': (-4, -7),
+             'minivan': (6, -7), 'keitruck': (12, -1), 'van': (12, -7)}
     for r in roots:
         xs[r.name] = r.location.copy()
         r.location = (*slots[r.name], 0)

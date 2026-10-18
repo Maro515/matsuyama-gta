@@ -1527,6 +1527,49 @@ def build_stage7():
     return [hydrant()]
 
 
+
+# ======================================================================
+# 第8段: 海岸（消波ブロック・灯台）
+# ======================================================================
+def tetrapod():
+    """消波ブロック（テトラポッド型、約2.4m）。原点は中心。4本の脚は正四面体の頂点方向。"""
+    c = mat('SP_Tetra', '#a6a49c', rough=0.92)
+    dirs = [(1, 1, 1), (1, -1, -1), (-1, 1, -1), (-1, -1, 1)]
+    p = [sphere('core', 0.55, (0, 0, 0), c, seg=10, rings=6)]
+    for d in dirs:
+        v = Vector(d).normalized()
+        bm = bmesh.new()
+        bmesh.ops.create_cone(bm, cap_ends=True, cap_tris=False, segments=9, radius1=0.5, radius2=0.3, depth=1.15)
+        q = Vector((0, 0, 1)).rotation_difference(v).to_matrix()
+        bmesh.ops.rotate(bm, cent=(0, 0, 0), matrix=q, verts=bm.verts)
+        bmesh.ops.translate(bm, vec=v * 0.62, verts=bm.verts)
+        p.append(mesh_from_bm('leg', bm, [c]))
+    return join(p, 'tetrapod', smooth_angle=40)
+
+
+def lighthouse(name, col, lamp):
+    """防波堤の先端の灯台（赤灯台・白灯台、高さ約10m）。灯器は夜に点滅（NightGlow_*Blink）。"""
+    m = M()
+    body = mat('SP_LH_' + name, col, rough=0.45, coat=0.2)
+    wh = mat('SP_LH_White', '#f2f0ea', rough=0.45)
+    glow = mat(lamp, '#e8e0c8' if 'Light' in lamp else '#a83020', rough=0.2, emit='#ffffff', estr=0.0)
+    p = [cyl('base', 1.7, 0.6, (0, 0, 0.3), m['conc'], verts=20),
+         cyl('tower', 1.15, 7.4, (0, 0, 4.3), body, verts=20, r2=0.85),
+         cyl('band', 1.0, 0.25, (0, 0, 6.2), wh if col != '#f2f0ea' else body, verts=20),
+         cyl('deck', 1.35, 0.18, (0, 0, 8.1), m['dark'], verts=20),
+         cyl('rail', 1.3, 0.45, (0, 0, 8.4), m['steel'], verts=20, cap=False),
+         cyl('lamproom', 0.62, 0.25, (0, 0, 8.35), m['dark'], verts=14),
+         cyl('lamp', 0.55, 1.1, (0, 0, 9.0), glow, verts=14),
+         cyl('cap', 0.72, 0.4, (0, 0, 9.75), body, verts=14, r2=0.15),
+         cyl('vane', 0.04, 0.6, (0, 0, 10.2), m['dark'], verts=6),
+         box('door', (0.06, 0.7, 1.6), (1.12, 0, 1.4), m['dark'])]
+    return join(p, name, smooth_angle=40)
+
+
+def build_stage8():
+    return [tetrapod(), lighthouse('lighthouse_red', '#c82a22', 'NightGlow_RedBlink'), lighthouse('lighthouse_white', '#f2f0ea', 'NightGlow_LightBlink')]
+
+
 def layout_preview(roots, path, cols=7, gap=2.2, big=()):
     small = [o for o in roots if o.name not in big]
     for i, o in enumerate(small):
@@ -1548,7 +1591,8 @@ if __name__ == '__main__':
     roots5 = build_stage5()
     roots6 = build_stage6()
     roots7 = build_stage7()
-    roots = roots1 + roots2 + roots3 + roots5 + roots6 + roots7
+    roots8 = build_stage8()
+    roots = roots1 + roots2 + roots3 + roots5 + roots6 + roots7 + roots8
     export_glb(os.path.join(ASSETS, 'glb', 'street.glb'), roots)
     only = argv_after()
     def away():
@@ -1562,6 +1606,11 @@ if __name__ == '__main__':
             continue
         away()
         layout_preview(grp, os.path.join(PREV, 'street%s.png' % tag), **kw)
+    if only and '8' in only:
+        away()
+        for i, o in enumerate(roots8):
+            o.location = (i * 5.0 - 5, 0, 1.2 if o.name == 'tetrapod' else 0)
+        preview(os.path.join(PREV, 'street8.png'), target=(0, 0, 4), dist=24, elev=14, azim=-70, lens=45, res=(1200, 800), samples=48)
     if not only or 'big' in only:
         away()
         bpy.data.objects['karakuri_clock'].location = (-4, 0, 0)

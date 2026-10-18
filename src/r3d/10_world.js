@@ -1540,6 +1540,7 @@ G3.world = (function () {
       // Blender 側は昼の見た目のため発光強度0で書き出している → 発光色をここで与える
       if (r.emissive && r.emissive.getHex() === 0) r.emissive.set(n.includes('Red') ? 0xff5a30 : /Light|Clock|Sign/.test(n) ? 0xfff2dc : 0xffcf8a);
       r.userData.glowK = /Light|Clock|Sign/.test(n) ? 1.5 : n.includes('Red') ? 2.0 : 1.0;
+      if (/Blink/.test(n)) { r.userData.blink = n.includes('Red') ? 0 : 2.1; r.userData.glowK *= 2.5; }   // 灯台: 4秒ごとに点滅（赤と白で位相をずらす）
       anim.glow.push(r);
     }
     lmCache[n] = r;
@@ -1684,7 +1685,8 @@ G3.world = (function () {
     const night = clamp(1 - day * 1.6, 0, 1);
     for (const m of anim.winMats) m.userData.uni.uNight.value = night;
     for (const m of anim.neon) m.emissiveIntensity = night * 0.9;
-    for (const m of anim.glow) m.emissiveIntensity = night * m.userData.glowK;
+    const tb = performance.now() / 1000;
+    for (const m of anim.glow) m.emissiveIntensity = night * m.userData.glowK * (m.userData.blink === undefined ? 1 : ((tb + m.userData.blink) % 4 < 0.8 ? 1 : 0.04));
     for (const m of nightMats.keys()) m.emissiveIntensity = 0.05 + night * (m.name.startsWith('Lamp') ? 6 : 1.4);
     WM.lampGlow.opacity = night * 0.85;
     const wet = G3.wet;

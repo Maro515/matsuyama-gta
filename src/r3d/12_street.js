@@ -1674,6 +1674,138 @@ G3.street = (function () {
     stats.riverside = nb + ns;
   }
 
+
+  /* ---------- 海岸: 消波ブロック・港の防波堤と灯台・護岸の胸壁 ---------- */
+  const COAST_PORTS = [[1000, 1790, 230], [1330, 660, 230], [4482, 300, 160]];
+  const C = h => { const c = new THREE.Color(h); return [c.r, c.g, c.b]; };
+  // 本土の海岸線（SEA の陸側の辺）に沿った点。n は海向き、t は辺の向き
+  function coastSamples(step) {
+    const out = [];
+    for (let i = 4; i < SEA.length; i++) {
+      const a = SEA[i - 1], b = SEA[i], L = hyp(b[0] - a[0], b[1] - a[1]);
+      const tx = (b[0] - a[0]) / L, ty = (b[1] - a[1]) / L;
+      for (let d = step / 2; d < L; d += step) {
+        const x = a[0] + tx * d, y = a[1] + ty * d;
+        let nx = -ty, ny = tx;
+        const w1 = inWaterRaw(x + nx * 6, y + ny * 6), w2 = inWaterRaw(x - nx * 6, y - ny * 6);
+        if (w1 === w2) continue;            // 河口・島の陰など
+        if (!w1) { nx = -nx; ny = -ny; }
+        out.push({ x, y, nx, ny, tx, ty, e: i, d, L });
+      }
+    }
+    return out;
+  }
+  // 回転した直方体（a=長手の向き、hl/hw=半長・半幅、y0..y1）
+  function obox(gb, cx, cy, a, hl, hw, y0, y1, col) {
+    const ca = Math.cos(a), sa = Math.sin(a);
+    const P = (u, v, y) => [cx + ca * u - sa * v, y, cy + sa * u + ca * v];
+    const q = (A, B, C2, D) => gb.quad([A, B, C2, D], [[0, 0], [1, 0], [1, 1], [0, 1]].map(([u, v]) => [u * hl / 3, v * (y1 - y0) / 3]), col);
+    q(P(-hl, -hw, y0), P(hl, -hw, y0), P(hl, -hw, y1), P(-hl, -hw, y1));
+    q(P(hl, hw, y0), P(-hl, hw, y0), P(-hl, hw, y1), P(hl, hw, y1));
+    q(P(hl, -hw, y0), P(hl, hw, y0), P(hl, hw, y1), P(hl, -hw, y1));
+    q(P(-hl, hw, y0), P(-hl, -hw, y0), P(-hl, -hw, y1), P(-hl, hw, y1));
+    q(P(-hl, -hw, y1), P(hl, -hw, y1), P(hl, hw, y1), P(-hl, hw, y1));
+  }
+  function coastline(scene) {
+    const rr = mulberry32(9201);
+    const inPort = (x, y, m = 40) => COAST_PORTS.some(p => hyp(x - p[0], y - p[1]) < p[2] + m);
+    const beach = (x, y) => hyp(x - 1160, y - 940) < 175;   // 梅津寺
+    const nearKey = (x, y, r) => KEYPTS.some(k => hyp(k[0] - x, k[1] - y) < r);
+    const q = new THREE.Quaternion(), e = new THREE.Euler(), v = new THREE.Vector3(), sc = new THREE.Vector3(U, U, U);
+    const tetra = (x, y, h) => {
+      q.setFromEuler(e.set(rr() * TAU, rr() * TAU, rr() * TAU));
+      putM('tetrapod', new THREE.Matrix4().compose(v.set(x, h, y).clone(), q.clone(), sc));
+    };
+    let nT = 0;
+    // 1) 消波ブロック: 140 単位ごとに置く区間・置かない区間を決め、2列＋所々に上段
+    let acc = 1e9, on = false;
+    for (const p of coastSamples(4.6)) {
+      if ((acc += 4.6) > 140) { acc = 0; on = rr() < 0.55; }
+      if (!on || inPort(p.x, p.y) || beach(p.x, p.y)) continue;
+      for (const [off, h] of [[3.6, -0.4], [8.4, -0.9]]) {
+        const ox = p.x + p.nx * (off + (rr() - 0.5) * 1.4) + p.tx * (rr() - 0.5) * 1.6, oy = p.y + p.ny * (off + (rr() - 0.5) * 1.4) + p.ty * (rr() - 0.5) * 1.6;
+        if (!inWaterRaw(ox, oy)) continue;
+        tetra(ox, oy, h + (rr() - 0.5) * 0.8); nT++;
+      }
+      if (rr() < 0.35) { tetra(p.x + p.nx * 6, p.y + p.ny * 6, 1.6 + rr() * 0.6); nT++; }
+    }
+    // 2) 港の防波堤（入口をはさむ2本）と灯台。入港する船から見て右が赤灯台
+    const gbB = new G3.GB(true);
+    const cs = coastSamples(8);
+    let nL = 0;
+    for (const [px, py, rad] of COAST_PORTS) {
+      let best = null, bd = 1e9;
+      for (const p of cs) { const dd = hyp(p.x - px, p.y - py); if (dd < bd) { bd = dd; best = p; } }
+      if (!best || bd > rad) continue;
+      const n = [best.nx, best.ny], t = [best.tx, best.ty], gap = 50, La = 66;
+      // 桟橋・ターミナル（ランドマークの敷地）から離し、船の出入りをふさがない沖に置く
+      const farLM = (x, y) => LMS.every(l => !l.solid || (Math.max(l.solid[0] - x, 0, x - l.solid[2]) ** 2 + Math.max(l.solid[1] - y, 0, y - l.solid[3]) ** 2) > 70 * 70);
+      let D = 0;
+      for (const d0 of [110, 130, 150, 170, 95, 190]) {
+        let ok = true;
+        for (let s2 = -(gap / 2 + La); s2 <= gap / 2 + La && ok; s2 += 4) {
+          const cx = best.x + n[0] * d0 + t[0] * s2, cy = best.y + n[1] * d0 + t[1] * s2;
+          if (!farLM(cx, cy)) { ok = false; break; }
+          for (const o of [-14, 0, 14]) if (!inWaterRaw(cx + n[0] * o, cy + n[1] * o)) { ok = false; break; }
+        }
+        if (ok) { D = d0; break; }
+      }
+      if (!D) continue;
+      const ang = Math.atan2(t[1], t[0]);
+      const red = [n[1], -n[0]];   // 入港方向 h=-n の右手（y が南向きの座標）
+      for (const sgn of [-1, 1]) {
+        const mid = gap / 2 + La / 2;
+        const cx = best.x + n[0] * D + t[0] * sgn * mid, cy = best.y + n[1] * D + t[1] * sgn * mid;
+        obox(gbB, cx, cy, ang, La / 2, 3.6, -3, 2.4, C('#b9b6ad'));
+        obox(gbB, cx + n[0] * 3.0, cy + n[1] * 3.0, ang, La / 2, 0.7, 2.4, 4.0, C('#aeaba2'));   // 海側の胸壁
+        // 海側に消波ブロック
+        for (let s2 = -La / 2; s2 <= La / 2; s2 += 4.4) {
+          const ox = cx + t[0] * s2 + n[0] * (8 + rr() * 2), oy = cy + t[1] * s2 + n[1] * (8 + rr() * 2);
+          tetra(ox, oy, -0.6 + rr() * 0.8); nT++;
+          if (rr() < 0.4) { tetra(ox - n[0] * 2.5, oy - n[1] * 2.5, 1.4 + rr() * 0.6); nT++; }
+        }
+        // 入口側の先端に灯台
+        const ex = cx - t[0] * sgn * (La / 2 - 4), ey = cy - t[1] * sgn * (La / 2 - 4);
+        const isRed = (t[0] * sgn * red[0] + t[1] * sgn * red[1]) > 0;
+        put(isRed ? 'lighthouse_red' : 'lighthouse_white', ex, ey, -ang, 2.4);
+        nL++;
+      }
+    }
+    // 3) 護岸の胸壁（港・浜・河口・道路の所は切る）。高さ約0.9m、当たり判定つき
+    const gbW = new G3.GB(true);
+    let nW = 0;
+    const wall = coastSamples(4).map(p => {
+      const ix = p.x - p.nx * 1.0, iy = p.y - p.ny * 1.0;
+      const ri = roadInfo(ix, iy);
+      const ok = !inPort(p.x, p.y, 10) && !beach(p.x, p.y) && !inWaterRaw(ix, iy) && !nearBld(ix, iy, 1.5) &&
+        !(ri && ri.d < ri.road.w / 2 + 1) && !nearKey(ix, iy, 6) && railDist(ix, iy) > 6;
+      return { ...p, ix, iy, ok };
+    });
+    for (let i = 0; i < wall.length;) {
+      if (!wall[i].ok) { i++; continue; }
+      let j = i;
+      while (j + 1 < wall.length && wall[j + 1].ok && wall[j + 1].e === wall[i].e) j++;
+      const A = wall[i], B = wall[j];
+      const ax = A.ix - A.tx * 2, ay = A.iy - A.ty * 2, bx = B.ix + B.tx * 2, by = B.iy + B.ty * 2;
+      const L = hyp(bx - ax, by - ay), a = Math.atan2(by - ay, bx - ax), cx = (ax + bx) / 2, cy = (ay + by) / 2;
+      if (L >= 8) {
+        obox(gbW, cx, cy, a, L / 2, 0.6, 0, 2.3, C('#bcb9b0'));
+        for (let d = 0; d < L; d += 24) {
+          const e2 = Math.min(L, d + 24), m = (d + e2) / 2 - L / 2;
+          if (typeof addCollider === 'function') addCollider({ x: cx + Math.cos(a) * m, y: cy + Math.sin(a) * m, hx: (e2 - d) / 2, hy: 0.8, a, m: 3 });
+        }
+        for (let d = 0; d < L; d += 5) take(ax + Math.cos(a) * d, ay + Math.sin(a) * d, 1.5);
+        nW += L;
+      }
+      i = j + 1;
+    }
+    const cm = new THREE.MeshStandardMaterial({ map: G3.tex.concrete, vertexColors: true, roughness: 0.9, side: THREE.DoubleSide });
+    const mb = gbB.mesh(cm, true), mw = gbW.mesh(cm, true);
+    mb.receiveShadow = mw.receiveShadow = true;
+    scene.add(mb, mw);
+    stats.coast_tetra = nT; stats.lighthouse = nL; stats.seawall = Math.round(nW);
+  }
+
   /* ---------- 第6段: 港のクレーン・小さな神社・農機具小屋・タクシー乗り場 ---------- */
   function cranes() {
     const rr = mulberry32(5606);
@@ -2037,7 +2169,7 @@ G3.street = (function () {
     return G3.lmMat(m);
   }
   // 種類ごとの描画距離（これより遠いチャンクは描かない）。大物は常に描く。
-  const FAR = { guide_gantry: 1e9, tram_stop: 2200, karakuri_clock: 1e9, container_a: 2400, container_b: 2400, container_c: 2400, container_d: 2400, wcont_a: 700, wcont_b: 700, wcont_c: 700, gs_canopy: 1600, gs_sign: 1600, fishing_boat: 1800,
+  const FAR = { guide_gantry: 1e9, tram_stop: 2200, karakuri_clock: 1e9, container_a: 2400, container_b: 2400, container_c: 2400, container_d: 2400, lighthouse_red: 3000, lighthouse_white: 3000, tetrapod: 650, wcont_a: 700, wcont_b: 700, wcont_c: 700, gs_canopy: 1600, gs_sign: 1600, fishing_boat: 1800,
     catenary_pole: 1100, park_toilet: 1000, solar_panel: 900, tv_antenna: 700, bus_shelter: 1000,
     guardrail: 1300, guard_pipe: 1000, hedge_planter: 1200, block_wall: 1000, awning_red: 1100, awning_green: 1100, awning_blue: 1100, awning_orange: 1100,
     sign_speed: 900, sign_stop: 900, curve_mirror: 900, parking_sign: 1200, clock_pole: 1400, map_board: 900 };
@@ -2045,7 +2177,7 @@ G3.street = (function () {
   Object.assign(FAR, { konbini: 1500, konbini_sign: 1500, pylon: 1e9, ob_stair: 1400, platform: 1400, billboard: 1800, backstop: 1200,
     soccer_goal: 900, jib_crane: 2400, small_shrine: 1000, farm_hut: 1000 });
   // 影を落とすのは大きな物だけ（小物は影のパスの描画回数を増やすだけ）
-  const SHADOW = /konbini|pylon|ob_stair|platform|billboard|crane|shrine|farm_hut|backstop|wall|fence|awning|booth|container|wcont|canopy|gs_|tram_stop|guide|karakuri|toilet|shelter|hedge|guardrail|gantry|catenary|boat|lantern|jungle|slide|swing|vending|map_board/;
+  const SHADOW = /konbini|pylon|ob_stair|platform|billboard|crane|shrine|farm_hut|backstop|wall|fence|awning|booth|container|wcont|lighthouse|canopy|gs_|tram_stop|guide|karakuri|toilet|shelter|hedge|guardrail|gantry|catenary|boat|lantern|jungle|slide|swing|vending|map_board/;
   Object.assign(FAR, { bicycle_a: 330, bicycle_b: 330, bicycle_c: 330, ac_unit: 380, potted_plant: 300, propane: 380, tv_antenna: 500,
     block_wall: 700, guard_pipe: 650, guardrail: 900, hedge_planter: 800, awning_red: 800, awning_green: 800, awning_blue: 800, awning_orange: 800,
     xlamp: 900, hydrant: 300, hydrant_sign: 380, stand_sign: 330, nobori_a: 450, nobori_b: 450, nobori_c: 450, nobori_d: 450, nobori_e: 450 });
@@ -2225,6 +2357,7 @@ G3.street = (function () {
     dogo(scene);
     furniture(scene);
     ports();
+    coastline(scene);
     crossings(scene);
     catenary(scene);
     gasStations(scene);

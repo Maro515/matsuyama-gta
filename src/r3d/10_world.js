@@ -234,13 +234,24 @@ G3.world = (function () {
         g.fillRect(x0 - 60, y0 - 60, x1 - x0 + 120, y1 - y0 + 120);
       }
       g.fillStyle = 'rgba(150,146,138,.9)'; g.fillRect(4300, 1500, 2900, 3000);
-      // 敷地のまだら
+      // 敷地のまだら: 駐車場のアスファルト・コンクリート・砂利・土・草むらの不規則な広がり（市街と郊外で割合を変える）
       const r2 = mulberry32(77);
-      for (let i = 0; i < 2600; i++) {
-        const x = r2() * W, y = r2() * H, s = 12 + r2() * 40;
-        g.fillStyle = r2() < .5 ? 'rgba(120,128,96,.25)' : 'rgba(180,176,160,.25)';
-        g.fillRect(x, y, s, s * (.6 + r2()));
+      const KINDS = { asph: [118, 118, 112], conc: [176, 172, 162], grav: [160, 152, 138], soil: [150, 128, 98], weed: [124, 142, 88], grass: [108, 134, 74] };
+      const CITY = [['asph', .32], ['conc', .26], ['grav', .2], ['soil', .1], ['weed', .12]];
+      const SUB = [['weed', .3], ['grass', .14], ['soil', .2], ['grav', .18], ['asph', .1], ['conc', .08]];
+      const pick = (tab) => { let t = r2(); for (const [k, w] of tab) { if ((t -= w) <= 0) return k; } return tab[0][0]; };
+      for (let i = 0; i < 30000; i++) {
+        const x = r2() * W, y = r2() * H;
+        const city = x > 4300 && x < 7200 && y > 1500 && y < 4500;
+        const k = pick(city ? CITY : SUB), c = KINDS[k], rad = 7 + r2() * r2() * 40, n = 9;
+        g.fillStyle = `rgba(${c[0]},${c[1]},${c[2]},${(0.6 + r2() * 0.35).toFixed(2)})`;
+        g.beginPath();
+        for (let j = 0; j < n; j++) { const a = j / n * TAU, rr = rad * (0.6 + r2() * 0.55); const px = x + Math.cos(a) * rr * 1.25, py = y + Math.sin(a) * rr; j ? g.lineTo(px, py) : g.moveTo(px, py); }
+        g.closePath(); g.fill();
       }
+      // 建物の足元の汚れ（壁と地面の境目をくっきり）
+      g.lineWidth = 3.2; g.strokeStyle = 'rgba(58,54,48,.38)';
+      for (const b of buildings) if (!b.noDraw) g.strokeRect(b.x0 - 1.2, b.y0 - 1.2, b.x1 - b.x0 + 2.4, b.y1 - b.y0 + 2.4);
       // 河川敷（草地）
       for (const rv of RIVERS) {
         g.strokeStyle = '#86a062'; g.lineWidth = rv.w + 70; g.lineCap = 'round'; g.lineJoin = 'round';
@@ -1524,6 +1535,28 @@ G3.world = (function () {
         groups.far.push(M4(x, heightAt(x, z) - 0.5, z, r() * TAU, U * (1.0 + r() * 0.8)));
       }
     }
+    // 城山（勝山）は森に: 斜面に木を足し、本丸の広場には桜（本丸・登り口・ロープウェイ・ミッション地点・建物は空ける）
+    {
+      const rc = mulberry32(9701), h = HILLS3.find(q => q.castle), c = CASTLE_DECK;
+      const KP = [...MIKANS.map(m => [m.x, m.y]), ...MISSIONS.flatMap(m => [m.start, ...(m.goal ? [m.goal] : [])]), ...GIGSPOTS.map(g => [g[1], g[2]])];
+      const rope = [[6338, 2892], [5945, 2762]];
+      const okAt = (x, z, m) => !(inWaterRaw(x, z) || KP.some(k => hyp(k[0] - x, k[1] - z) < 10) || propHit(x, z, m, false) || seg(x, z, rope[0][0], rope[0][1], rope[1][0], rope[1][1]).d < 18 ||
+        (() => { const ri = roadInfo(x, z); return ri && ri.d < ri.road.w / 2 + 8; })());
+      for (let i = 0; i < 560; i++) {
+        const a = rc() * TAU, rr = Math.sqrt(rc()) * 0.95;
+        if (rr < 0.4) continue;
+        const x = h.x + Math.cos(a) * h.rx * rr, z = h.y + Math.sin(a) * h.ry * rr;
+        if (x > c.x0 - 26 && x < c.x1 + 26 && z > c.y0 - 26 && z < c.ry1 + 8) continue;
+        if (!okAt(x, z, 2)) continue;
+        const k = rc();
+        (k < 0.45 ? groups.pine : k < 0.75 ? groups.broad_a : groups.broad_b).push(M4(x, heightAt(x, z), z, rc() * TAU, U * (0.75 + rc() * 0.5)));
+      }
+      let ns = 0;
+      for (let x = c.x0 + 8; x < c.x1 - 6 && ns < 18; x += 13) for (let z = c.y0 + 8; z < c.y1 - 6 && ns < 18; z += 13) {
+        if (hyp(x - c.x, z - c.y) < 30 || Math.abs(x - c.x) < c.rx + 4 && z > c.y1 - 20 || !okAt(x, z, 5)) continue;
+        groups.sakura.push(M4(x, heightAt(x, z), z, rc() * TAU, U * (0.8 + rc() * 0.25))); ns++;
+      }
+    }
     // 堀・水面に落ちた木は除き、幹に当たり判定
     const _p = new THREE.Vector3();
     for (const k in groups) groups[k] = groups[k].filter(M => { _p.setFromMatrixPosition(M); return !inWaterRaw(_p.x, _p.z); });
@@ -1932,25 +1965,26 @@ G3.world = (function () {
   }
 
   function build() {
-    const scene = G3.scene;
+    const scene = G3.scene, WT = G3.worldTimes = {}; let tw = performance.now();
+    const lapw = k => { const t = performance.now(); WT[k] = Math.round(t - tw); tw = t; };
     buildMaterials();
-    buildGround(scene);
-    buildWater(scene);
-    buildHills(scene);
-    buildBackdrop(scene);
-    buildFields(scene);
-    buildCanals(scene);
-    buildRiverside(scene);
-    buildRoads(scene);
-    buildFrontage(scene);
-    buildRailways(scene);
-    buildBuildings(scene);
-    buildLandmarks(scene);
-    buildTrees(scene);
-    buildEstates(scene);
-    buildYuzuki(scene);
-    buildProps(scene);
-    if (G3.street) G3.street.build(scene);
+    buildGround(scene); lapw('buildGround');
+    buildWater(scene); lapw('buildWater');
+    buildHills(scene); lapw('buildHills');
+    buildBackdrop(scene); lapw('buildBackdrop');
+    buildFields(scene); lapw('buildFields');
+    buildCanals(scene); lapw('buildCanals');
+    buildRiverside(scene); lapw('buildRiverside');
+    buildRoads(scene); lapw('buildRoads');
+    buildFrontage(scene); lapw('buildFrontage');
+    buildRailways(scene); lapw('buildRailways');
+    buildBuildings(scene); lapw('buildBuildings');
+    buildLandmarks(scene); lapw('buildLandmarks');
+    buildTrees(scene); lapw('buildTrees');
+    buildEstates(scene); lapw('buildEstates');
+    buildYuzuki(scene); lapw('buildYuzuki');
+    buildProps(scene); lapw('buildProps');
+    if (G3.street) G3.street.build(scene); lapw('street');
   }
   return { build, update, updEnv, WM, anim, canvasTex };
 })();

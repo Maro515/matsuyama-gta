@@ -1857,6 +1857,70 @@ def build_stage11():
     return [fish_market(), net_pile(), buoy_stack(), fish_crates(), drum_set(), gyokyo()]
 
 
+
+# ======================================================================
+# 第12段: 緑（雑草・植え込み・庭木）
+# ======================================================================
+def weed(name, seed, tall=0.45, dry=False):
+    """雑草の株（細い葉の束）。当たり判定なし。"""
+    rr = random.Random(seed)
+    cols = [mat('SP_WeedA', '#5f7f3a', rough=0.9), mat('SP_WeedB', '#7a8f45', rough=0.9), mat('SP_WeedC', '#9a9a5a', rough=0.95)]
+    p = []
+    for k in range(9):
+        a = rr.random() * math.tau
+        h = tall * rr.uniform(0.55, 1.1)
+        lean = rr.uniform(0.15, 0.45)
+        bm = bmesh.new()
+        w = rr.uniform(0.025, 0.045)
+        bx, by = math.cos(a) * rr.uniform(0, 0.1), math.sin(a) * rr.uniform(0, 0.1)
+        tx, ty = bx + math.cos(a) * lean * h, by + math.sin(a) * lean * h
+        px, py = -math.sin(a) * w, math.cos(a) * w
+        v = [bm.verts.new((bx - px, by - py, 0)), bm.verts.new((bx + px, by + py, 0)), bm.verts.new((tx, ty, h))]
+        bm.faces.new(v)
+        c = cols[2] if (dry and rr.random() < 0.6) else cols[rr.randrange(2)]
+        p.append(mesh_from_bm('blade', bm, [c]))
+    return join(p, name, smooth_angle=None)
+
+
+def shrub(name, seed, r, col, flower=None):
+    """植え込みの低木（ツツジ・サツキなど）。"""
+    leaf = mat('SP_Shrub_' + name, col, rough=0.85)
+    p = [bush('b', 0, 0, r * 0.75, r, leaf, seed)]
+    if flower:
+        fl = mat('SP_Flower_' + name, flower, rough=0.6)
+        rr = random.Random(seed)
+        for k in range(40):   # 上半分の表面に花
+            a, el = rr.random() * math.tau, rr.uniform(-0.15, 1.2)
+            d = Vector((math.cos(a) * math.cos(el) * 1.15, math.sin(a) * math.cos(el), math.sin(el) * 0.85)) * r * 0.98
+            p.append(sphere('f', 0.05, (d.x, d.y, r * 0.75 + d.z), fl, seg=6, rings=4))
+    return join(p, name, smooth_angle=60)
+
+
+def niwaki():
+    """庭木の松（仕立て松: 曲がった幹に丸い葉の玉）。"""
+    bark = mat('SP_PineBark', '#5a4232', rough=0.9)
+    leaf = mat('SP_PineLeaf', '#2e4a2a', rough=0.85)
+    p = []
+    pts = [(0, 0, 0), (0.15, 0.05, 0.8), (-0.1, 0.1, 1.6), (0.25, -0.05, 2.4), (0.1, 0.0, 3.0)]
+    for i in range(len(pts) - 1):
+        a, b = Vector(pts[i]), Vector(pts[i + 1])
+        d = b - a
+        o = cyl('t', 0.13 - i * 0.022, d.length, ((a.x + b.x) / 2, (a.y + b.y) / 2, (a.z + b.z) / 2), bark, verts=7)
+        o.rotation_euler = Vector((0, 0, 1)).rotation_difference(d.normalized()).to_euler()
+        p.append(o)
+    for k, (x, y, z, r) in enumerate(((0.9, 0.2, 1.7, 0.55), (-0.8, 0.3, 2.2, 0.5), (0.35, -0.6, 2.7, 0.45), (0.1, 0.0, 3.25, 0.5), (0.6, 0.5, 2.9, 0.35))):
+        o = bush('pad', 0, 0, 0, r, leaf, 30 + k)   # 原点で平たくしてから枝先へ
+        o.data.transform(Matrix.Diagonal((1.35, 1.35, 0.55, 1.0)))
+        o.data.transform(Matrix.Translation((x, y, z)))
+        p.append(o)
+    return join(p, 'niwaki', smooth_angle=60)
+
+
+def build_stage12():
+    return [weed('weed_a', 3), weed('weed_b', 8, 0.65, dry=True), shrub('shrub_a', 4, 0.6, '#3e6a32'),
+            shrub('shrub_b', 6, 0.5, '#456e36', flower='#e86aa8'), niwaki()]
+
+
 def layout_preview(roots, path, cols=7, gap=2.2, big=()):
     small = [o for o in roots if o.name not in big]
     for i, o in enumerate(small):
@@ -1882,7 +1946,8 @@ if __name__ == '__main__':
     roots9 = build_stage9()
     roots10 = build_stage10()
     roots11 = build_stage11()
-    roots = roots1 + roots2 + roots3 + roots5 + roots6 + roots7 + roots8 + roots9 + roots10 + roots11
+    roots12 = build_stage12()
+    roots = roots1 + roots2 + roots3 + roots5 + roots6 + roots7 + roots8 + roots9 + roots10 + roots11 + roots12
     export_glb(os.path.join(ASSETS, 'glb', 'street.glb'), roots)
     only = argv_after()
     def away():
@@ -1896,6 +1961,11 @@ if __name__ == '__main__':
             continue
         away()
         layout_preview(grp, os.path.join(PREV, 'street%s.png' % tag), **kw)
+    if only and '12' in only:
+        away()
+        for i, o in enumerate(roots12):
+            o.location = (i * 2.4 - 5, 0, 0)
+        preview(os.path.join(PREV, 'street12.png'), target=(0, 0, 1.0), dist=10, elev=14, azim=-70, lens=45, res=(1200, 700), samples=48)
     if only and '11' in only:
         away()
         for i, o in enumerate(roots11):

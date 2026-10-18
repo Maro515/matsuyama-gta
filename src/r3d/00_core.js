@@ -537,19 +537,21 @@ const R3 = { ok: false, state: 'idle' };
     R3.state = 'loading';
     if (!initGL()) { R3.state = 'failed'; readyRes(); return; }
     try {
+      const BT = G3.bootTimes = {}; let tb = performance.now();
+      const lap = k => { const t = performance.now(); BT[k] = Math.round(t - tb); tb = t; };
       setLoad(0.02, 'アセット読み込み中…');
-      await loadAssets();
+      await loadAssets(); lap('assets');
       setLoad(0.8, '松山の街を組み立て中…');
       await new Promise(r => setTimeout(r, 30));
-      G3.world.build();
+      G3.world.build(); lap('world');
       setLoad(0.93, '人と車を配置中…');
       await new Promise(r => setTimeout(r, 30));
-      G3.dyn.build();
+      G3.dyn.build(); lap('dyn');
       updEnv(0.016);
       updCamera(1);
       setLoad(0.97, '描画の下準備中…');
       await new Promise(r => setTimeout(r, 30));
-      prewarm();
+      prewarm(); lap('prewarm');
       DR.max = renderer.getPixelRatio();
       R3.ok = true; R3.state = 'ready';
       document.body.classList.add('webgl');

@@ -60,7 +60,7 @@ G3.street = (function () {
      ベンチの座面・自転車・柵・祠・看板の脚・ガソリンスタンドの柱などが形どおりに当たる。
      布や頭上の物（暖簾・提灯・のぼりの旗・日よけ）はGTAと同じく通り抜けられる */
   const SOFT = new Set(['noren', 'chochin', 'awning_red', 'awning_green', 'awning_blue', 'awning_orange', 'solar_panel', 'tv_antenna', 'tetrapod',
-    'nobori_a', 'nobori_b', 'nobori_c', 'nobori_d', 'nobori_e', 'backstop', 'jib_crane', 'lighthouse_red', 'lighthouse_white', 'fishing_boat']);
+    'nobori_a', 'nobori_b', 'nobori_c', 'nobori_d', 'nobori_e', 'backstop', 'jib_crane', 'lighthouse_red', 'lighthouse_white', 'fishing_boat', 'weed_a', 'weed_b']);
   const baked = {};
   function bakeShape(name) {
     if (name in baked) return baked[name];
@@ -2283,7 +2283,7 @@ G3.street = (function () {
     return G3.lmMat(m);
   }
   // 種類ごとの描画距離（これより遠いチャンクは描かない）。大物は常に描く。
-  const FAR = { guide_gantry: 1e9, tram_stop: 2200, karakuri_clock: 1e9, arcade_gate_okaido: 1600, arcade_gate_gintengai: 1600, arcade_gate_dogo: 1600, container_a: 2400, container_b: 2400, container_c: 2400, container_d: 2400, lighthouse_red: 3000, lighthouse_white: 3000, tetrapod: 650, wcont_a: 700, wcont_b: 700, wcont_c: 700, gs_canopy: 1600, gs_sign: 1600, fishing_boat: 1800,
+  const FAR = { guide_gantry: 1e9, tram_stop: 2200, karakuri_clock: 1e9, arcade_gate_okaido: 1600, arcade_gate_gintengai: 1600, arcade_gate_dogo: 1600, container_a: 2400, container_b: 2400, container_c: 2400, container_d: 2400, weed_a: 260, weed_b: 260, shrub_a: 600, shrub_b: 600, niwaki: 1000, lighthouse_red: 3000, lighthouse_white: 3000, tetrapod: 650, wcont_a: 700, wcont_b: 700, wcont_c: 700, gs_canopy: 1600, gs_sign: 1600, fishing_boat: 1800,
     catenary_pole: 1100, park_toilet: 1000, solar_panel: 900, tv_antenna: 700, bus_shelter: 1000,
     guardrail: 1300, guard_pipe: 1000, hedge_planter: 1200, block_wall: 1000, awning_red: 1100, awning_green: 1100, awning_blue: 1100, awning_orange: 1100,
     sign_speed: 900, sign_stop: 900, curve_mirror: 900, parking_sign: 1200, clock_pole: 1400, map_board: 900 };
@@ -2392,6 +2392,41 @@ G3.street = (function () {
 
 
 
+
+
+  /* ---------- 緑: 家の庭の植え込みと松、路地の端・電柱の根元の雑草 ---------- */
+  function greenery() {
+    const rr = mulberry32(9702);
+    let ns = 0, nw = 0, np = 0;
+    for (const b of buildings) {
+      if (b.noDraw || b.kind !== 'house' || b.sty === 'warehouse') continue;
+      const f = frontOf(b), sf = (f + (b.seed % 2 ? 1 : 3)) % 4;
+      const tryPut = (name, q, m) => {
+        if (inWaterRaw(q.x, q.y) || !clearOfRoad(q.x, q.y, 1) || overlapsOther(b, q.x, q.y, 2) || !free(q.x, q.y, m)) return false;
+        put(name, q.x, q.y, rr() * TAU, 0); take(q.x, q.y, m); return true;
+      };
+      for (const t of [0.1, 0.9]) if (rr() < 0.55 && tryPut(rr() < 0.5 ? 'shrub_a' : 'shrub_b', wallPt(b, f, t, 2.4), 1.6)) ns++;
+      if (rr() < 0.35 && tryPut('niwaki', wallPt(b, sf, 0.35 + rr() * 0.3, 3.2), 2.4)) np++;
+    }
+    // 路地の両端（塀や家の際）に雑草
+    for (const r of ROADS) {
+      if (r.kind !== 'lane') continue;
+      for (const sg of [1, -1]) for (let d = 3; d < r.pl.len - 3; d += 2.5 + rr() * 3) {
+        if (rr() < 0.5) continue;
+        const q = at(r, d, sg * (r.w / 2 - 0.25 + rr() * 0.6));
+        const ri = roadInfo(q.x, q.y);
+        if ((ri && ri.road !== r && ri.d < ri.road.w / 2 + 3) || !free(q.x, q.y, 0.4)) continue;
+        put(rr() < 0.7 ? 'weed_a' : 'weed_b', q.x, q.y, rr() * TAU, 0); nw++;
+      }
+    }
+    // 電柱の根元
+    for (const p of POLES) for (let k = 0; k < 2; k++) {
+      const a = rr() * TAU, x = p.x + Math.cos(a) * 1.4, y = p.y + Math.sin(a) * 1.4;
+      if (inWaterRaw(x, y)) continue;
+      put('weed_a', x, y, rr() * TAU, 0); nw++;
+    }
+    stats.greenery = { shrubs: ns, pines: np, weeds: nw };
+  }
 
   /* ---------- 漁港（堀江・三津浜）: 魚市場・漁協・岸壁の網・浮き玉・トロ箱・ドラム缶 ---------- */
   const HARBORS = [[4482, 300, 170], [1000, 1790, 240]];
@@ -2625,6 +2660,7 @@ G3.street = (function () {
     roadEdges();
     buildingDetails();
     houseYards(scene);
+    greenery();
     nightLights(scene);
     shopLights(scene);
     roofs();

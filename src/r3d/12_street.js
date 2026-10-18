@@ -27,8 +27,35 @@ G3.street = (function () {
     const nx = -Math.sin(p.a), ny = Math.cos(p.a);
     return { x: p.x + nx * o, y: p.y + ny * o, a: p.a };
   }
+  // 当たり判定（Blender の m 単位・モデル座標）: [cx, cy, hx, hy, m] は回転箱、[cx, cy, r, m] は円。m: 1=歩行者 2=車 3=両方
+  const POLE = [[0, 0, 0.06, 3]];
+  const COLL = {
+    guard_pipe: [[1.0, 0, 1.0, 0.06, 3]], guardrail: [[2.0, -0.08, 2.0, 0.12, 3]], bollard: [[0, 0, 0.08, 2]], end_marker: [[0, 0, 0.07, 2]],
+    hedge_planter: [[1.5, 0, 1.5, 0.5, 3]], sign_stop: POLE, sign_speed: POLE, sign_noparking: POLE, sign_pedonly: POLE, sign_crosswalk: POLE,
+    curve_mirror: POLE, hydrant_sign: POLE, tram_stop: [[0, 0, 6.0, 0.8, 2]], post_round: [[0, 0, 0.25, 3]], post_square: [[0, 0, 0.21, 0.28, 3]],
+    phone_booth: [[0, 0, 0.46, 0.46, 3]], bicycle_a: [[0.05, 0, 0.88, 0.2, 3]], bicycle_b: [[0.05, 0, 0.88, 0.2, 3]], bicycle_c: [[0.05, 0, 0.88, 0.2, 3]],
+    bike_rack: [[1.5, 0, 1.8, 0.4, 3]], recycle_box: [[0, 0, 0.21, 0.46, 3]], utility_box: [[0, 0, 0.3, 0.62, 3]], bench: [[-0.08, 0, 0.3, 0.85, 3]],
+    map_board: [[0, 0, 0.12, 1.0, 3]], planter_box: [[0, 0, 0.6, 0.25, 3]], parking_sign: [[0, 0, 0.08, 3], [0.9, 0, 0.2, 0.23, 3]],
+    car_stop: [[0, 0, 0.08, 0.6, 2]], clock_pole: [[0, 0, 0.22, 3]], stand_sign: [[0, 0, 0.25, 3]], iron_fence: [[1.0, 0, 1.0, 0.05, 3]],
+    stone_lantern: [[0, 0, 0.42, 3]], karakuri_clock: [[0, 0, 1.7, 3]], block_wall: [[1.0, 0, 1.0, 0.1, 3]], propane: [[0, 0, 0.2, 0.42, 3]],
+    ac_unit: [[0, 0, 0.17, 0.42, 3]], gomi_station: [[0, 0, 0.5, 0.9, 3]], mooring_bollard: [[0, 0, 0.3, 3]], potted_plant: [[0, 0, 0.22, 3]],
+    container_a: [[0, 0, 3.03, 1.22, 3]], container_b: [[0, 0, 3.03, 1.22, 3]], container_c: [[0, 0, 3.03, 1.22, 3]], container_d: [[0, 0, 3.03, 1.22, 3]],
+    nobori_a: [[0, 0, 0.16, 3]], nobori_b: [[0, 0, 0.16, 3]], nobori_c: [[0, 0, 0.16, 3]], nobori_d: [[0, 0, 0.16, 3]], nobori_e: [[0, 0, 0.16, 3]],
+  };
+  function collide(name, x, y, rot, lift) {
+    const cs = COLL[name];
+    if (!cs || lift > 1.5 || typeof addCollider !== 'function') return;
+    const al = -rot, ca = Math.cos(al), sa = Math.sin(al);
+    for (const c of cs) {
+      // Blender +X → (cos, sin)、+Y → (sin, -cos)
+      const wx = x + U * (c[0] * ca + c[1] * sa), wy = y + U * (c[0] * sa - c[1] * ca);
+      if (c.length === 4) addCollider({ x: wx, y: wy, r: c[2] * U, m: c[3] });
+      else addCollider({ x: wx, y: wy, hx: c[2] * U, hy: Math.max(0.3, c[3] * U), a: al, m: c[4] });
+    }
+  }
   const put = (name, x, y, rot, lift = 0, s = 1) => {
     (lists[name] || (lists[name] = [])).push(G3.M4(x, heightAt(x, y) + lift, y, rot, U * s));
+    collide(name, x, y, rot, lift);
   };
   // 歩道上（縁石の高さ）に置く
   const onWalk = (name, x, y, rot, s) => put(name, x, y, rot, G3.CURB, s);
@@ -195,7 +222,7 @@ G3.street = (function () {
         const back = j.road.w / 2 + G3.SW + 3;
         const d = j.d - s * back;
         if (d < 2 || d > r.pl.len - 2) continue;
-        const p = at(r, d, (rr() < 0.5 ? 1 : -1) * (r.w / 2 + 4));
+        const p = at(r, d, (rr() < 0.5 ? 1 : -1) * (r.w / 2 + 1.2));
         if (!free(p.x, p.y, 3)) continue;
         put('curve_mirror', p.x, p.y, -Math.atan2(pj.y - p.y, pj.x - p.x), G3.CURB);
         take(p.x, p.y, 2);
@@ -322,6 +349,7 @@ G3.street = (function () {
           scene.add(g);
           placed.push([p.x, p.y]);
           take(p.x, p.y, 4);
+          if (typeof addCollider === 'function') addCollider({ x: p.x, y: p.y, r: 0.8 });
           n++;
         }
       }
@@ -338,6 +366,8 @@ G3.street = (function () {
       seen.push([p.x, p.y]);
       for (const [sg, dd] of [[1, 42], [-1, -42]]) {
         const q = plAt(pl, clamp(d + dd, 16, pl.len - 16));
+        const rq = roadInfo(q.x, q.y);
+        if (!rq || rq.road.w < 42 || rq.d > 3) continue;
         const nx = -Math.sin(q.a), ny = Math.cos(q.a);
         const x = q.x + nx * sg * 5.2, y = q.y + ny * sg * 5.2;
         put('tram_stop', x, y, -(q.a + (sg > 0 ? 0 : Math.PI)), 0.04);
@@ -389,7 +419,7 @@ G3.street = (function () {
       if (r.kind === 'arcade') continue;
       // ポスト
       walkSpots(r, 520, 260, rr, (sg, d) => {
-        const p = walkAt(r, sg, d, G3.SW - 1.3);
+        const p = walkAt(r, sg, d, 2.0);
         if (!free(p.x, p.y, 3)) return;
         const z = zoneOf(p.x, p.y);
         const round = z === 'dogo' || z === 'port' || rr() < 0.18;
@@ -406,7 +436,7 @@ G3.street = (function () {
       // 地上機器（中心部・郊外の幹線）
       if (r.kind === 'main' || zoneOf(at(r, r.pl.len / 2, 0).x, at(r, r.pl.len / 2, 0).y) === 'center') {
         walkSpots(r, 340, 200, rr, (sg, d) => {
-          const p = walkAt(r, sg, d, G3.SW - 0.9);
+          const p = walkAt(r, sg, d, 2.1);
           if (!free(p.x, p.y, 3.5)) return;
           onWalk('utility_box', p.x, p.y, roadFace(r, sg, d, p));
           take(p.x, p.y, 2.5);
@@ -438,7 +468,7 @@ G3.street = (function () {
       const c = at(r, d, 0);
       const sg = ((b[0] - c.x) * -Math.sin(c.a) + (b[1] - c.y) * Math.cos(c.a)) > 0 ? 1 : -1;
       for (const dd of [12, -12, 20]) {
-        const p = walkAt(r, sg, d + dd, G3.SW - 1.6);
+        const p = walkAt(r, sg, d + dd, 2.0);
         if (!free(p.x, p.y, 3)) continue;
         onWalk('phone_booth', p.x, p.y, roadFace(r, sg, d + dd, p));
         take(p.x, p.y, 2.5);
@@ -466,7 +496,7 @@ G3.street = (function () {
       const r = ROADS.find(q => q.n === rn);
       if (!r) continue;
       walkSpots(r, 70, 20, rr, (sg, d) => {
-        const p = walkAt(r, sg, d, G3.SW - 1.0);
+        const p = walkAt(r, sg, d, 2.1);
         if (!free(p.x, p.y, 3)) return;
         onWalk('bench', p.x, p.y, roadFace(r, sg, d, p));
         take(p.x, p.y, 2.5);
@@ -499,23 +529,19 @@ G3.street = (function () {
   }
 
   function bikeRack(r, sg, d, racks, rr) {
-    const len = 7.5;   // ラック1基 = 3m
-    for (let i = 0; i < racks; i++) {
-      const dd = d + i * (len + 1);
-      const c = walkAt(r, sg, dd + len / 2, G3.SW - 2.6);
-      if (!free(c.x, c.y, 4.5)) return;
-      const p = walkAt(r, sg, dd, G3.SW - 2.6);
-      const rot = -p.a;
-      onWalk('bike_rack', p.x, p.y, rot);
-      for (let k = 0; k < 6; k++) {
-        if (rr() < 0.3) continue;
-        const q = walkAt(r, sg, dd + k * 1.5, G3.SW - 2.6);
-        const ba = p.a + (sg > 0 ? Math.PI / 2 : -Math.PI / 2) + (rr() - 0.5) * 0.16;
-        onWalk(['bicycle_a', 'bicycle_a', 'bicycle_b', 'bicycle_c'][(rr() * 4) | 0], q.x, q.y, -ba);
-      }
-      take(c.x, c.y, 4.5);
+    const n = racks * 5, step = 1.7, len = n * step;
+    const c = walkAt(r, sg, d + len / 2, 1.9);
+    if (!free(c.x, c.y, len / 2 + 1)) return;
+    for (let k = 0; k < n; k++) {
+      if (rr() < 0.22) continue;
+      const q = walkAt(r, sg, d + k * step, 1.9);
+      // 進行方向に対して斜め45°前後（歩道の家具帯に収まる）
+      const ba = q.a + (sg > 0 ? -1 : 1) * (0.78 + (rr() - 0.5) * 0.12);
+      onWalk(['bicycle_a', 'bicycle_a', 'bicycle_b', 'bicycle_c'][(rr() * 4) | 0], q.x, q.y, -ba);
     }
+    take(c.x, c.y, len / 2 + 1);
   }
+
 
   // コインパーキング（中心部の空き地）
   function parkingLots(scene, rr) {
@@ -635,7 +661,7 @@ G3.street = (function () {
         }
         if (rr() < 0.55) {
           const q = wallPt(b, f, 0.5 + (rr() - 0.5) * 0.5, 4.2);
-          if (clearOfRoad(q.x, q.y, -1) && free(q.x, q.y, 1.5)) { put('stand_sign', q.x, q.y, q.rot, 0); take(q.x, q.y, 1.2); }
+          if (clearOfRoad(q.x, q.y, 1) && free(q.x, q.y, 1.5)) { put('stand_sign', q.x, q.y, q.rot, 0); take(q.x, q.y, 1.2); }
         }
         if (rr() < 0.4) {
           const q = wallPt(b, f, rr() < 0.5 ? 0.12 : 0.88, 1.0);
@@ -644,7 +670,7 @@ G3.street = (function () {
         if (rr() < 0.35 || z === 'dogo') {
           const q = wallPt(b, f, rr() < 0.5 ? 0.06 : 0.94, 3.0);
           const nb = z === 'dogo' ? ['nobori_c', 'nobori_b', 'nobori_a', 'nobori_d'] : ['nobori_e', 'nobori_a', 'nobori_d'];
-          if (clearOfRoad(q.x, q.y, -1)) put(nb[(rr() * nb.length) | 0], q.x, q.y, q.along, 0);
+          if (clearOfRoad(q.x, q.y, 1)) put(nb[(rr() * nb.length) | 0], q.x, q.y, q.along, 0);
         }
       }
       if (b.kind === 'house') {
@@ -729,12 +755,13 @@ G3.street = (function () {
       for (const [sg, cl] of [[1, cuts.cutsL], [-1, cuts.cutsR]]) {
         for (const [a, b] of G3.minusIntervals(r.pl.len, cl)) {
           for (let d = a + 3; d + 5 <= b - 3; d += 5) {
-            const c = walkAt(r, sg, d + 2.5, G3.SW - 0.3);
+            const c = walkAt(r, sg, d + 2.5, 0.8);
             if (hyp(c.x - st[0], c.y - st[1]) > 300) continue;
             if (!free(c.x, c.y, 1)) continue;
             const dd = sg > 0 ? d + 5 : d;
-            const p = walkAt(r, sg, dd, G3.SW - 0.3);
+            const p = walkAt(r, sg, dd, 0.8);
             onWalk('iron_fence', p.x, p.y, -(c.a + (sg > 0 ? Math.PI : 0)));
+            take(c.x, c.y, 1.5);
           }
         }
       }

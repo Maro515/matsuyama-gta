@@ -254,7 +254,8 @@ G3.world = (function () {
         else { g.beginPath(); g.arc(p.x, p.y, p.r + 14, 0, TAU); g.fill(); }
       }
       // 城の堀の土手
-      g.strokeStyle = '#7f9c5c'; g.lineWidth = 60; g.strokeRect(5490, 2585, 620, 660);
+      g.strokeStyle = '#7f9c5c'; g.lineCap = 'butt';
+      for (const mo of MOATS) { g.lineWidth = mo.w + 30; g.beginPath(); mo.pl.pts.forEach((p, i) => i ? g.lineTo(p[0], p[1]) : g.moveTo(p[0], p[1])); g.stroke(); }
       // 梅津寺ビーチ
       g.fillStyle = '#d8c79c'; g.beginPath(); g.ellipse(1160, 940, 40, 110, -.25, 0, TAU); g.fill();
       // 空港（芝＋エプロン）
@@ -342,20 +343,115 @@ G3.world = (function () {
     if (wm2.normalMap) { wm2.normalMap = WM.water.normalMap; }
     const gb = new GB(false);
     for (const rv of RIVERS) ribbon(gb, rv.pl.pts, -rv.w / 2, rv.w / 2, () => 0.05, 30);
-    // 城の堀
-    const moat = [[5490, 2585], [6110, 2585], [6110, 3245], [5490, 3245], [5490, 2585]];
-    ribbon(gb, moat, -13, 13, () => 0.05, 30);
-    // 道後公園の堀（円）
-    const ring = [];
-    for (let i = 0; i <= 48; i++) { const a = i / 48 * TAU; ring.push([7430 + Math.cos(a) * 162, 2585 + Math.sin(a) * 162]); }
-    ribbon(gb, ring, -10, 10, () => 0.05, 30);
+    // 堀（MOATS: 松山城・道後公園）
+    for (const mo of MOATS) ribbon(gb, mo.pl.pts, -mo.w / 2, mo.w / 2, () => 0.05, 30);
     const m = gb.mesh(wm2, false);
     scene.add(m);
-    // 石垣の護岸（堀の内外）
+    // 石垣の護岸: 道路・歩道橋が渡る所は切る
     const sw = new GB(false);
-    wallStrip(sw, moat, -13, 0.05, 3.2);
-    wallStrip(sw, moat, 13, 0.05, 3.2);
+    MOATS.forEach((mo, mi) => {
+      const cuts = [];
+      let c0 = null;
+      for (let d = 0; d <= mo.pl.len + 2; d += 2) {
+        const p = plAt(mo.pl, Math.min(d, mo.pl.len));
+        const ri = roadInfo(p.x, p.y);
+        const wet = !(ri && ri.road.kind !== 'arcade' && ri.d < ri.road.w / 2 + SW + 1);
+        if (!wet && c0 === null) c0 = d;
+        if (wet && c0 !== null) { cuts.push([c0 - 1, d + 1]); c0 = null; }
+      }
+      if (c0 !== null) cuts.push([c0 - 1, mo.pl.len]);
+      for (const f of FOOTBRIDGES) if (f.m === mi) cuts.push([f.d - f.w / 2 - 0.5, f.d + f.w / 2 + 0.5]);
+      for (const [a, b] of minusIntervals(mo.pl.len, cuts)) {
+        const pts = subPts(mo.pl, a, b);
+        if (pts.length < 2) continue;
+        wallStrip(sw, pts, -mo.w / 2, -0.6, 3.2);
+        wallStrip(sw, pts, mo.w / 2, -0.6, 3.2);
+        // 天端（笠石）
+        ribbon(sw, pts, -mo.w / 2 - 1.1, -mo.w / 2, () => 3.2, 6);
+        ribbon(sw, pts, mo.w / 2, mo.w / 2 + 1.1, () => 3.2, 6);
+        wallStrip(sw, pts, -mo.w / 2 - 1.1, 0, 3.2);
+        wallStrip(sw, pts, mo.w / 2 + 1.1, 0, 3.2);
+      }
+    });
     scene.add(sw.mesh(WM.stone, false));
+    buildBridges(scene);
+  }
+  /* ---------- 橋（道路×川・堀、鉄道×川、堀の歩道橋） ---------- */
+  function riverAt(x, y) {
+    for (const rv of RIVERS) {
+      const p = rv.pl.pts;
+      for (let i = 1; i < p.length; i++) if (seg(x, y, p[i - 1][0], p[i - 1][1], p[i][0], p[i][1]).d < rv.w / 2 + 2) return true;
+    }
+    return !!moatAt(x, y);
+  }
+  function buildBridges(scene) {
+    const gbP = new GB(false), gbG = new GB(false), gbD = new GB(false), gbR = new GB(false);
+    const parapet = (pts, off, h, th, gb) => {
+      const o0 = off - th / 2, o1 = off + th / 2;
+      wallStrip(gb, pts, o1, 0.3, h); wallStrip(gb, pts, o0, 0.3, h);   // 両面マテリアル
+      ribbon(gb, pts, o0, o1, () => h, 4);
+    };
+    const collideAlong = (pl, a, b, off, th) => {
+      for (let d = a; d < b; d += 8) {
+        const e = Math.min(b, d + 8), p = plAt(pl, (d + e) / 2);
+        const nx = -Math.sin(p.a), ny = Math.cos(p.a);
+        addCollider({ x: p.x + nx * off, y: p.y + ny * off, hx: (e - d) / 2 + 0.5, hy: th / 2 + 0.2, a: p.a, m: 3 });
+      }
+    };
+    const spans = (pl, test) => {
+      const out = [];
+      let s0 = null;
+      for (let d = 0; d <= pl.len; d += 2) {
+        const p = plAt(pl, d), w = test(p.x, p.y);
+        if (w && s0 === null) s0 = d;
+        if (!w && s0 !== null) { out.push([Math.max(0, s0 - 5), Math.min(pl.len, d + 3)]); s0 = null; }
+      }
+      if (s0 !== null) out.push([Math.max(0, s0 - 5), pl.len]);
+      return out;
+    };
+    let nb = 0;
+    for (const r of ROADS) {
+      if (r.kind === 'arcade') continue;
+      for (const [a, b] of spans(r.pl, riverAt)) {
+        const pts = subPts(r.pl, a, b);
+        if (pts.length < 2) continue;
+        const off = r.w / 2 + SW + 0.6;
+        for (const sg of [1, -1]) {
+          parapet(pts, sg * off, 3.0, 0.9, gbP);
+          collideAlong(r.pl, a, b, sg * off, 0.9);
+        }
+        // 橋桁の側面（水面まで）
+        wallStrip(gbG, pts, off + 0.45, -1.2, 0.3); wallStrip(gbG, pts, -off - 0.45, -1.2, 0.3);
+        nb++;
+      }
+    }
+    // 鉄道橋（ガーダー）
+    for (const rl of RAILS) {
+      for (const [a, b] of spans(rl.pl, (x, y) => RIVERS.some(rv => { const p = rv.pl.pts; for (let i = 1; i < p.length; i++) if (seg(x, y, p[i - 1][0], p[i - 1][1], p[i][0], p[i][1]).d < rv.w / 2 + 2) return true; return false; }))) {
+        const pts = subPts(rl.pl, a, b);
+        if (pts.length < 2) continue;
+        for (const sg of [1, -1]) parapet(pts, sg * 6.2, 2.6, 0.6, gbR);
+      }
+    }
+    // 堀の歩道橋（太鼓橋風の欄干つき）
+    for (const f of FOOTBRIDGES) {
+      const mo = MOATS[f.m], p = plAt(mo.pl, f.d);
+      const nx = -Math.sin(p.a), ny = Math.cos(p.a), tx = Math.cos(p.a), ty = Math.sin(p.a);
+      const L = mo.w / 2 + 4;
+      const A = [p.x - nx * L, p.y - ny * L], B = [p.x + nx * L, p.y + ny * L];
+      const bpl = buildPl([A, B]);
+      const pts = [A, B];
+      ribbon(gbD, pts, -f.w / 2, f.w / 2, () => 0.16, 6);
+      for (const sg of [1, -1]) {
+        parapet(pts, sg * (f.w / 2 + 0.3), 2.6, 0.5, f.m === 1 ? gbR : gbP);
+        collideAlong(bpl, 0, bpl.len, sg * (f.w / 2 + 0.3), 0.5);
+      }
+    }
+    const conc = new THREE.MeshStandardMaterial({ map: G3.tex.concrete || null, color: 0xd6d2c8, roughness: 0.85, side: THREE.DoubleSide });
+    scene.add(gbP.mesh(conc, true), gbG.mesh(conc, false));
+    scene.add(gbD.mesh(new THREE.MeshStandardMaterial({ color: 0x9a8a72, roughness: 0.85 }), true));
+    scene.add(gbR.mesh(new THREE.MeshStandardMaterial({ color: 0xa3402e, roughness: 0.6, side: THREE.DoubleSide }), true));
+    anim.bridges = nb;
   }
   function wallStrip(gb, pts, off, y0, y1) {
     const n = miterNormals(pts);
@@ -704,6 +800,7 @@ G3.world = (function () {
         for (const s of [-1, 1]) {
           const x = p.x + nx * s * (r.w / 2 - 0.6), z = p.y + nz * s * (r.w / 2 - 0.6);
           gbF.box(x - 0.35, 0, z - 0.35, x + 0.35, h0, z + 0.35, C('#8e9296'), 4);
+          addCollider({ x, y: z, r: 0.5 });
         }
         // アーチ（折れ線）
         const N = 8;
@@ -1023,6 +1120,10 @@ G3.world = (function () {
         groups.far.push(M4(x, heightAt(x, z) - 0.5, z, r() * TAU, U * (1.0 + r() * 0.8)));
       }
     }
+    // 堀・水面に落ちた木は除き、幹に当たり判定
+    const _p = new THREE.Vector3();
+    for (const k in groups) groups[k] = groups[k].filter(M => { _p.setFromMatrixPosition(M); return !inWaterRaw(_p.x, _p.z); });
+    for (const k in groups) for (const M of groups[k]) { _p.setFromMatrixPosition(M); addCollider({ x: _p.x, y: _p.z, r: k === 'mikan' ? 0.45 : 0.7 }); }
     for (const k in groups) {
       if (!groups[k].length) continue;
       const node = glbNode('trees', 'tree_' + k) || fallbackTree(k);
@@ -1070,6 +1171,16 @@ G3.world = (function () {
     };
     // 街灯: アームを道路側へ
     const lamps = LAMPS.map(l => { const r = roadAngleAt(l[0], l[1]); return M4(l[0], heightAt(l[0], l[1]) + CURB, l[1], -r.toRoad, U); });
+    // 当たり判定（見た目どおりに止まる）
+    for (const l of LAMPS) addCollider({ x: l[0], y: l[1], r: 0.5 });
+    for (const p of POLES) addCollider({ x: p.x, y: p.y, r: 0.55 });
+    for (const sg of SIGNALS) addCollider({ x: sg.x, y: sg.y, r: 0.4 });
+    for (const v of VENDING) { const r = roadAngleAt(v.x, v.y); addCollider({ x: v.x, y: v.y, hx: 1.05, hy: 1.35, a: r.toRoad }); }
+    for (const b of BUSSTOPS) {
+      const r = roadAngleAt(b[0], b[1]), c = Math.cos(r.toRoad), sn = Math.sin(r.toRoad);
+      addCollider({ x: b[0], y: b[1], r: 0.35 });
+      addCollider({ x: b[0] - c * 1.5, y: b[1] - sn * 1.5, hx: 0.5, hy: 1.8, a: r.toRoad });
+    }
     add('lamp', lamps, () => simpleProp(0x7a7e84, 0.15, 15));
     // 電柱
     const poles = POLES.map(p => { const r = roadAngleAt(p.x, p.y); return M4(p.x, heightAt(p.x, p.y) + CURB, p.y, -r.a, U); });
@@ -1230,7 +1341,8 @@ G3.world = (function () {
         o = fallbackLandmark(l);
         if (!o) continue;
       }
-      const y = l.t === 'castle' ? heightAt(l.x, l.y) : 0;
+      const y = l.t === 'castle' ? CASTLE_DECK.base : 0;
+      if (l.t === 'castle') castleRamp(scene);
       o.position.set(l.x, y, l.y);
       o.rotation.y = mp[1];
       o.traverse(c => {
@@ -1260,7 +1372,58 @@ G3.world = (function () {
         scene.add(new THREE.LineSegments(cg, new THREE.LineBasicMaterial({ color: 0x2a2c30 })));
       }
       scene.add(o);
+      if (node) { bakeOccupancy(o); placedLM.push(l); }
     }
+    // 手書きの矩形（LMS.solid）はモデルと合わないことがあるので、モデルから焼いた当たり判定に置き換える
+    if (typeof bldGrid !== 'undefined') {
+      const drop = new Set();
+      for (const l of placedLM) if (l.solid) drop.add(l.solid.join(','));
+      for (const [k, a] of bldGrid) bldGrid.set(k, a.filter(b => !(b.noDraw && drop.has([b.x0, b.y0, b.x1, b.y1].join(',')))));
+    }
+  }
+  const placedLM = [];
+  // 本丸の正門前の石段（坂）
+  function castleRamp(scene) {
+    const c = CASTLE_DECK, gb = new GB(false);
+    const yTop = c.base + c.top, yBot = c.base;
+    const x0 = c.x - c.rx, x1 = c.x + c.rx;
+    gb.quad([[x0, yTop + 0.03, c.y1 - 1], [x0, yTop + 0.03, c.ry0], [x1, yTop + 0.03, c.ry0], [x1, yTop + 0.03, c.y1 - 1]], [[0, 0], [0, 1], [3, 1], [3, 0]]);
+    gb.quad([[x0, yTop + 0.03, c.ry0], [x0, yBot + 0.03, c.ry1], [x1, yBot + 0.03, c.ry1], [x1, yTop + 0.03, c.ry0]], [[0, 0], [0, 3], [3, 3], [3, 0]]);
+    for (const x of [x0, x1]) {
+      gb.quad([[x, yBot - 1, c.y1], [x, yBot - 1, c.ry0], [x, yTop + 0.03, c.ry0], [x, yTop + 0.03, c.y1]], [[0, 0], [1, 0], [1, 1], [0, 1]]);
+      gb.tri([[x, yBot - 1, c.ry0], [x, yBot - 1, c.ry1], [x, yTop + 0.03, c.ry0]], [[0, 0], [1, 0], [0, 1]]);
+    }
+    const m = gb.mesh(new THREE.MeshStandardMaterial({ map: G3.tex.stonewall || null, color: 0xb9b2a4, roughness: 0.9, side: THREE.DoubleSide }), false);
+    scene.add(m);
+  }
+  // モデルの三角形のうち、地面から 0.4〜1.9m（体の高さ）にある部分を OCC のマスに焼く
+  function bakeOccupancy(o) {
+    if (typeof occAdd !== 'function') return;
+    o.updateMatrixWorld(true);
+    const lo = 0.4 * U, hi = 1.9 * U, step = OCELL * 0.45;
+    const A = new THREE.Vector3(), B = new THREE.Vector3(), Cc = new THREE.Vector3();
+    o.traverse(m => {
+      if (!m.isMesh || !m.geometry || !m.geometry.attributes.position) return;
+      const pos = m.geometry.attributes.position, idx = m.geometry.index;
+      const n = idx ? idx.count : pos.count;
+      for (let t = 0; t < n; t += 3) {
+        const ia = idx ? idx.getX(t) : t, ib = idx ? idx.getX(t + 1) : t + 1, ic = idx ? idx.getX(t + 2) : t + 2;
+        A.fromBufferAttribute(pos, ia).applyMatrix4(m.matrixWorld);
+        B.fromBufferAttribute(pos, ib).applyMatrix4(m.matrixWorld);
+        Cc.fromBufferAttribute(pos, ic).applyMatrix4(m.matrixWorld);
+        const g0 = heightAt(A.x, A.z);
+        const ymin = Math.min(A.y, B.y, Cc.y) - g0, ymax = Math.max(A.y, B.y, Cc.y) - g0;
+        if (ymax < lo || ymin > hi + 6) continue;
+        const L = Math.max(A.distanceTo(B), B.distanceTo(Cc), Cc.distanceTo(A));
+        const k = Math.max(1, Math.ceil(L / step));
+        for (let i = 0; i <= k; i++) for (let j = 0; i + j <= k; j++) {
+          const u = i / k, v = j / k, w = 1 - u - v;
+          const x = A.x * w + B.x * u + Cc.x * v, z = A.z * w + B.z * u + Cc.z * v, y = A.y * w + B.y * u + Cc.y * v;
+          const yr = y - heightAt(x, z);
+          if (yr >= lo && yr <= hi) occAdd(x, z);
+        }
+      }
+    });
   }
   function fallbackLandmark(l) {
     if (!l.solid) return null;

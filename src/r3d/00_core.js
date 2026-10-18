@@ -462,14 +462,25 @@ const R3 = { ok: false, state: 'idle' };
 const HILLS3 = HILLS.map(h => Object.assign({}, h, {
   H: h.castle ? 72 : Math.min(260, Math.max(28, Math.min(h.rx, h.ry) * 0.42)),
 }));
+/* 松山城の本丸: 石垣の上の平らな曲輪（歩ける面）と、正門前の登り坂。モデル(landmarks.py castle)の寸法に合わせる */
+const CASTLE_DECK = (() => {
+  const l = LMS.find(q => q.t === 'castle'), U = 2.5;
+  return { x: l.x, y: l.y, x0: l.x - 71, x1: l.x + 71, y0: l.y + 2.5 - 53.5, y1: l.y + 2.5 + 53.5,
+    top: 1.25 * U, rx: 13, ry0: l.y + 2.5 + 53.5 + 5, ry1: l.y + 2.5 + 53.5 + 22, base: 72 };
+})();
 function hillProfile(h, x, y) {
   const dx = (x - h.x) / h.rx, dy = (y - h.y) / h.ry;
   const r = Math.sqrt(dx * dx + dy * dy);
   if (r >= 1) return 0;
   if (h.castle) {
-    if (r < 0.34) return h.H;
-    const t = (r - 0.34) / 0.66;
-    return h.H * (0.5 + 0.5 * Math.cos(t * Math.PI));
+    let v = h.H;
+    if (r >= 0.34) { const t = (r - 0.34) / 0.66; v = h.H * (0.5 + 0.5 * Math.cos(t * Math.PI)); }
+    // 本丸の周り（石垣の外 20 単位）までは山頂と同じ高さに均す
+    const c = CASTLE_DECK;
+    const ox = Math.max(0, c.x0 - 20 - x, x - c.x1 - 20), oy = Math.max(0, c.y0 - 20 - y, y - c.y1 - 26);
+    const dd = Math.hypot(ox, oy);
+    const flat = dd < 60 ? h.H * (0.5 + 0.5 * Math.cos(dd / 60 * Math.PI)) : 0;
+    return Math.max(v, flat);
   }
   return h.H * Math.pow(0.5 + 0.5 * Math.cos(r * Math.PI), 1.15);
 }
@@ -480,5 +491,8 @@ function heightAt(x, y) {
     const v = hillProfile(h, x, y);
     if (v > m) m = v;
   }
+  const c = CASTLE_DECK;
+  if (x > c.x0 && x < c.x1 && y > c.y0 && y < c.y1) return c.base + c.top;
+  if (Math.abs(x - c.x) < c.rx && y >= c.y1 && y < c.ry1) return y < c.ry0 ? c.base + c.top : Math.max(m, c.base + c.top * (1 - (y - c.ry0) / (c.ry1 - c.ry0)));
   return m;
 }

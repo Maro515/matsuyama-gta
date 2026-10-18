@@ -188,8 +188,12 @@ G3.world = (function () {
   const SIGNS = [['居酒屋', '#b8282a'], ['ラーメン', '#d8a020'], ['カラオケ', '#6a2fa8'], ['薬', '#2a7ad0'], ['歯科', '#2e8a5a'],
     ['うどん', '#e8e0c8'], ['鯛めし', '#1f5aa8'], ['じゃこ天', '#c85a1a'], ['質', '#202020'], ['焼鳥', '#a01818'], ['喫茶', '#5a3a22'], ['不動産', '#2a4a8a'],
     // 道後温泉の界隈だけ（土産物・旅館の品名）
-    ['坊っちゃん団子', '#2e6b3a'], ['みかんジュース', '#e8781a'], ['今治タオル', '#1e4f9a'], ['砥部焼', '#eef0ee', '#1e4f9a'], ['タルト', '#6a3a1e'], ['地ビール', '#1a1a1a', '#e8c860'], ['旅館', '#4a2e1e']];
+    ['坊っちゃん団子', '#2e6b3a'], ['みかんジュース', '#e8781a'], ['今治タオル', '#1e4f9a'], ['砥部焼', '#eef0ee', '#1e4f9a'], ['タルト', '#6a3a1e'], ['地ビール', '#1a1a1a', '#e8c860'], ['旅館', '#4a2e1e'],
+    // 松山の郷土料理（中心街と三津浜）
+    ['鍋焼きうどん', '#f2efe6', '#b02020'], ['三津浜焼き', '#d8542a'], ['松山鮓', '#2a3a6a'], ['鯛そうめん', '#e8e0c8', '#1e4f9a']];
   const SIGN_BASE = 12, SIGN_DOGO = [12, 13, 14, 15, 16, 17, 18, 7, 6, 5];   // 道後の店は土産物の看板
+  const SIGN_MITSU = [20, 20, 6, 7, 19, 5, 0, 10];   // 三津浜: 三津浜焼き・鯛めし・じゃこ天・鍋焼きうどん
+  const SIGN_LOCAL = [19, 6, 7, 21, 22];             // 中心街の郷土料理（店の3割）
   function signAtlas() {
     return canvasTex(64 * SIGNS.length, 256, (g) => {
       SIGNS.forEach(([t, col, ink], i) => {
@@ -1645,7 +1649,10 @@ G3.world = (function () {
       if (b.kind === 'shop' && b.sg) {
         const fs = frontSide(b);
         const cxb = (b.x0 + b.x1) / 2, cyb = (b.y0 + b.y1) / 2;
-        const si = hyp(cxb - 7390, cyb - 2250) < 420 ? SIGN_DOGO[b.seed % SIGN_DOGO.length] : b.seed % SIGN_BASE;
+        const si = hyp(cxb - 7390, cyb - 2250) < 420 ? SIGN_DOGO[b.seed % SIGN_DOGO.length]
+          : hyp(cxb - 1250, cyb - 1750) < 480 ? SIGN_MITSU[b.seed % SIGN_MITSU.length]
+          : (cxb > 5400 && cxb < 6950 && cyb > 2180 && cyb < 3720 && b.seed % 10 < 3) ? SIGN_LOCAL[(b.seed >> 3) % SIGN_LOCAL.length]
+          : b.seed % SIGN_BASE;
         const sh0 = gH + 1, sh1 = Math.min(top - 1, gH + 1 + Math.max(10, (top - gH) * 0.75));
         signs.push({ b, fs, si, sh0, sh1 });
       }
@@ -2073,7 +2080,7 @@ G3.world = (function () {
     '松山三越': ['mitsukoshi', 0], '坂の上の雲ミュージアム': ['sakakumo', 0], '愛媛県美術館': ['artmuseum', 0],
     '伊予銀行本店': ['iyogin', 0], 'フジグラン松山': ['fujigran', 0], '南海放送鉄塔': ['radiotower', 0],
     '松山東高': ['school_a', 0], '市立小学校': ['school_b', 0], '伊佐爾波神社': ['isaniwa', 0], '椿神社': ['tsubaki', 0],
-    '飛鳥乃湯泉': ['asuka', 0], '子規堂': ['shikido', 0], '宝厳寺': ['hogonji', 0], 'ひめぎんホール': ['himegin', 0],
+    '飛鳥乃湯泉': ['asuka', 0], '子規堂': ['shikido', 0], '宝厳寺': ['hogonji', 0], 'ひめぎんホール': ['himegin', 0], '湯神社': ['yujinja', 0], '石崎汽船旧本社': ['ishizaki', 0], '東雲神社': ['shinonome', 0],
   };
   // Blender側のマテリアル命名規約に従い、ゲーム用マテリアルへ差し替える
   const lmCache = {};

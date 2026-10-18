@@ -3083,6 +3083,13 @@ G3.street = (function () {
         const e = ends[0].road ? 1 : 0, q = alleyAt(a, e ? a.pl.len - 1.2 : 1.2);
         if (free(q.x, q.y, 0.6)) { put('small_shrine', q.x, q.y, -(q.a + (e ? Math.PI : 0)), 0); take(q.x, q.y, 1.2); }
       }
+      // 名前のある小道（上人坂など）: 道路側の入口に道標
+      if (a.named) {
+        const e = a.junc.length && a.junc[0].d > 1 ? 1 : 0, q = alleyAt(a, e ? a.pl.len - 2 : 2), sg = 1;
+        const x = q.x + q.nx * sg * (h + 0.9), y = q.y + q.ny * sg * (h + 0.9), g = heightAt(x, y);
+        addBoard({ n: a.n, k: a.k, e: a.e }, null, null, x, y, g + U * 2.3, Math.cos(q.a), Math.sin(q.a), q.a, { w: 0.9 * U, h: 0.4 * U, t: 0.05 * U, pole: true, ground: g }, '道後 散策路', '#4a2e1e');
+        take(x, y, 1.5);
+      }
       // 立ち話の人（飲み屋横丁・石畳）
       if ((a.style === 'yoko' || a.style === 'ishi') && rr() < 0.5) {
         const q = alleyAt(a, a.pl.len * (0.3 + rr() * 0.4)), sg = rr() < 0.5 ? 1 : -1;
@@ -3123,7 +3130,6 @@ G3.street = (function () {
     overpasses(scene);
     stations();
     trailheads();
-    tramBoards(scene, boards, cells);   // 電停と駅の名標をまとめて
     powerLines(scene);
     billboards(scene);
     riverside();
@@ -3141,6 +3147,7 @@ G3.street = (function () {
     exteriors();
     vacantLots(scene);
     alleys(scene);
+    tramBoards(scene, boards, cells);   // 電停・駅・登城道・小道の名標をまとめて1枚に
     nightLights(scene);
     shopLights(scene);
     roofs();

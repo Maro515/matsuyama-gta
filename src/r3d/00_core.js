@@ -598,16 +598,24 @@ function hillProfile(h, x, y) {
 }
 // 石垣の上の境内（伊佐爾波神社）: 上面 top の矩形と、そこへ上がる石段の坂（x 方向に 0→top）
 const DECKS = (() => {
+  const out = [];
   const l = LMS.find(q => q.t === 'isaniwa');
-  if (!l) return [];
-  return [{ x0: l.x - 48.5, x1: l.x + 48.5, y0: l.y - 40.5, y1: l.y + 40.5, top: 6 * 2.5,
-    ramp: { x0: l.x - 76, x1: l.x - 48.5, y0: l.y - 10.3, y1: l.y + 10.3 } }];
+  if (l) out.push({ x0: l.x - 48.5, x1: l.x + 48.5, y0: l.y - 40.5, y1: l.y + 40.5, top: 6 * 2.5,
+    ramp: { x0: l.x - 76, x1: l.x - 48.5, y0: l.y - 10.3, y1: l.y + 10.3, ax: 'x', rev: false } });
+  // 湯神社（冠山の石垣の上 2m、石段は南＝+y へ下る）
+  const y = LMS.find(q => q.t === 'yujinja');
+  if (y) out.push({ x0: y.x - 22, x1: y.x + 22, y0: y.y - 20, y1: y.y + 20, top: 2 * 2.5,
+    ramp: { x0: y.x - 4.75, x1: y.x + 4.75, y0: y.y + 20, y1: y.y + 34, ax: 'y', rev: true } });
+  return out;
 })();
 function heightAt(x, y) {
   for (const d of DECKS) {
     if (x > d.x0 && x < d.x1 && y > d.y0 && y < d.y1) return d.top;
     const r = d.ramp;
-    if (x > r.x0 && x <= r.x1 && y > r.y0 && y < r.y1) return d.top * (x - r.x0) / (r.x1 - r.x0);
+    if (x > r.x0 && x <= r.x1 && y > r.y0 && y < r.y1) {   // 石段の坂（ax の向きに 0→top、rev なら逆）
+      const t = r.ax === 'y' ? (y - r.y0) / (r.y1 - r.y0) : (x - r.x0) / (r.x1 - r.x0);
+      return d.top * (r.rev ? 1 - t : t);
+    }
   }
   let m = typeof yuzukiMound === 'function' ? yuzukiMound(x, y) : 0;   // 道後公園の土塁
   for (const h of HILLS3) {

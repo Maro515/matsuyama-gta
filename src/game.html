@@ -1465,6 +1465,9 @@ const LMS_LATE=[
  {n:'子規堂',x:5935,y:3840,t:'shikido',s:1,solid:[5895,3812,5975,3868]},       // 正宗寺の境内（松山市駅の南）。山門は北の路地
  {n:'宝厳寺',x:7528,y:2040,t:'hogonji',s:1,solid:[7498,2008,7558,2072],ex:[7518,2072,7538,2096]},  // 上人坂の上、一遍上人の生誕地。山門は南
  {n:'ひめぎんホール',x:7090,y:2880,t:'himegin',s:1,solid:[7045,2840,7135,2920]},  // 愛媛県県民文化会館（電停 南町の脇）。入口は西
+ {n:'湯神社',x:7466,y:1997,t:'yujinja',s:1,solid:[7444,1977,7488,2017],ex:[7460,2017,7472,2034]},   // 冠山の頂（本館の北）。石段は南
+ {n:'石崎汽船旧本社',x:1126,y:1798,t:'ishizaki',s:1,solid:[1108,1775,1140,1821]},   // 三津浜港に面した大正13年の洋館（木子七郎）。正面は西
+ {n:'東雲神社',x:6115,y:2945,t:'shinonome',s:1,solid:[6090,2935,6135,2955]},   // 松山城東雲口（ロープウェイ乗り場の脇）。鳥居は東
 ];
 addLandmarks(LMS_LATE);
 LMS.push({n:'椿の湯',x:7331,y:2215,t:'label'});   // 飛鳥乃湯泉の敷地内（3Dは asuka に含む）
@@ -1510,6 +1513,9 @@ function cutBuildings(vert,c,t0,t1,half){ // 縦なら x=c の帯（幅 2*half�
   if(AL==='0')ALLEY_CUTS.length=0;
   if(AL==='0'||AL==='1')ALLEY_DATA.length=0;
   for(const [v,c,t0,t1,w,s] of ALLEY_CUTS){
+    // ランドマークの敷地を横切る切り通しは捨てる（後から足したランドマークと重なった古いデータ）
+    const hw=w/2+1,[ax0,ax1,ay0,ay1]=v?[c-hw,c+hw,t0,t1]:[t0,t1,c-hw,c+hw];
+    if(LMS.some(l=>l.solid&&ax1>l.solid[0]&&ax0<l.solid[2]&&ay1>l.solid[1]&&ay0<l.solid[3]))continue;
     cutBuildings(!!v,c,t0,t1,w/2+0.35);
     ALLEYS.push(mk(v?[[c,t0],[c,t1]]:[[t0,c],[t1,c]],w,s));
   }
@@ -1527,6 +1533,10 @@ function cutBuildings(vert,c,t0,t1,half){ // 縦なら x=c の帯（幅 2*half�
     }
     if(ok)ALLEYS.push(a);
   }
+  // 名前のある実在の小道（道標を立てる）
+  for(const [n,k,e,w,s,pts] of [
+    ['上人坂','じょうにんざか','Jonin-zaka',6,2,[[7528,2097],[7528,2120],[7567,2120]]],   // 宝厳寺の山門へ上る坂（かつての「ネオン坂」）
+  ]){const a=mk(pts,w,s);Object.assign(a,{n,k,e,named:true});ALLEYS.push(a);}
   // 端が道路（歩道）に接していれば、歩行者はそこから道路へ出る
   for(const a of ALLEYS)for(const end of [0,1]){
     const p=a.pts[end?a.pts.length-1:0],ri=roadInfo(p[0],p[1]);
@@ -1817,6 +1827,7 @@ for(const e of ESTATES){
 for(const s of STEPSTONES){const a=Math.atan2(s.by-s.ay,s.bx-s.ax);for(const [x,y] of [[s.ax,s.ay],[s.bx,s.by]])addCollider({x,y,hx:1.2,hy:4,a,m:2});}
 // 伊佐爾波神社の石段の下: 車止め（歩行者は上れる）
 addCollider({x:7594,y:2240,hx:1.5,hy:11,a:0,m:2});
+addCollider({x:7466,y:2035,hx:6,hy:1.2,a:0,m:2});   // 湯神社の石段の下（車は上がれない）
 // 用水路: 水のある区間は縁ごと進入不可（板橋・暗渠の所は通れる）
 for(const cn of CANALS)for(const p of cn.parts){
   if(p[0]!=='w')continue;
@@ -3287,6 +3298,19 @@ function drawLandmark(c,l,tsec,mini){
       box(c,x-17,y-24,x+17,y,0,11,'#8a6542');
       slab(c,x-22,y-28,x+22,y+4,12,'#4a525c');
       break;}
+    case 'yujinja':{   // 湯神社（石垣の高台の上に拝殿）
+      box(c,x-22,y-20,x+22,y+20,0,5,'#9a968c','#8a867c');
+      box(c,x-9,y-7,x+9,y+5,5,13,'#8a6542');
+      slab(c,x-11,y-9,x+11,y+7,14,'#4f8a74');
+      break;}
+    case 'ishizaki':{   // 石崎汽船旧本社（2階建ての洋館・塔）
+      box(c,x-12,y-22,x+12,y+22,0,18,'#ebe2cc','#4a4e54');
+      box(c,x-3,y-3,x+3,y+3,18,25,'#ebe2cc','#4a4e54');
+      break;}
+    case 'shinonome':{   // 東雲神社
+      box(c,x-24,y-8,x-9,y+8,0,9,'#8a6542');
+      slab(c,x-26,y-10,x-7,y+10,10,'#4f8a74');
+      break;}
     case 'himegin':{   // ひめぎんホール（石張りの箱と舞台の塔、西にガラスのホール）
       box(c,x-30,y-32,x+40,y+32,0,30,'#cfc8ba','#b8b0a2');
       box(c,x-42,y-25,x-30,y+25,0,25,'#5a7486','#b8b0a2');
@@ -3671,7 +3695,7 @@ function drawLabels(c,zoom,x0,y0,x1,y1){
   }
 }
 /* ---------- メイン描画 ---------- */
-const LMH={isaniwa:24,tsubaki:16,asuka:30,shikido:12,hogonji:14,himegin:58,depart:44,pref:26,office:30,hospital:36,police:28,onsen:20,retro:13,temple:14,campus:18,station:20,villa:13,rope:11,port:12,bigport:16,mitsukoshi:30,sakakumo:16,artmuseum:14,iyogin:34,fujigran:16,radiotower:10,school:14};
+const LMH={isaniwa:24,tsubaki:16,asuka:30,shikido:12,hogonji:14,himegin:58,yujinja:16,ishizaki:28,shinonome:12,depart:44,pref:26,office:30,hospital:36,police:28,onsen:20,retro:13,temple:14,campus:18,station:20,villa:13,rope:11,port:12,bigport:16,mitsukoshi:30,sakakumo:16,artmuseum:14,iyogin:34,fujigran:16,radiotower:10,school:14};
 let tSec=0;
 function render(){
   if(cw<2||ch<2){resize();if(cw<2||ch<2)return;}

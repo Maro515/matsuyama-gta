@@ -1137,6 +1137,122 @@ def himegin():
     P.append(text3d('name2', '愛媛県県民文化会館', 0.4, (-17.5, -13.0, 0.75), '-X', M['dark'], font=GOTHIC))
     return finish_lm('himegin', P)
 
+
+def torii(P, x, y, w, h, m_post, m_top, axis='y', name='torii'):
+    """鳥居（明神鳥居の簡略形）。axis='y' なら通り抜けが Y 方向（柱は X に並ぶ）。"""
+    for s in (-1, 1):
+        px, py = (x + s * w / 2, y) if axis == 'y' else (x, y + s * w / 2)
+        P.append(cyl(name + '_p', 0.22 * w / 3.4, h, (px, py, h / 2), m_post, verts=12))
+    kz = h + 0.15
+    if axis == 'y':
+        P.append(box(name + '_k', (w + 1.4, 0.45, 0.32), (x, y, kz), m_top))
+        P.append(box(name + '_k2', (w + 1.1, 0.4, 0.22), (x, y, kz - 0.28), m_post))
+        P.append(box(name + '_n', (w + 0.5, 0.26, 0.24), (x, y, h * 0.78), m_post))
+    else:
+        P.append(box(name + '_k', (0.45, w + 1.4, 0.32), (x, y, kz), m_top))
+        P.append(box(name + '_k2', (0.4, w + 1.1, 0.22), (x, y, kz - 0.28), m_post))
+        P.append(box(name + '_n', (0.26, w + 0.5, 0.24), (x, y, h * 0.78), m_post))
+
+
+def yujinja():
+    """湯神社（道後・冠山の頂、道後温泉の守り神）。本館の北の石垣の高台（上面 2m＝ゲーム側 DECKS と合わせる）に拝殿と本殿、
+    南（本館側、-Y）に石段と鳥居。原点＝高台の中心、高台 ±8.8m × ±8m。"""
+    M = L()
+    P = []
+    granite = mat('LM_Granite', '#8d897f', rough=0.85)
+    gravel = mat('LM_Gravel', '#cbc5b6', rough=0.95)
+    leaf = mat('LM_CamphorLeaf', '#355a32', rough=0.8)
+    H = 2.0
+    P.append(batter_box('ishigaki', -8.8, -8.0, 8.8, 8.0, 0, H, 0.35, M['stone']))
+    P.append(box('deck', (17.0, 15.4, 0.05), (0, 0, H + 0.025), gravel))
+    # 石段（南）: Y -8.0 → -13.6 で 2.0m → 0
+    n, y0, y1, w = 9, -13.6, -8.0, 3.2
+    dy, dz = (y1 - y0) / n, H / n
+    for i in range(n):
+        P.append(box('step', (w + 0.6, dy + 0.02, (i + 1) * dz), (0, y0 + dy * (i + 0.5), (i + 1) * dz / 2), granite))
+    torii(P, 0, -14.6, 3.4, 4.2, granite, granite, 'y')
+    # 拝殿（銅板葺きの入母屋）と本殿
+    P.append(box('hplat', (8.0, 5.4, 0.4), (0, -0.6, H + 0.2), granite))
+    P += wall_block('haiden', -3.6, -3.0, 3.6, 1.8, H + 0.4, 3.0, M['wood'], None, 0, win_mat=M['glow'], win_h=1.4, win_w=1.6, gap=2.2, win_z=0.5)
+    P += hip_roof('haidenr', 0, -0.6, 7.6, 5.4, H + 3.4, 2.2, 1.0, M['copper'], upturn=0.5, fascia=M['darkwood'], gables=M['white'])
+    P += wall_block('honden', -2.0, 3.0, 2.0, 6.4, H + 0.6, 2.4, M['wood'], None, 0)
+    P += hip_roof('hondenr', 0, 4.7, 4.4, 3.8, H + 3.0, 1.8, 0.6, M['copper'], upturn=0.45, fascia=M['darkwood'], gables=M['gold'])
+    P.append(box('gaku', (1.6, 0.08, 0.5), (0, -3.06, H + 2.9), M['darkwood']))
+    P.append(text3d('gaku_t', '湯神社', 0.3, (0, -3.12, H + 2.9), '-Y', M['gold'], font=MINCHO))
+    for sx in (-1, 1):   # 石灯籠
+        P.append(box('lbase', (0.7, 0.7, 0.45), (sx * 2.6, -6.2, H + 0.22), granite))
+        P.append(cyl('lpole', 0.16, 1.1, (sx * 2.6, -6.2, H + 1.0), granite, verts=8))
+        P.append(box('lfire', (0.55, 0.55, 0.45), (sx * 2.6, -6.2, H + 1.78), M['glow']))
+        P.append(box('lroof', (0.9, 0.9, 0.22), (sx * 2.6, -6.2, H + 2.1), granite))
+    for (x, y) in ((-6.6, 5.6), (6.4, 5.8), (-6.8, -5.2)):
+        P.append(cyl('trunk', 0.3, 3.6, (x, y, H + 1.8), M['darkwood'], verts=8))
+        P.append(ico('kusu', 2.0, (x, y, H + 4.6), leaf, sub=2, scale=(1.2, 1.2, 0.9)))
+    return finish_lm('yujinja', P)
+
+
+def ishizaki():
+    """石崎汽船 旧本社（三津浜、大正13年＝1924年、設計 木子七郎。国の登録有形文化財）。
+    三津浜港に面した2階建ての洋館。正面は西（-X、港）、中央に車寄せと三角の破風、屋根の上に小さな塔。原点＝建物の中心。"""
+    M = L()
+    P = []
+    wall = mat('LM_IshizakiWall', '#ebe2cc', rough=0.7)
+    trim = mat('LM_IshizakiTrim', '#7a5a3a', rough=0.6)
+    slate = mat('LM_Slate', '#4a4e54', rough=0.6)
+    X0, X1, Y0, Y1 = -5.0, 5.0, -9.0, 9.0
+    P.append(box('base', (10.6, 18.6, 0.5), (0, 0, 0.25), M['conc']))
+    for f in range(2):
+        z0 = 0.5 + f * 3.6
+        P.append(box('wall%d' % f, (X1 - X0, Y1 - Y0, 3.6), (0, 0, z0 + 1.8), wall))
+        P.append(box('band%d' % f, (X1 - X0 + 0.2, Y1 - Y0 + 0.2, 0.22), (0, 0, z0 + 3.5), trim))
+        # 縦長の上げ下げ窓（正面と側面）
+        for k in range(6):
+            y = Y0 + 1.5 + k * 3.0
+            P.append(box('win', (0.08, 1.0, 1.9), (X0 - 0.02, y, z0 + 1.7), M['glass']))
+            P.append(box('winf', (0.1, 1.2, 0.14), (X0 - 0.04, y, z0 + 2.72), trim))
+            P.append(box('win', (0.08, 1.0, 1.9), (X1 + 0.02, y, z0 + 1.7), M['glass']))
+        for x in (-2.8, 0.0, 2.8):
+            for yy in (Y0 - 0.02, Y1 + 0.02):
+                P.append(box('wins', (1.0, 0.08, 1.9), (x, yy, z0 + 1.7), M['glass']))
+    # 寄棟の屋根（スレート）と、正面中央の破風・車寄せ・塔
+    P += hip_roof('roof', 0, 0, X1 - X0 + 0.4, Y1 - Y0 + 0.4, 7.7, 2.6, 0.5, slate, upturn=0.0, thick=0.25, fascia=trim, ridge_ratio=0.7)
+    P.append(box('porch', (2.2, 4.4, 0.3), (X0 - 1.1, 0, 3.6), trim))
+    for y in (-1.9, 1.9):
+        P.append(cyl('col', 0.18, 3.1, (X0 - 1.9, y, 2.05), wall, verts=12))
+    P.append(box('door', (0.1, 1.6, 2.4), (X0 - 0.03, 0, 1.7), M['darkwood']))
+    P.append(box('tower', (2.2, 2.2, 2.4), (0, 0, 9.6), wall))
+    P += hip_roof('troof', 0, 0, 2.6, 2.6, 10.8, 1.6, 0.2, slate, upturn=0.0, thick=0.15, ridge_ratio=0.02)
+    P.append(cyl('flag', 0.04, 2.2, (0, 0, 13.4), M['steel'], verts=6))
+    P.append(box('signbd', (0.1, 6.0, 0.7), (X0 - 0.06, 0, 4.55), trim))
+    P.append(text3d('sign', '石崎汽船', 0.52, (X0 - 0.13, 0, 4.55), '-X', M['white'], font=MINCHO))
+    return finish_lm('ishizaki', P)
+
+
+def shinonome():
+    """東雲神社（松山城の東雲口、ロープウェイ乗り場の脇。境内から城山へ長い石段が続く）。
+    鳥居と石段の登り口、小さな拝殿。原点＝境内の中心、入口（鳥居）は東（+X）。"""
+    M = L()
+    P = []
+    granite = mat('LM_Granite', '#8d897f', rough=0.85)
+    paving = mat('LM_Paving', '#bdb7aa', rough=0.9)
+    P.append(box('sando', (14.0, 2.6, 0.08), (0, 0, 0.04), paving))
+    torii(P, 6.4, 0, 3.0, 4.0, granite, granite, 'x')
+    # 石段（西へ上がる）
+    for i in range(6):
+        P.append(box('step', (0.55, 3.4, 0.18 * (i + 1)), (-1.0 - i * 0.55, 0, 0.09 * (i + 1)), granite))
+    P.append(box('plat', (6.0, 7.0, 1.1), (-6.8, 0, 0.55), granite))
+    P += wall_block('haiden', -8.6, -2.2, -5.0, 2.2, 1.1, 2.6, M['wood'], None, 0, win_mat=M['glow'], win_h=1.2, win_w=1.2, gap=2.0, win_z=0.5)
+    P += hip_roof('haidenr', -6.8, 0, 4.4, 5.2, 3.7, 1.8, 0.8, M['copper'], upturn=0.45, fascia=M['darkwood'], gables=M['white'])
+    P.append(box('gaku', (0.08, 1.4, 0.45), (-4.95, 0, 3.4), M['darkwood']))
+    P.append(text3d('gaku_t', '東雲神社', 0.24, (-4.89, 0, 3.4), '+X', M['gold'], font=MINCHO))
+    for sy in (-1, 1):
+        P.append(box('lbase', (0.7, 0.7, 0.45), (3.6, sy * 2.2, 0.22), granite))
+        P.append(cyl('lpole', 0.16, 1.1, (3.6, sy * 2.2, 1.0), granite, verts=8))
+        P.append(box('lfire', (0.55, 0.55, 0.45), (3.6, sy * 2.2, 1.78), M['glow']))
+        P.append(box('lroof', (0.9, 0.9, 0.22), (3.6, sy * 2.2, 2.1), granite))
+    P.append(box('hyo', (0.5, 0.35, 2.2), (7.4, -2.6, 1.1), granite))   # 社号標
+    P += vtext3d('hyo_t', '東雲神社', 0.32, (7.66, -2.6, 1.8), '+X', M['dark'], depth=0.03, font=MINCHO)
+    return finish_lm('shinonome', P)
+
 def stadium():
     """坊っちゃんスタジアム（すり鉢状のスタンド＋照明塔＋スコアボード）。"""
     M = L()
@@ -1251,7 +1367,7 @@ def build():
              cityhall(), prefoffice(), shiki(), ishiteji(), campus('campus_a', 110, 70), campus('campus_b', 98, 56),
              hospital(), police(), shrine(), stadium(), parktower(), airport(), port('port', 28, 34, '三津浜港'),
              port('ferryterminal', 52, 34, '松山観光港'), ropeway(), mitsukoshi(), sakakumo(), artmuseum(), iyogin(),
-             fujigran(), radiotower(), school('school_a', 62, 26), school('school_b', 62, 22), isaniwa(), tsubaki(), asuka(), shikido(), hogonji(), himegin()]
+             fujigran(), radiotower(), school('school_a', 62, 26), school('school_b', 62, 22), isaniwa(), tsubaki(), asuka(), shikido(), hogonji(), himegin(), yujinja(), ishizaki(), shinonome()]
     return roots
 
 
@@ -1286,6 +1402,11 @@ if __name__ == '__main__':
             if r.name == 'asuka':
                 r.location = (0, 0, 0)
         preview(os.path.join(PREV, 'asuka.png'), target=(0, 0, 4), dist=58, elev=24, azim=-35, lens=45, res=(1400, 800), samples=48)
+    if not only or 'new4' in only:
+        pos = {'yujinja': (0, 0), 'ishizaki': (40, 0), 'shinonome': (75, 0)}
+        for r in roots:
+            r.location = (*pos[r.name], 0) if r.name in pos else (0, 4000, 0)
+        preview(os.path.join(PREV, 'new4.png'), target=(38, 0, 3), dist=78, elev=24, azim=-115, lens=45, res=(1600, 800), samples=48)
     if not only or 'new3' in only:
         pos = {'shikido': (0, 0), 'hogonji': (45, 0), 'himegin': (100, 0)}
         for r in roots:

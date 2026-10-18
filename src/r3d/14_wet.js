@@ -308,5 +308,6 @@ G3.refl = (function () {
     attrV.needsUpdate = true;
     carLights(cam);
   }
-  return { add, paved, build, update, los, stats: () => ({ ns, cand: cand.length, cars: dgeo ? dgeo.instanceCount : 0 }) };
+  return { add, paved, build, update, los, mask: () => UNI.uMask.value, maskK: () => UNI.uMaskK.value,
+    stats: () => ({ ns, cand: cand.length, cars: dgeo ? dgeo.instanceCount : 0 }) };
 })();

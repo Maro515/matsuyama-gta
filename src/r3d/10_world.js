@@ -2392,6 +2392,7 @@ G3.world = (function () {
     if (G3.street) G3.street.update(dt);
     G3.refl.update(dt);
     G3.birds.update(dt);
+    G3.rainfx.update(dt);
     // 風: ふだんはそよ風、雨や曇りの日は強く
     SWAY.uSwayT.value = (SWAY.uSwayT.value + dt) % 1000;
     SWAY.uWind.value.z += ((0.35 + 0.25 * S.cloudI + 0.9 * S.rainI) - SWAY.uWind.value.z) * Math.min(1, dt * 0.3);
@@ -2467,6 +2468,7 @@ G3.world = (function () {
     if (G3.street) G3.street.build(scene); lapw('street');
     G3.refl.build(scene); lapw('refl');
     G3.birds.build(scene); lapw('birds');
+    G3.rainfx.build(scene); lapw('rainfx');
   }
   return { build, update, updEnv, WM, anim, canvasTex };
 })();

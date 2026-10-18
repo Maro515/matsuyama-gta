@@ -1276,6 +1276,236 @@ def build_stage5():
 
 
 
+# ======================================================================
+# 第6段: コンビニ・送電鉄塔・歩道橋・郊外駅ホーム・野立て看板・河川敷・港のクレーン・小さな神社・農機具小屋・タクシー乗り場
+# ======================================================================
+def konbini():
+    """コンビニ（18×12m・平屋）。正面(ガラス面)+X。"""
+    m = M()
+    wall = mat('SP_KonbiniWall', '#eef0ee', rough=0.6)
+    org = mat('SP_KonbiniOrange', '#f07a1a', rough=0.4)
+    grn = mat('SP_KonbiniGreen', '#2f9a4a', rough=0.4)
+    glass = mat('NightGlow_LightGlass', '#4a5c66', rough=0.08, spec=0.9, emit='#fff6e0', estr=0.0)
+    p = [box('body', (12.0, 18.0, 4.2), (0, 0, 2.1), wall), box('glass', (0.06, 13.0, 2.4), (6.02, -1.5, 1.4), glass),
+         box('door', (0.08, 2.0, 2.4), (6.03, 6.5, 1.3), m['dark']), box('roofedge', (12.3, 18.3, 0.3), (0, 0, 4.35), wall)]
+    for z, mm in ((3.15, grn), (3.45, m['white']), (3.75, org)):
+        p.append(box('band', (12.06, 18.06, 0.3), (0, 0, z), mm))
+    for f, x in (('+X', 6.06), ('-X', -6.06)):
+        p.append(text3d('t', 'MIKAN MART', 0.42, (x, 0, 3.45), f, org))
+    for k in range(3):
+        p.append(box('ac', (1.0, 1.8, 1.0), (-3 + k * 2.6, -6, 5.0), m['white']))
+    for k in range(7):
+        p.append(box('mull', (0.08, 0.08, 2.4), (6.06, -8.0 + k * 2.16, 1.4), m['grey']))
+    p.append(box('post', (0.1, 13.2, 0.1), (6.06, -1.5, 2.6), m['grey']))
+    p.append(box('trash', (0.5, 2.0, 1.0), (6.3, 8.0, 0.5), m['grey']))
+    return join(p, 'konbini', smooth_angle=30)
+
+
+def konbini_sign():
+    """コンビニの看板塔（夜は点灯）。"""
+    m = M()
+    lit = mat('NightGlow_Light', '#f2f2ec', emit='#fff6e0', estr=0.0)
+    org = mat('SP_KonbiniOrange', '#f07a1a', rough=0.4)
+    p = [box('pole', (0.35, 0.35, 5.5), (0, 0, 2.75), m['grey']), box('box', (0.6, 2.2, 2.0), (0, 0, 6.3), lit)]
+    for f, x in (('+X', 0.31), ('-X', -0.31)):
+        p.append(box('o', (0.02, 2.2, 0.5), (x, 0, 6.9), org))
+        p.append(text3d('t', 'MIKAN', 0.4, (x * 1.03, 0, 6.1), f, org))
+        p.append(text3d('t2', '24h', 0.28, (x * 1.03, 0, 5.6), f, m['dark']))
+    return join(p, 'konbini_sign', smooth_angle=30)
+
+
+def pylon():
+    """送電鉄塔（高さ40m、腕は±Y）。"""
+    st = mat('SP_Pylon', '#b8bcbe', metal=0.6, rough=0.45)
+    p = []
+    H = 40.0
+    def leg(x0, y0, x1, y1, z0, z1, r=0.12):
+        a, b = Vector((x0, y0, z0)), Vector((x1, y1, z1))
+        d = b - a
+        o = cyl('l', r, d.length, (0, 0, 0), st, verts=4, cap=False)
+        o.rotation_euler = d.to_track_quat('Z', 'Y').to_euler()
+        o.location = (a + b) / 2
+        return o
+    w = lambda z: 4.0 * (1 - z / H) + 0.8 * (z / H)
+    for sx in (-1, 1):
+        for sy in (-1, 1):
+            p.append(leg(sx * w(0), sy * w(0), sx * w(H), sy * w(H), 0, H, 0.18))
+    lv = [0, 6, 12, 18, 24, 30, 36, 40]
+    for z0, z1 in zip(lv, lv[1:]):
+        for (ax, ay, bx, by) in ((1, 1, 1, -1), (-1, 1, -1, -1), (1, 1, -1, 1), (1, -1, -1, -1)):
+            p.append(leg(ax * w(z0), ay * w(z0), bx * w(z1), by * w(z1), z0, z1, 0.06))
+            p.append(leg(bx * w(z0), by * w(z0), ax * w(z1), ay * w(z1), z0, z1, 0.06))
+    for z, L in ((26, 6.5), (32, 6.0), (38, 5.0)):
+        for s in (-1, 1):
+            p.append(leg(0, s * w(z), 0, s * L, z, z, 0.12))
+            p.append(leg(0, s * w(z - 2), 0, s * L, z - 2, z, 0.06))
+            p.append(cyl('ins', 0.12, 1.4, (0, s * (L - 0.2), z - 0.7), mat('SP_Insul', '#7a3a2a', rough=0.3), verts=6))
+    return join(p, 'pylon', smooth_angle=30)
+
+
+def ob_stair():
+    """歩道橋の階段（幅2m、長さ10m、高さ5.2m）。+X へ上り、x=10 で踊り場。"""
+    st = mat('SP_OBBlue', '#3a6a9a', metal=0.4, rough=0.45)
+    m = M()
+    p = []
+    n = 26
+    for i in range(n):
+        x = 0.2 + i * 0.36
+        p.append(box('st', (0.36, 2.0, 0.08), (x, 0, 0.2 * (i + 1)), m['grey']))
+    for s in (-1, 1):
+        p.append(prism('stringer', [(0, 0), (9.6, 5.2), (9.6, 5.6), (0, 0.4)], s * 1.0 - 0.06, s * 1.0 + 0.06, st, axis='Y'))
+        p.append(prism('rail', [(0, 1.0), (9.6, 6.2), (9.6, 6.3), (0, 1.1)], s * 1.05 - 0.03, s * 1.05 + 0.03, st, axis='Y'))
+    p.append(box('land', (2.4, 2.4, 0.3), (10.8, 0, 5.05), st))
+    for x in (6.0, 11.6):
+        for s in (-1, 1):
+            p.append(box('col', (0.25, 0.25, 5.2 if x > 10 else 3.3), (x, s * 0.9, (5.2 if x > 10 else 3.3) / 2), st))
+    return join(p, 'ob_stair', smooth_angle=30)
+
+
+def platform():
+    """郊外駅のホーム（30m×3m、高さ0.9m）と上屋・駅名標。線路は +Y 側。"""
+    m = M()
+    conc = mat('SP_Conc', '#b4b1a8', rough=0.9)
+    tact = mat('SP_Tactile', '#e8c22a', rough=0.6)
+    roof = mat('SP_Roof', '#d9dcdc', metal=0.3, rough=0.4)
+    p = [box('deck', (30, 3.0, 0.9), (0, 0, 0.45), conc), box('edge', (30, 0.3, 0.02), (0, 1.25, 0.91), tact),
+         box('wl', (30, 0.08, 0.02), (0, 0.9, 0.91), m['white'])]
+    for x in (-6, 0, 6):
+        p.append(box('post', (0.15, 0.15, 3.0), (x, -0.8, 2.4), m['steel']))
+    p.append(box('roof', (15, 3.2, 0.12), (0, 0, 3.95), roof))
+    p.append(box('bench', (2.0, 0.4, 0.05), (-3, -0.9, 1.35), mat('SP_BenchWood', '#8a6038', rough=0.7)))
+    for x in (8.0,):
+        p.append(box('np', (0.08, 0.08, 2.2), (x - 0.9, -0.9, 2.0), m['steel']))
+        p.append(box('np2', (0.08, 0.08, 2.2), (x + 0.9, -0.9, 2.0), m['steel']))
+        p.append(box('nb', (2.0, 0.05, 0.6), (x, -0.9, 2.9), m['signw']))
+        p.append(box('nb2', (2.0, 0.055, 0.12), (x, -0.9, 3.12), mat('SP_TramGreen', '#2e6b4a', rough=0.45)))
+        for f, y in (('-Y', -0.93), ('+Y', -0.87)):
+            p.append(text3d('t', 'のりば', 0.22, (x, y, 2.85), f, m['dark']))
+    for k in range(15):
+        p.append(box('fence', (0.05, 0.05, 1.1), (-14 + k * 2, -1.45, 1.45), m['galv']))
+    p.append(box('fr', (30, 0.05, 0.05), (0, -1.45, 1.95), m['galv']))
+    for s in (-1, 1):
+        p.append(prism('ramp', [(0, 0), (3.0, 0), (0, 0.9)], -1.5, 1.5, conc, axis='Y') if False else box('rmp', (0.01, 0.01, 0.01), (0, 0, 0), conc))
+    return join(p, 'platform', smooth_angle=30)
+
+
+def billboard():
+    """野立て看板（10×4m、高さ8m）。看板面はゲーム側で広告アトラスを貼る（ここは骨組みと裏面）。正面+X。"""
+    m = M()
+    p = []
+    for y in (-3.5, 3.5):
+        p.append(box('pole', (0.4, 0.4, 8.0), (-0.3, y, 4.0), m['grey']))
+    p.append(box('back', (0.2, 10.2, 4.2), (-0.12, 0, 6.0), m['grey']))
+    for z in (4.2, 7.8):
+        p.append(box('light', (0.8, 0.12, 0.12), (0.4, 0, z), m['dark']))
+    p.append(box('walk', (0.8, 10.0, 0.08), (0.3, 0, 3.8), m['galv']))
+    return join(p, 'billboard', smooth_angle=30)
+
+
+def net_grid(name, w, h, cx, cy, z0, ang, mm, step=0.4):
+    """縦横の細い棒で作る網（YZ面、中心 (cx,cy)、Z軸回りに ang 回転）。"""
+    p = []
+    ca, sa = math.cos(ang), math.sin(ang)
+    for k in range(int(w / step) + 1):
+        y = -w / 2 + k * step
+        p.append(box(name, (0.015, 0.015, h), (cx - sa * y, cy + ca * y, z0 + h / 2), mm, rot=('Z', ang)))
+    for k in range(int(h / step) + 1):
+        p.append(box(name, (0.015, w, 0.015), (cx, cy, z0 + k * step), mm, rot=('Z', ang)))
+    return p
+
+
+def backstop():
+    """河川敷の野球場のバックネット。ホーム側(+X)。"""
+    m = M()
+    netm = mat('SP_Net', '#3a4a3a', rough=0.8)
+    p = net_grid('net', 12.0, 6.0, 0, 0, 0, 0, netm, 0.5)
+    for y in (-6, -2, 2, 6):
+        p.append(cyl('post', 0.08, 6.0, (0, y, 3.0), m['galv'], verts=8))
+    for s in (-1, 1):
+        p += net_grid('wing', 6.0, 3.0, 2.3, s * 8.2, 0, s * 0.7, netm, 0.5)
+    p.append(box('bench', (0.4, 3.0, 0.45), (3.0, -9, 0.22), mat('SP_BenchWood', '#8a6038', rough=0.7)))
+    return join(p, 'backstop', smooth_angle=30)
+
+
+def soccer_goal():
+    m = M()
+    p = [cyl('bar', 0.06, 7.3, (0, 0, 2.44), m['white'], verts=8, axis='Y')]
+    for y in (-3.66, 3.66):
+        p.append(cyl('post', 0.06, 2.44, (0, y, 1.22), m['white'], verts=8))
+        p.append(cyl('back', 0.03, 2.0, (-1.0, y, 1.0), m['white'], verts=6))
+    net = box('net', (2.0, 7.3, 2.44), (-1.0, 0, 1.22), mat('SP_NetW', '#e8e8e8', rough=0.8))
+    add_mod(net, 'WIREFRAME', thickness=0.015, use_replace=True)
+    p.append(net)
+    return join(p, 'soccer_goal', smooth_angle=30)
+
+
+def jib_crane():
+    """港の旋回式クレーン（高さ約22m）。"""
+    yel = mat('SP_CraneY', '#e8b020', rough=0.45)
+    red = mat('SP_CraneR', '#c8342a', rough=0.45)
+    m = M()
+    p = [box('base', (6, 6, 1.5), (0, 0, 0.75), m['conc']), cyl('tower', 1.2, 14, (0, 0, 8.5), yel, verts=12),
+         box('cab', (3.5, 3.0, 3.0), (0.5, 0, 16.5), yel), box('win', (0.05, 2.4, 1.2), (2.27, 0, 17.0), m['dark'])]
+    boom = box('boom', (24, 1.0, 1.0), (12, 0, 19), red)
+    boom.rotation_euler = (0, math.radians(-14), 0)
+    p.append(boom)
+    p.append(box('cw', (3, 2.5, 2.0), (-2.5, 0, 17.5), m['grey']))
+    p.append(cyl('rope', 0.04, 9, (23.2, 0, 20.0), m['dark'], verts=4))
+    p.append(box('hook', (0.6, 0.6, 0.8), (23.2, 0, 15.2), m['black']))
+    return join(p, 'jib_crane', smooth_angle=30)
+
+
+def small_shrine():
+    """町の小さな神社（鳥居＋祠＋石段）。参道は +X 方向（鳥居が +X 側）。"""
+    m = M()
+    ver = mat('LM_Vermilion', '#c8402a', rough=0.5)
+    blk = mat('LM_BlackWood', '#26231f', rough=0.7)
+    wood = mat('SP_ShrineWood', '#8a6a48', rough=0.7)
+    kaw = mat('SP_Kawara', '#4a5056', rough=0.5, metal=0.2)
+    p = []
+    tx = 4.5
+    for y in (-1.3, 1.3):
+        p.append(cyl('hashira', 0.16, 3.4, (tx, y, 1.7), ver, verts=12))
+    p.append(box('kasagi', (0.4, 3.8, 0.25), (tx, 0, 3.5), blk))
+    p.append(box('shimaki', (0.3, 3.4, 0.2), (tx, 0, 3.25), ver))
+    p.append(box('nuki', (0.2, 3.0, 0.18), (tx, 0, 2.7), ver))
+    p.append(box('base', (2.2, 2.2, 0.5), (-1.5, 0, 0.25), m['granite']))
+    p.append(box('hokora', (1.2, 1.1, 1.2), (-1.5, 0, 1.1), wood))
+    p.append(prism('roof', [(-0.9, 1.7), (0.9, 1.7), (0, 2.3)], -2.3, -0.7, kaw, axis='X') if False else
+             prism('roof', [(-0.85, 1.65), (0.85, 1.65), (0, 2.25)], -2.35, -0.65, kaw, axis='X'))
+    p.append(box('rope', (0.1, 1.2, 0.08), (-0.85, 0, 1.6), mat('SP_Rope', '#d8c890', rough=0.8)))
+    for k in range(4):
+        p.append(box('path', (0.9, 1.2, 0.06), (0.5 + k * 1.0, 0, 0.03), m['granite']))
+    return join(p, 'small_shrine', smooth_angle=30)
+
+
+def farm_hut():
+    """農機具小屋（波板トタン、4×3m）。入口+X。"""
+    m = M()
+    rust = mat('SP_Tin', '#8a8f8a', metal=0.5, rough=0.6)
+    roof = mat('SP_TinRoof', '#7a4a3a', metal=0.4, rough=0.6)
+    p = [box('body', (3.0, 4.0, 2.4), (0, 0, 1.2), rust), box('door', (0.04, 2.2, 2.0), (1.52, 0, 1.0), m['dark'])]
+    r = box('roof', (3.6, 4.4, 0.08), (0, 0, 2.6), roof)
+    r.rotation_euler = (0, math.radians(8), 0)
+    p.append(r)
+    p.append(box('drum', (0.6, 0.6, 0.9), (1.9, 1.6, 0.45), mat('SP_Drum', '#2a5a9a', rough=0.5)))
+    return join(p, 'farm_hut', smooth_angle=30)
+
+
+def taxi_sign():
+    m = M()
+    p = sign_pole(2.6, m) + [box('b', (0.02, 0.6, 0.4), (0.05, 0, 2.3), m['yellow'])]
+    for f, x in (('+X', 0.062), ('-X', 0.038)):
+        p.append(text3d('t', 'タクシー', 0.11, (x, 0, 2.36), f, m['black']))
+        p.append(text3d('t2', 'のりば', 0.1, (x, 0, 2.2), f, m['black']))
+    return join(p, 'taxi_sign', smooth_angle=30)
+
+
+def build_stage6():
+    return [konbini(), konbini_sign(), pylon(), ob_stair(), platform(), billboard(), backstop(), soccer_goal(), jib_crane(),
+            small_shrine(), farm_hut(), taxi_sign()]
+
+
 def layout_preview(roots, path, cols=7, gap=2.2, big=()):
     small = [o for o in roots if o.name not in big]
     for i, o in enumerate(small):
@@ -1295,7 +1525,8 @@ if __name__ == '__main__':
     roots2 = build_stage2()
     roots3 = build_stage3()
     roots5 = build_stage5()
-    roots = roots1 + roots2 + roots3 + roots5
+    roots6 = build_stage6()
+    roots = roots1 + roots2 + roots3 + roots5 + roots6
     export_glb(os.path.join(ASSETS, 'glb', 'street.glb'), roots)
     only = argv_after()
     def away():

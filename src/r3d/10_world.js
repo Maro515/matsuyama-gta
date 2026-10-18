@@ -204,6 +204,7 @@ G3.world = (function () {
   }
   const ADS = [['伊予柑ソーダ', '#ff8a1a', '#fff'], ['坊っちゃん不動産', '#1e4f9a', '#fff'], ['マドンナ生命', '#d43a6a', '#fff'],
     ['道後ビール', '#2a2a2a', '#f2c84a'], ['しまなみ自動車', '#127a6a', '#fff'], ['ぬくい湯温泉', '#b0281e', '#fff']];
+  G3.adCount = ADS.length;
   function adAtlas() {
     return canvasTex(512, 128 * ADS.length, (g) => {
       ADS.forEach(([t, bg, fg], i) => {
@@ -1387,7 +1388,11 @@ G3.world = (function () {
         scene.add(new THREE.LineSegments(cg, new THREE.LineBasicMaterial({ color: 0x2a2c30 })));
       }
       scene.add(o);
-      if (node) { bakeOccupancy(o); placedLM.push(l); }
+      if (node) {
+        bakeOccupancy(o); placedLM.push(l);
+        const bb = new THREE.Box3().setFromObject(o);
+        (G3.lmBoxes || (G3.lmBoxes = [])).push([bb.min.x, bb.min.z, bb.max.x, bb.max.z]);
+      }
     }
     // 手書きの矩形（LMS.solid）はモデルと合わないことがあるので、モデルから焼いた当たり判定に置き換える
     if (typeof bldGrid !== 'undefined') {

@@ -45,6 +45,8 @@ G3.street = (function () {
     park_lamp: [[0, 0, 0.08, 3]], fountain: [[0, 0, 0.3, 3]], gs_pump: [[0, 0, 1.8, 0.5, 3]], gs_sign: [[0, 0, 0.25, 0.25, 3]],
     gs_office: [[0, 0, 2.5, 3.5, 3]], traffic_cone: [[0, 0, 0.18, 3]], barricade: [[0, 0, 0.9, 0.2, 3]], koji_sign: [[0, 0, 0.2, 0.36, 3]],
     bus_shelter: [[-0.7, 0, 0.05, 2.0, 3], [-0.15, -1.95, 0.6, 0.05, 3], [-0.15, 1.95, 0.6, 0.05, 3]],
+    konbini: [[0, 0, 6.0, 9.0, 3]], konbini_sign: [[0, 0, 0.2, 0.2, 3]], farm_hut: [[0, 0, 1.5, 2.0, 3]], taxi_sign: [[0, 0, 0.06, 3]],
+    soccer_goal: [[0, -3.66, 0.08, 3], [0, 3.66, 0.08, 3]],
     nobori_a: [[0, 0, 0.16, 3]], nobori_b: [[0, 0, 0.16, 3]], nobori_c: [[0, 0, 0.16, 3]], nobori_d: [[0, 0, 0.16, 3]], nobori_e: [[0, 0, 0.16, 3]],
   };
   function collide(name, x, y, rot, lift) {
@@ -82,16 +84,25 @@ G3.street = (function () {
     const k = okey(x, y);
     (occ.get(k) || occ.set(k, []).get(k)).push([x, y, r]);
   }
+  const KEYPTS = [];
   function seedOcc() {
+    KEYPTS.length = 0;
+    for (const m of MIKANS) KEYPTS.push([m.x, m.y]);
+    for (const g of GIGSPOTS) KEYPTS.push([g[1], g[2]]);
+    for (const m of MISSIONS) { KEYPTS.push(m.start); if (m.goal) KEYPTS.push(m.goal); for (const c of m.cps || []) KEYPTS.push(c); }
     for (const l of LAMPS) take(l[0], l[1], 3);
     for (const p of POLES) take(p.x, p.y, 3);
     for (const v of VENDING) take(v.x, v.y, 4);
     for (const b of BUSSTOPS) take(b[0], b[1], 8);
     for (const s of SIGNALS) take(s.x, s.y, 3);
+    // ゲーム上の大事な地点（みかん・ギグ・ミッション）は空けておく
+    for (const k of KEYPTS) take(k[0], k[1], 7);
   }
+  // 建物（bldGrid）と、3D時に bldGrid から外したランドマークの敷地（LMS.solid）の両方を見る
   const nearBld = (x, y, m) => {
     gridNear(bldGrid, x, y, _ov);
     for (const b of _ov) if (x > b.x0 - m && x < b.x1 + m && y > b.y0 - m && y < b.y1 + m) return true;
+    for (const l of LMS) { const s2 = l.solid; if (s2 && x > s2[0] - m && x < s2[2] + m && y > s2[1] - m && y < s2[3] + m) return true; }
     return false;
   };
 
@@ -573,6 +584,8 @@ G3.street = (function () {
         const rq = roadInfo(q.x, q.y);
         if (rq && rq.road !== r && rq.d < rq.road.w / 2 + G3.SW + 2) { bad = true; break; }
       }
+      if (!bad && KEYPTS.some(k => corners.some(q => hyp(k[0] - q.x, k[1] - q.y) < W * 0.6 + 8))) bad = true;
+      if (!bad && parked.some(c => corners.some(q => hyp(c.x - q.x, c.y - q.y) < W * 0.6 + 6))) bad = true;
       if (bad) continue;
       const Y = (q) => heightAt(q.x, q.y) + 0.07;
       const P = corners;
@@ -1146,7 +1159,7 @@ G3.street = (function () {
         if (inWaterRaw(X, Y) || hillAt(X, Y) || inPark(X, Y, 4) || nearBld(X, Y, 3) || !free(X, Y, 6) || propHit(X, Y, 3, false) || nearLM(X, Y, 90) ||
           (rq && rq.d < rq.road.w / 2 + G3.SW + 4) || railDist(X, Y) < 20) { ok = false; break; }
       }
-      if (!ok) continue;
+      if (!ok || KEYPTS.some(k => hyp(k[0] - x, k[1] - y) < 50)) continue;
       const ang = Math.atan2(ri.y - y, ri.x - x);
       const ca = Math.cos(ang), sa = Math.sin(ang), Rr = 30;
       const P = [[-Rr, -Rr], [Rr, -Rr], [Rr, Rr], [-Rr, Rr]].map(([u, v]) => [x + ca * u - sa * v, heightAt(x, y) + 0.06, y + sa * u + ca * v]);
@@ -1209,15 +1222,8 @@ G3.street = (function () {
       if (r.junc.some(j => Math.abs(j.d - d - 25) < j.road.w / 2 + 40)) continue;
       const sg = rr() < 0.5 ? 1 : -1;
       const W = 50, D = 38, o0 = r.w / 2 + G3.SW + 0.5;
-      const pts = [];
-      for (const u of [0, 0.5, 1]) for (const vv of [0, 0.5, 1]) pts.push(at(r, d + u * W, sg * (o0 + vv * D)));
-      let ok = true;
-      for (const q of pts) {
-        const rq = roadInfo(q.x, q.y);
-        if (inWaterRaw(q.x, q.y) || hillAt(q.x, q.y) || inPark(q.x, q.y, 4) || nearBld(q.x, q.y, 3) || !free(q.x, q.y, 6) || railDist(q.x, q.y) < 18 ||
-          nearLM(q.x, q.y, 110) || propHit(q.x, q.y, 3, true) || (rq && rq.road !== r && rq.d < rq.road.w / 2 + G3.SW + 2)) { ok = false; break; }
-      }
-      if (!ok) continue;
+      const pts = lotFree(r, d, sg, W, D, o0, { lm: 110 });
+      if (!pts) continue;
       const Lc = (u, vv) => at(r, d + u, sg * (o0 + vv));
       const V = q => [q.x, heightAt(q.x, q.y) + 0.07, q.y];
       const P = [Lc(0, 0), Lc(W, 0), Lc(W, D), Lc(0, D)].map(V);
@@ -1291,6 +1297,340 @@ G3.street = (function () {
     }
   }
 
+  /* ---------- 第6段: 共通（空き地探し・地面の四角形） ---------- */
+  // 上向き法線になるよう頂点順をそろえて四角形を足す
+  function flatQuad(gb, P, uv) {
+    const nyv = (P[1][2] - P[0][2]) * (P[3][0] - P[0][0]) - (P[1][0] - P[0][0]) * (P[3][2] - P[0][2]);
+    uv = uv || [[0, 0], [1, 0], [1, 1], [0, 1]];
+    if (nyv > 0) gb.quad(P, uv); else gb.quad([P[0], P[3], P[2], P[1]], [uv[0], uv[3], uv[2], uv[1]]);
+  }
+  // 道路沿いの敷地（W×D）が空いているか。pts を返す
+  function lotFree(r, d, sg, W, D, o0, opt = {}) {
+    const pts = [];
+    for (const u of [0, 0.5, 1]) for (const vv of [0, 0.5, 1]) pts.push(at(r, d + u * W, sg * (o0 + vv * D)));
+    for (const q of pts) {
+      const rq = roadInfo(q.x, q.y);
+      if (inWaterRaw(q.x, q.y) || hillAt(q.x, q.y) || inPark(q.x, q.y, 4) || nearBld(q.x, q.y, 3) || !free(q.x, q.y, 6) || railDist(q.x, q.y) < 18 ||
+        nearLM(q.x, q.y, opt.lm || 60) || propHit(q.x, q.y, 3, true) || (rq && rq.road !== r && rq.d < rq.road.w / 2 + G3.SW + 2)) return null;
+    }
+    if (FIELDS.some(f => pts.some(q => q.x > f.x - 4 && q.x < f.x + f.w + 4 && q.y > f.y - 4 && q.y < f.y + f.h + 4))) return null;
+    if (parked.some(c => pts.some(q => hyp(c.x - q.x, c.y - q.y) < W * 0.5 + 6))) return null;
+    const xs = pts.map(q => q.x), ys = pts.map(q => q.y);
+    const bx0 = Math.min(...xs) - 8, bx1 = Math.max(...xs) + 8, by0 = Math.min(...ys) - 8, by1 = Math.max(...ys) + 8;
+    if (KEYPTS.some(k => k[0] > bx0 && k[0] < bx1 && k[1] > by0 && k[1] < by1)) return null;
+    return pts;
+  }
+
+  /* ---------- 第6段: コンビニ ---------- */
+  function konbinis(scene) {
+    const rr = mulberry32(5601);
+    const gb = new G3.GB(false), gbL = new G3.GB(false);
+    let n = 0;
+    for (let t = 0; t < 3000 && n < 10; t++) {
+      const r = ROADS[(rr() * ROADS.length) | 0];
+      if (r.kind === 'arcade') continue;
+      const d = 40 + rr() * (r.pl.len - 130);
+      const c0 = at(r, d, 0);
+      if (zoneOf(c0.x, c0.y) === 'port') continue;
+      if (r.junc.some(j => Math.abs(j.d - d - 29) < j.road.w / 2 + 34)) continue;
+      const sg = rr() < 0.5 ? 1 : -1, W = 58, D = 48, o0 = r.w / 2 + G3.SW + 0.5;
+      const pts = lotFree(r, d, sg, W, D, o0);
+      if (!pts) continue;
+      const Lc = (u, vv) => at(r, d + u, sg * (o0 + vv));
+      const V = q => [q.x, heightAt(q.x, q.y) + 0.07, q.y];
+      flatQuad(gb, [Lc(0, 0), Lc(W, 0), Lc(W, D), Lc(0, D)].map(V));
+      const st = Lc(W / 2, D - 16);
+      put('konbini', st.x, st.y, roadFace(r, sg, d + W / 2, st), 0);
+      // 駐車枠（店の前）
+      for (let k = 0; k <= 6; k++) {
+        const u = 6 + k * 7.6;
+        const a = Lc(u - 0.2, 2), b = Lc(u + 0.2, 2), e = Lc(u + 0.2, 15), f = Lc(u - 0.2, 15);
+        flatQuad(gbL, [a, b, e, f].map(q => [q.x, heightAt(q.x, q.y) + 0.09, q.y]));
+        if (k < 6) {
+          const cs = Lc(u + 3.8, 14);
+          put('car_stop', cs.x, cs.y, -(cs.a + Math.PI / 2), 0.05);
+          if (rr() < 0.3 && typeof mkCar === 'function') {
+            const cp = Lc(u + 3.8, 8), into = Math.atan2(cs.y - cp.y, cs.x - cp.x);
+            parked.push(mkCar(cp.x, cp.y, into, ['kei', 'sedan', 'kei', 'truck'][(rr() * 4) | 0]));
+          }
+        }
+      }
+      const sp = Lc(1.5, 1.5);
+      put('konbini_sign', sp.x, sp.y, -sp.a, 0);
+      for (const q of pts) take(q.x, q.y, 10);
+      n++;
+    }
+    const m1 = gb.mesh(new THREE.MeshStandardMaterial({ color: 0x4a4c50, roughness: 0.92, polygonOffset: true, polygonOffsetFactor: -1, polygonOffsetUnits: -8 }), false);
+    const m2 = gbL.mesh(new THREE.MeshStandardMaterial({ color: 0xe8e8e2, roughness: 0.7, polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -16 }), false);
+    m1.castShadow = m2.castShadow = false;
+    scene.add(m1, m2);
+    stats.konbini_lot = n;
+  }
+
+  /* ---------- 第6段: 送電鉄塔と送電線 ---------- */
+  const POWER_LINES = [
+    [[8350, 2900], [7650, 3560], [6900, 4620], [5800, 5300], [4300, 5420], [3100, 5560]],
+    [[7950, 650], [6950, 980], [5950, 1300], [4900, 1620], [3800, 1960], [2700, 1760]],
+  ];
+  function powerLines(scene) {
+    const wire = [];
+    const towerFree = (x, y) => {
+      const ri = roadInfo(x, y);
+      return !(inWaterRaw(x, y) || nearBld(x, y, 10) || inPark(x, y, 10) || nearLM(x, y, 30) || !free(x, y, 12) || railDist(x, y) < 20 ||
+        (ri && ri.d < ri.road.w / 2 + G3.SW + 10));
+    };
+    let n = 0;
+    for (const L of POWER_LINES) {
+      const pl = buildPl(L);
+      let prev = null;
+      for (let d = 0; d <= pl.len; d += 300) {
+        const p = plAt(pl, d);
+        const nx = -Math.sin(p.a), ny = Math.cos(p.a);
+        let pos = null;
+        for (const off of [0, 20, -20, 40, -40, 60, -60, 80, -80]) {
+          const x = p.x + nx * off, y = p.y + ny * off;
+          if (towerFree(x, y)) { pos = [x, y]; break; }
+        }
+        if (!pos) continue;
+        const [x, y] = pos;
+        put('pylon', x, y, -p.a, 0);
+        take(x, y, 10);
+        n++;
+        const h0 = heightAt(x, y);
+        const tips = [];
+        for (const [z, Lm] of [[26, 6.5], [32, 6.0], [38, 5.0]]) for (const s of [-1, 1])
+          tips.push([x + U * s * Lm * Math.sin(p.a), h0 + U * (z - 1.4), y - U * s * Lm * Math.cos(p.a)]);
+        if (prev) {
+          for (let i = 0; i < tips.length; i++) {
+            const a = prev[i], b = tips[i];
+            const span = hyp(b[0] - a[0], b[2] - a[2]), sag = span * 0.035;
+            let px = a[0], py = a[1], pz = a[2];
+            for (let k = 1; k <= 10; k++) {
+              const t = k / 10;
+              const qx = lerp(a[0], b[0], t), qz = lerp(a[2], b[2], t), qy = lerp(a[1], b[1], t) - Math.sin(t * Math.PI) * sag;
+              wire.push(px, py, pz, qx, qy, qz);
+              px = qx; py = qy; pz = qz;
+            }
+          }
+        }
+        prev = tips;
+      }
+    }
+    const wg = new THREE.BufferGeometry();
+    wg.setAttribute('position', new THREE.Float32BufferAttribute(wire, 3));
+    scene.add(new THREE.LineSegments(wg, new THREE.LineBasicMaterial({ color: 0x3a3c40, transparent: true, opacity: 0.7 })));
+    stats.pylon_n = n;
+  }
+
+  /* ---------- 第6段: 歩道橋 ---------- */
+  function overpasses(scene) {
+    const rr = mulberry32(5603);
+    const gb = new G3.GB(false);
+    let n = 0;
+    const mains = ROADS.filter(r => r.kind === 'main' && r.w >= 40);
+    for (let t = 0; t < 1200 && n < 7; t++) {
+      const r = mains[(rr() * mains.length) | 0];
+      const d = 60 + rr() * (r.pl.len - 120);
+      const c0 = at(r, d, 0);
+      if (zoneOf(c0.x, c0.y) === 'port') continue;
+      if (r.junc.some(j => Math.abs(j.d - d) < j.road.w / 2 + 60)) continue;
+      if (CROSSWALKS.some(c => hyp(c[0] - c0.x, c[1] - c0.y) < 80)) continue;
+      const o = r.w / 2 + G3.SW + 3.2;
+      let ok = true;
+      for (const sg of [1, -1]) for (let k = -30; k <= 3; k += 4) {
+        const q = at(r, d + k, sg * o);
+        if (inWaterRaw(q.x, q.y) || nearBld(q.x, q.y, 2) || !free(q.x, q.y, 4) || propHit(q.x, q.y, 2.5, false) || nearLM(q.x, q.y, 10)) { ok = false; break; }
+      }
+      if (!ok) continue;
+      for (const sg of [1, -1]) {
+        const s0 = at(r, d - 27, sg * o);
+        put('ob_stair', s0.x, s0.y, -s0.a, 0);
+        const cc = at(r, d - 13.5, sg * o);
+        if (typeof addCollider === 'function') addCollider({ x: cc.x, y: cc.y, hx: 15, hy: 2.8, a: cc.a, m: 3 });
+        for (let k = -28; k <= 3; k += 4) { const q = at(r, d + k, sg * o); take(q.x, q.y, 4); }
+      }
+      // 橋桁（車道の上・高さ5.2m）
+      const H = 13.0, hw = 3.0, A = at(r, d, -(o + 1.5)), B = at(r, d, o + 1.5);
+      const tx = Math.cos(c0.a) * hw, tz = Math.sin(c0.a) * hw;
+      const y0 = heightAt(c0.x, c0.y) + H;
+      const P = (q, s, y) => [q.x + tx * s, y, q.y + tz * s];
+      gb.quad([P(A, -1, y0), P(B, -1, y0), P(B, 1, y0), P(A, 1, y0)], [[0, 0], [1, 0], [1, 1], [0, 1]]);
+      gb.quad([P(A, 1, y0 - 0.9), P(B, 1, y0 - 0.9), P(B, -1, y0 - 0.9), P(A, -1, y0 - 0.9)], [[0, 0], [1, 0], [1, 1], [0, 1]]);
+      for (const s of [-1, 1]) {
+        gb.quad([P(A, s, y0 - 0.9), P(B, s, y0 - 0.9), P(B, s, y0 + 2.8), P(A, s, y0 + 2.8)], [[0, 0], [1, 0], [1, 1], [0, 1]]);
+      }
+      n++;
+    }
+    const m = gb.mesh(new THREE.MeshStandardMaterial({ color: 0x3a6a9a, roughness: 0.5, metalness: 0.3, side: THREE.DoubleSide }), true);
+    scene.add(m);
+    stats.overpass = n;
+  }
+
+  /* ---------- 第6段: 郊外駅のホーム ---------- */
+  function stations() {
+    let n = 0;
+    for (const tr of [TRAINS[3], TRAINS[4]]) {
+      if (!tr || !tr.stops) continue;
+      for (const sd of tr.stops) {
+        const p = plAt(tr.pl, sd);
+        if (nearLM(p.x, p.y, 40) || zoneOf(p.x, p.y) === 'center') continue;
+        for (const sg of [1, -1]) {
+          const q = plAt(tr.pl, sd + sg * 8);
+          const nx = -Math.sin(q.a), ny = Math.cos(q.a);
+          const x = q.x + nx * sg * 9.4, y = q.y + ny * sg * 9.4;
+          let ok = true;
+          for (const k of [-36, 0, 36]) {
+            const X = x + Math.cos(q.a) * k, Y = y + Math.sin(q.a) * k, ri = roadInfo(X, Y);
+            if (nearBld(X, Y, 1) || inWaterRaw(X, Y) || (ri && ri.d < ri.road.w / 2 + G3.SW + 1)) { ok = false; break; }
+          }
+          if (!ok) continue;
+          put('platform', x, y, -(q.a + (sg > 0 ? 0 : Math.PI)), 0);
+          if (typeof addCollider === 'function') addCollider({ x, y, hx: 37.5, hy: 3.75, a: q.a, m: 2 });
+          take(x, y, 14);
+          n++;
+        }
+      }
+    }
+    stats.platform_n = n;
+  }
+
+  /* ---------- 第6段: 野立て看板（郊外の幹線沿い・広告アトラスを貼る） ---------- */
+  function billboards(scene) {
+    const rr = mulberry32(5604);
+    const gb = new G3.GB(false);
+    const NA = G3.adCount || 6;
+    let n = 0;
+    for (const r of ROADS) {
+      if (r.kind !== 'main') continue;
+      for (let d = 200 + rr() * 300; d < r.pl.len - 100; d += 420 + rr() * 300) {
+        const sg = rr() < 0.5 ? 1 : -1;
+        const p = at(r, d, sg * (r.w / 2 + G3.SW + 12));
+        if (zoneOf(p.x, p.y) !== 'suburb') continue;
+        if (inWaterRaw(p.x, p.y) || nearBld(p.x, p.y, 4) || !free(p.x, p.y, 10) || nearLM(p.x, p.y, 40) || railDist(p.x, p.y) < 15 ||
+          FIELDS.some(f => p.x > f.x - 6 && p.x < f.x + f.w + 6 && p.y > f.y - 6 && p.y < f.y + f.h + 6)) continue;
+        // 対向車線の車から見えるよう斜めに向ける
+        const c = at(r, d - sg * 0, 0);
+        const ang = Math.atan2(c.y - p.y, c.x - p.x) + (rr() < 0.5 ? 0.35 : -0.35);
+        put('billboard', p.x, p.y, -ang, 0);
+        if (typeof addCollider === 'function') for (const yy of [-3.5, 3.5]) addCollider({ x: p.x + U * (-0.3 * Math.cos(ang) + yy * Math.sin(ang)), y: p.y + U * (-0.3 * Math.sin(ang) - yy * Math.cos(ang)), r: 0.7 });
+        // 看板面（+X 面、y:-5..5、z:4..8 m）
+        const ai = (n + ((rr() * NA) | 0)) % NA;
+        const v0 = 1 - (ai + 1) / NA, v1 = 1 - ai / NA;
+        const W = (yy, z) => [p.x + U * (0.02 * Math.cos(ang) + yy * Math.sin(ang)), heightAt(p.x, p.y) + U * z, p.y + U * (0.02 * Math.sin(ang) - yy * Math.cos(ang))];
+        // 正面から見て右 = モデルの +Y
+        const Q = [W(-5, 4), W(5, 4), W(5, 8), W(-5, 8)], UV = [[0, v0], [1, v0], [1, v1], [0, v1]];
+        const ux = Q[1][0] - Q[0][0], uz = Q[1][2] - Q[0][2], vy = Q[3][1] - Q[0][1];
+        const nx = -uz * vy, nz = ux * vy;   // (u × v) の水平成分
+        if (nx * Math.cos(ang) + nz * Math.sin(ang) > 0) gb.quad(Q, UV); else gb.quad([Q[1], Q[0], Q[3], Q[2]], [UV[0], UV[1], UV[2], UV[3]]);
+        take(p.x, p.y, 14);
+        n++;
+      }
+    }
+    const m = gb.mesh(G3.world.WM.ad, false);
+    scene.add(m);
+    stats.billboard_n = n;
+  }
+
+  /* ---------- 第6段: 河川敷の運動場 ---------- */
+  function riverside() {
+    const rr = mulberry32(5605);
+    let nb = 0, ns = 0;
+    for (const rv of RIVERS) {
+      for (let d = 250; d < rv.pl.len - 250; d += 520 + rr() * 200) {
+        const p = plAt(rv.pl, d);
+        const sg = rr() < 0.5 ? 1 : -1, nx = -Math.sin(p.a) * sg, ny = Math.cos(p.a) * sg;
+        const off = rv.w / 2 + 20;
+        const x = p.x + nx * off, y = p.y + ny * off;
+        const okAt = (X, Y) => { const ri = roadInfo(X, Y); return !(inWaterRaw(X, Y) || nearBld(X, Y, 3) || !free(X, Y, 8) || (ri && ri.d < ri.road.w / 2 + G3.SW + 6) || railDist(X, Y) < 15 ||
+          FIELDS.some(f => X > f.x - 4 && X < f.x + f.w + 4 && Y > f.y - 4 && Y < f.y + f.h + 4)); };
+        if ((nb + ns) % 2 === 0) {
+          if (!okAt(x, y)) continue;
+          put('backstop', x, y, -(p.a), 0);
+          if (typeof addCollider === 'function') addCollider({ x, y, hx: 0.4, hy: 15, a: p.a, m: 3 });
+          take(x, y, 18); nb++;
+        } else {
+          const a = [x - Math.cos(p.a) * 50, y - Math.sin(p.a) * 50], b = [x + Math.cos(p.a) * 50, y + Math.sin(p.a) * 50];
+          if (!okAt(a[0], a[1]) || !okAt(b[0], b[1]) || !okAt(x, y)) continue;
+          put('soccer_goal', a[0], a[1], -(p.a + Math.PI), 0);
+          put('soccer_goal', b[0], b[1], -p.a, 0);
+          for (const q of [a, b]) take(q[0], q[1], 10);
+          ns++;
+        }
+      }
+    }
+    stats.riverside = nb + ns;
+  }
+
+  /* ---------- 第6段: 港のクレーン・小さな神社・農機具小屋・タクシー乗り場 ---------- */
+  function cranes() {
+    const rr = mulberry32(5606);
+    let n = 0, last = [];
+    for (const [x, y, nx, ny] of portCoast) {
+      if (n >= 4 || rr() < 0.6) continue;
+      const cx = x + nx * 12, cy = y + ny * 12;
+      if (last.some(q => hyp(q[0] - cx, q[1] - cy) < 150) || nearBld(cx, cy, 4) || !free(cx, cy, 9) || propHit(cx, cy, 6, true)) continue;
+      put('jib_crane', cx, cy, -Math.atan2(-ny, -nx), 0);
+      if (typeof addCollider === 'function') addCollider({ x: cx, y: cy, hx: 7.5, hy: 7.5, a: Math.atan2(-ny, -nx), m: 3 });
+      take(cx, cy, 10);
+      last.push([cx, cy]);
+      n++;
+    }
+  }
+  function shrines() {
+    const rr = mulberry32(5607);
+    let n = 0;
+    for (let t = 0; t < 3000 && n < 12; t++) {
+      const x = 900 + rr() * 7400, y = 600 + rr() * 4600;
+      if (zoneOf(x, y) !== 'suburb') continue;
+      const ri = roadInfo(x, y);
+      if (!ri || ri.road.kind === 'arcade' || ri.d < ri.road.w / 2 + G3.SW + 16 || ri.d > 60) continue;
+      let ok = true;
+      for (const [dx, dy] of [[0, 0], [14, 14], [-14, 14], [14, -14], [-14, -14]]) {
+        const X = x + dx, Y = y + dy;
+        if (inWaterRaw(X, Y) || hillAt(X, Y) || nearBld(X, Y, 2) || !free(X, Y, 5) || propHit(X, Y, 3, false) || railDist(X, Y) < 15 ||
+          FIELDS.some(f => X > f.x - 3 && X < f.x + f.w + 3 && Y > f.y - 3 && Y < f.y + f.h + 3)) { ok = false; break; }
+      }
+      if (!ok || KEYPTS.some(k => hyp(k[0] - x, k[1] - y) < 26)) continue;
+      const ang = Math.atan2(ri.y - y, ri.x - x);
+      put('small_shrine', x, y, -ang, 0);
+      const L = (u, v) => [x + U * (u * Math.cos(ang) + v * Math.sin(ang)), y + U * (u * Math.sin(ang) - v * Math.cos(ang))];
+      if (typeof addCollider === 'function') {
+        for (const v of [-1.3, 1.3]) { const q = L(4.5, v); addCollider({ x: q[0], y: q[1], r: 0.5 }); }
+        const h = L(-1.5, 0); addCollider({ x: h[0], y: h[1], hx: 2.8, hy: 2.8, a: ang, m: 3 });
+      }
+      for (const v of [-2.4, 2.4]) { const q = L(3.2, v); put('stone_lantern', q[0], q[1], -ang, 0); }
+      take(x, y, 16);
+      n++;
+    }
+    stats.shrine_n = n;
+  }
+  function farmHuts() {
+    const rr = mulberry32(5608);
+    for (const f of FIELDS) {
+      if (rr() > 0.22) continue;
+      const cx = rr() < 0.5 ? f.x + 6 : f.x + f.w - 6, cy = rr() < 0.5 ? f.y + 7 : f.y + f.h - 7;
+      if (nearBld(cx, cy, 2) || !free(cx, cy, 5)) continue;
+      put('farm_hut', cx, cy, rr() < 0.5 ? 0 : Math.PI / 2, 0);
+      take(cx, cy, 5);
+    }
+  }
+  function taxiStands() {
+    for (const [sx, sy] of [[4760, 3010], [5880, 3590]]) {
+      const ri = roadInfo(sx, sy);
+      if (!ri) continue;
+      const r = ri.road, d0 = dOnPl(r.pl, sx, sy), c = at(r, d0, 0);
+      const sg = ((sx - c.x) * -Math.sin(c.a) + (sy - c.y) * Math.cos(c.a)) > 0 ? 1 : -1;
+      const sp = walkAt(r, sg, d0 - 8, 1.4);
+      put('taxi_sign', sp.x, sp.y, -(sp.a + (sg > 0 ? 0 : Math.PI)), G3.CURB);
+      if (typeof mkCar !== 'function') continue;
+      for (let k = 0; k < 4; k++) {
+        const q = at(r, d0 + k * 13, sg * (r.w / 2 - 3.6));
+        if (parked.some(o => hyp(o.x - q.x, o.y - q.y) < 10) || r.junc.some(j => Math.abs(j.d - (d0 + k * 13)) < j.road.w / 2 + 6)) continue;
+        parked.push(mkCar(q.x, q.y, q.a + (sg > 0 ? Math.PI : 0), 'taxi'));
+      }
+    }
+  }
+
   /* ---------- インスタンス化 ---------- */
   let blockMat = null;
   function streetMat(m) {
@@ -1314,11 +1654,57 @@ G3.street = (function () {
     guardrail: 1300, guard_pipe: 1000, hedge_planter: 1200, block_wall: 1000, awning_red: 1100, awning_green: 1100, awning_blue: 1100, awning_orange: 1100,
     sign_speed: 900, sign_stop: 900, curve_mirror: 900, parking_sign: 1200, clock_pole: 1400, map_board: 900 };
   const FAR_DEF = 650;
+  Object.assign(FAR, { konbini: 1500, konbini_sign: 1500, pylon: 1e9, ob_stair: 1400, platform: 1400, billboard: 1800, backstop: 1200,
+    soccer_goal: 900, jib_crane: 2400, small_shrine: 1000, farm_hut: 1000 });
   // 影を落とすのは大きな物だけ（小物は影のパスの描画回数を増やすだけ）
-  const SHADOW = /wall|fence|awning|booth|container|canopy|gs_|tram_stop|guide|karakuri|toilet|shelter|hedge|guardrail|gantry|catenary|boat|lantern|jungle|slide|swing|vending|map_board/;
+  const SHADOW = /konbini|pylon|ob_stair|platform|billboard|crane|shrine|farm_hut|backstop|wall|fence|awning|booth|container|canopy|gs_|tram_stop|guide|karakuri|toilet|shelter|hedge|guardrail|gantry|catenary|boat|lantern|jungle|slide|swing|vending|map_board/;
   Object.assign(FAR, { bicycle_a: 480, bicycle_b: 480, bicycle_c: 480, ac_unit: 520, potted_plant: 450, propane: 520, tv_antenna: 650 });
   const CH = 650;   // チャンク一辺（ゲーム単位 = 260m）
   const chunks = [];
+  // 単色マテリアルの部品を頂点カラー1枚（金属は別に1枚）にまとめて描画回数を減らす
+  const plainMats = {};
+  function collapse(node) {
+    node.updateMatrixWorld(true);
+    const inv = new THREE.Matrix4().copy(node.matrixWorld).invert();
+    const groups = { plain: [], metal: [] }, keep = [];
+    const rough = { plain: [], metal: [] };
+    node.traverse(o => {
+      if (!o.isMesh) return;
+      const m = o.material;
+      const n = (m && m.name) || '';
+      const special = Array.isArray(m) || m.map || m.transparent || m.alphaTest > 0 || /^(NightGlow|Lamp|Vend|GuideFace|SP_BlockTex|Xing|Sig)/.test(n) ||
+        (m.emissive && m.emissive.getHex() !== 0 && m.emissiveIntensity > 0);
+      const rel = new THREE.Matrix4().multiplyMatrices(inv, o.matrixWorld);
+      if (special) { keep.push([o, rel]); return; }
+      let g = o.geometry.clone();
+      g.applyMatrix4(rel);
+      if (g.index) g = g.toNonIndexed();
+      for (const k of Object.keys(g.attributes)) if (k !== 'position' && k !== 'normal') g.deleteAttribute(k);
+      const c = m.color || new THREE.Color(1, 1, 1), cnt = g.attributes.position.count, col = new Float32Array(cnt * 3);
+      for (let i = 0; i < cnt; i++) { col[i * 3] = c.r; col[i * 3 + 1] = c.g; col[i * 3 + 2] = c.b; }
+      g.setAttribute('color', new THREE.BufferAttribute(col, 3));
+      const key = (m.metalness || 0) > 0.5 ? 'metal' : 'plain';
+      groups[key].push(g); rough[key].push(m.roughness == null ? 0.6 : m.roughness);
+    });
+    const out = new THREE.Group();
+    for (const key of ['plain', 'metal']) {
+      if (!groups[key].length) continue;
+      const geo = T3.mergeGeometries(groups[key], false);
+      if (!geo) continue;
+      const r = rough[key].reduce((a, b) => a + b, 0) / rough[key].length;
+      const mk = key + Math.round(r * 10);
+      const mat = plainMats[mk] || (plainMats[mk] = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: r, metalness: key === 'metal' ? 0.75 : 0.05 }));
+      out.add(new THREE.Mesh(geo, mat));
+    }
+    for (const [o, rel] of keep) {
+      const mm = new THREE.Mesh(o.geometry, o.material);
+      mm.matrixAutoUpdate = false;
+      mm.matrix.copy(rel);
+      out.add(mm);
+    }
+    out.updateMatrixWorld(true);
+    return out;
+  }
   function flush(scene) {
     const tmpV = new THREE.Vector3();
     for (const name in lists) {
@@ -1326,6 +1712,7 @@ G3.street = (function () {
       stats[name] = lists[name].length;
       if (!node) continue;
       node.traverse(c => { if (c.isMesh) c.material = Array.isArray(c.material) ? c.material.map(streetMat) : streetMat(c.material); });
+      const cnode = collapse(node);
       const groups = new Map();
       for (const M of lists[name]) {
         const k = Math.floor(M.elements[12] / CH) + ',' + Math.floor(M.elements[14] / CH);
@@ -1334,7 +1721,7 @@ G3.street = (function () {
       const far = (FAR[name] || FAR_DEF) * (matchMedia('(pointer:coarse)').matches ? 0.7 : 1);
       const all = [];
       for (const [k, mats] of groups) {
-        const g = G3.instanceNode(node, mats, { shadow: SHADOW.test(name) });
+        const g = G3.instanceNode(cnode, mats, { shadow: SHADOW.test(name) });
         g.traverse(o => { if (o.isInstancedMesh) { o.computeBoundingSphere(); o.frustumCulled = true; } });
         let cx = 0, cz = 0;
         for (const M of mats) { cx += M.elements[12]; cz += M.elements[14]; }
@@ -1362,6 +1749,50 @@ G3.street = (function () {
     }
   }
 
+  /* ---------- 囲まれて取れないみかんを外へ出す（IDは変えないのでセーブと整合） ---------- */
+  function blockedFoot(x, y) { return blockedAt(x, y, 2.2, false) || !!propHit(x, y, 2.2, false); }
+  // ランドマークの敷地内から、歩いて敷地の外（+15）へ出られるか
+  function escapesLM(x, y, sd) {
+    const Q = [[x, y]], seen = new Set([Math.round(x / 3) + ',' + Math.round(y / 3)]);
+    while (Q.length && seen.size < 6000) {
+      const [px, py] = Q.shift();
+      if (px < sd[0] - 15 || px > sd[2] + 15 || py < sd[1] - 15 || py > sd[3] + 15) return true;
+      for (const [dx, dy] of [[3, 0], [-3, 0], [0, 3], [0, -3]]) {
+        const nx = px + dx, ny = py + dy, k = Math.round(nx / 3) + ',' + Math.round(ny / 3);
+        if (seen.has(k)) continue; seen.add(k);
+        if (blockedFoot(nx, ny)) continue;
+        Q.push([nx, ny]);
+      }
+    }
+    return false;
+  }
+  function freeKeyPoints() {
+    let moved = 0;
+    for (const m of MIKANS) {
+      const box = (G3.lmBoxes || []).find(q => m.x > q[0] - 6 && m.x < q[2] + 6 && m.y > q[1] - 6 && m.y < q[3] + 6);
+      const l = box ? { solid: box } : null;
+      if (!l) { if (!blockedFoot(m.x, m.y)) continue; }
+      else if (!blockedFoot(m.x, m.y) && escapesLM(m.x, m.y, l.solid)) continue;
+      // 敷地の外の最寄りの空き地へ
+      let x0 = m.x, y0 = m.y;
+      if (l) {
+        const sd = l.solid, c = [[sd[0] - 14, m.y], [sd[2] + 14, m.y], [m.x, sd[1] - 14], [m.x, sd[3] + 14]];
+        c.sort((p, q) => hyp(p[0] - m.x, p[1] - m.y) - hyp(q[0] - m.x, q[1] - m.y));
+        [x0, y0] = c[0];
+      }
+      let done = false;
+      for (let rad = 0; rad <= 120 && !done; rad += 5) {
+        for (let k = 0; k < (rad ? 16 : 1) && !done; k++) {
+          const a = k / 16 * TAU, x = x0 + Math.cos(a) * rad, y = y0 + Math.sin(a) * rad;
+          if (blockedFoot(x, y) || inWaterRaw(x, y)) continue;
+          if (l && x > l.solid[0] - 6 && x < l.solid[2] + 6 && y > l.solid[1] - 6 && y < l.solid[3] + 6) continue;
+          m.x = x; m.y = y; done = true; moved++;
+        }
+      }
+    }
+    stats.mikan_moved = moved;
+  }
+
   function build(scene) {
     if (!G3.glb.street) return;
     seedOcc();
@@ -1375,7 +1806,16 @@ G3.street = (function () {
     crossings(scene);
     catenary(scene);
     gasStations(scene);
+    konbinis(scene);
+    overpasses(scene);
+    stations();
+    powerLines(scene);
+    billboards(scene);
+    riverside();
     parks(scene);
+    shrines();
+    farmHuts();
+    taxiStands();
     busShelters();
     roadworks();
     gomiStations();
@@ -1383,7 +1823,9 @@ G3.street = (function () {
     buildingDetails();
     roofs();
     boats();
+    cranes();
     flush(scene);
+    freeKeyPoints();
     G3.street.stats = stats;
   }
   return { build, update, zoneOf };

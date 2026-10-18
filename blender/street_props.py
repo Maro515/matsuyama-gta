@@ -1752,6 +1752,111 @@ def build_stage10():
     return [buke_house(), buke_kura(), dobei(), dobei_gate(), azumaya(), sekihi()]
 
 
+
+# ======================================================================
+# 第11段: 漁港（魚市場・網・浮き玉・トロ箱・ドラム缶・漁協）
+# ======================================================================
+def crate_stack(p, x, y, n, col, m2):
+    for k in range(n):
+        p.append(box('crate', (0.62, 0.42, 0.24), (x, y, 0.12 + k * 0.25), col))
+        p.append(box('rim', (0.64, 0.44, 0.03), (x, y, 0.23 + k * 0.25), m2))
+
+
+def fish_market():
+    """魚市場の上屋（24×12m、柱だけで壁なし、鋼板の切妻屋根）。長手 X、海側 -Y。中にトロ箱の山。"""
+    m = M()
+    col = mat('SP_MarketCol', '#5a7a92', metal=0.5, rough=0.45)
+    roof = mat('SP_MarketRoof', '#c8ccc8', metal=0.5, rough=0.5)
+    blue = mat('SP_Toro', '#2a6ab8', rough=0.5)
+    white = mat('SP_Styro', '#f2f2ee', rough=0.8)
+    p = [box('slab', (24.4, 12.4, 0.12), (0, 0, 0.06), m['conc'])]
+    for x in (-12, -6, 0, 6, 12):
+        for y in (-6, 6):
+            p.append(box('col', (0.35, 0.35, 5.0), (x, y, 2.5), col))
+    p.append(box('beam', (24.4, 0.3, 0.4), (0, -6, 5.1), col)); p.append(box('beam', (24.4, 0.3, 0.4), (0, 6, 5.1), col))
+    p.append(prism('roof', [(-7.2, 5.2), (7.2, 5.2), (0, 6.6)], -12.6, 12.6, roof, axis='X'))
+    sign = mat('SP_MarketSign', '#f2f2ea', rough=0.4)
+    p.append(box('signb', (6.0, 0.12, 1.1), (0, 6.2, 4.4), sign))
+    p.append(text3d('t', '魚市場', 0.7, (0, 6.27, 4.4), '+Y', m['blue']))
+    p.append(text3d('t2', '魚市場', 0.7, (0, -6.2, 4.55), '-Y', m['blue']))
+    rr = random.Random(11)
+    for i in range(9):
+        x, y = -9 + (i % 3) * 7 + rr.uniform(-1, 1), -3 + (i // 3) * 3 + rr.uniform(-0.5, 0.5)
+        for dx in (-0.35, 0.35):
+            crate_stack(p, x + dx, y, 2 + int(rr.random() * 3), blue if rr.random() < 0.7 else white, white)
+    return join(p, 'fish_market', smooth_angle=30)
+
+
+def net_pile():
+    """漁網の山（緑の網に橙の浮き）。約2.6×1.6m。"""
+    net = mat('SP_Net', '#2f6a4a', rough=0.95)
+    flo = mat('SP_Float', '#f07a1a', rough=0.5)
+    p = [sphere('pile', 1.0, (0, 0, 0.25), net, seg=14, rings=8, scale=(1.35, 0.85, 0.55))]
+    for k in range(9):
+        a = k / 9 * math.tau
+        p.append(sphere('f', 0.12, (math.cos(a) * 1.2, math.sin(a) * 0.72, 0.42 + 0.12 * math.sin(a * 2)), flo, seg=8, rings=5))
+    return join(p, 'net_pile', smooth_angle=50)
+
+
+def buoy_stack():
+    """浮き玉の山（橙・白）を木のパレットの上に。"""
+    m = M()
+    o = mat('SP_BuoyO', '#f07a1a', rough=0.45)
+    w = mat('SP_BuoyW', '#f2f2ee', rough=0.5)
+    wood = mat('SP_Pallet', '#9a7a50', rough=0.8)
+    p = [box('pallet', (1.2, 1.0, 0.14), (0, 0, 0.07), wood)]
+    rr = random.Random(5)
+    for lay, n in ((0, 3), (1, 2), (2, 1)):
+        for i in range(n):
+            for j in range(n):
+                off = (3 - n) * 0.19
+                p.append(sphere('b', 0.19, (-0.38 + off + i * 0.38, -0.3 + off * 0.8 + j * 0.3, 0.33 + lay * 0.31), o if rr.random() < 0.65 else w, seg=10, rings=6))
+    return join(p, 'buoy_stack', smooth_angle=50)
+
+
+def fish_crates():
+    """トロ箱（青・白）の積み上げ。"""
+    blue = mat('SP_Toro', '#2a6ab8', rough=0.5)
+    white = mat('SP_Styro', '#f2f2ee', rough=0.8)
+    p = []
+    rr = random.Random(9)
+    for i in range(3):
+        for j in range(2):
+            crate_stack(p, -0.66 + i * 0.66, -0.23 + j * 0.46, 3 + int(rr.random() * 3), blue if (i + j) % 3 else white, white)
+    return join(p, 'fish_crates', smooth_angle=30)
+
+
+def drum_set():
+    """ドラム缶3本。"""
+    cols = [mat('SP_DrumB', '#2a5a9a', rough=0.5, metal=0.3), mat('SP_DrumR', '#a83a2a', rough=0.5, metal=0.3)]
+    p = []
+    for k, (x, y) in enumerate(((0, 0), (0.62, 0.1), (0.3, 0.6))):
+        p.append(cyl('drum', 0.29, 0.88, (x, y, 0.44), cols[k % 2], verts=14))
+        p.append(cyl('hoop', 0.3, 0.03, (x, y, 0.3), cols[k % 2], verts=14))
+        p.append(cyl('hoop', 0.3, 0.03, (x, y, 0.6), cols[k % 2], verts=14))
+    return join(p, 'drum_set', smooth_angle=40)
+
+
+def gyokyo():
+    """漁業協同組合の事務所（8×6m、2階建て）。入口 +Y。"""
+    m = M()
+    wall = mat('SP_GyoWall', '#e6e2d6', rough=0.8)
+    glass = mat('NightGlow_Office', '#3a4a58', rough=0.1, emit='#ffffff', estr=0.0)
+    p = [box('body', (8.0, 6.0, 6.4), (0, 0, 3.2), wall), box('roof', (8.4, 6.4, 0.25), (0, 0, 6.5), m['grey'])]
+    for z in (1.5, 4.5):
+        for x in (-2.6, 0, 2.6):
+            p.append(box('win', (1.6, 0.06, 1.1), (x, 3.02, z), glass))
+            p.append(box('winb', (1.6, 0.06, 1.1), (x, -3.02, z), glass))
+    p.append(box('door', (1.6, 0.08, 2.1), (-2.6, 3.04, 1.05), m['dark']))
+    p.append(box('signb', (5.0, 0.1, 0.7), (0.8, 3.08, 3.0), m['signw']))
+    p.append(text3d('t', '漁業協同組合', 0.38, (0.8, 3.14, 3.0), '+Y', m['blue']))
+    return join(p, 'gyokyo', smooth_angle=30)
+
+
+def build_stage11():
+    return [fish_market(), net_pile(), buoy_stack(), fish_crates(), drum_set(), gyokyo()]
+
+
 def layout_preview(roots, path, cols=7, gap=2.2, big=()):
     small = [o for o in roots if o.name not in big]
     for i, o in enumerate(small):
@@ -1776,7 +1881,8 @@ if __name__ == '__main__':
     roots8 = build_stage8()
     roots9 = build_stage9()
     roots10 = build_stage10()
-    roots = roots1 + roots2 + roots3 + roots5 + roots6 + roots7 + roots8 + roots9 + roots10
+    roots11 = build_stage11()
+    roots = roots1 + roots2 + roots3 + roots5 + roots6 + roots7 + roots8 + roots9 + roots10 + roots11
     export_glb(os.path.join(ASSETS, 'glb', 'street.glb'), roots)
     only = argv_after()
     def away():
@@ -1790,6 +1896,11 @@ if __name__ == '__main__':
             continue
         away()
         layout_preview(grp, os.path.join(PREV, 'street%s.png' % tag), **kw)
+    if only and '11' in only:
+        away()
+        for i, o in enumerate(roots11):
+            o.location = ((i % 3) * 16 - 16, (i // 3) * 16 - 4, 0)
+        preview(os.path.join(PREV, 'street11.png'), target=(0, 4, 2), dist=48, elev=24, azim=-55, lens=45, res=(1400, 800), samples=48)
     if only and '10' in only:
         away()
         for i, o in enumerate(roots10):

@@ -1475,11 +1475,15 @@ G3.street = (function () {
     const rr = mulberry32(5512);
     let last = null;
     for (const [x, y, nx, ny] of portCoast) {
-      if (rr() < 0.35) continue;
+      const hb = inHarbor(x, y);
+      if (!hb && rr() < 0.35) continue;
       const bx = x - nx * 9, by = y - ny * 9;
-      if (!inWaterRaw(bx, by) || (last && hyp(last[0] - bx, last[1] - by) < 26)) continue;
+      if (!inWaterRaw(bx, by) || (last && hyp(last[0] - bx, last[1] - by) < (hb ? 20 : 26))) continue;
       put('fishing_boat', bx, by, -(Math.atan2(ny, nx) + Math.PI / 2 + (rr() - 0.5) * 0.2), -1.4);
       last = [bx, by];
+      // 漁港では外側にもう1隻横付け
+      const ox = x - nx * 18.5, oy = y - ny * 18.5;
+      if (hb && rr() < 0.7 && inWaterRaw(ox, oy)) put('fishing_boat', ox, oy, -(Math.atan2(ny, nx) + Math.PI / 2 + (rr() - 0.5) * 0.15), -1.4);
     }
   }
   function busShelters() {
@@ -2388,6 +2392,64 @@ G3.street = (function () {
 
 
 
+
+  /* ---------- 漁港（堀江・三津浜）: 魚市場・漁協・岸壁の網・浮き玉・トロ箱・ドラム缶 ---------- */
+  const HARBORS = [[4482, 300, 170], [1000, 1790, 240]];
+  const inHarbor = (x, y) => HARBORS.some(h => hyp(x - h[0], y - h[1]) < h[2]);
+  function fishingHarbor() {
+    const rr = mulberry32(9601);
+    const ok = (x, y, m) => {
+      if (inWaterRaw(x, y) || nearBld(x, y, 2) || !free(x, y, m) || nearLM(x, y, 12) || propHit(x, y, m, true)) return false;
+      const ri = roadInfo(x, y);
+      if (ri && ri.d < ri.road.w / 2 + G3.SW + 1) return false;
+      return !KEYPTS.some(k => hyp(k[0] - x, k[1] - y) < m + 6);
+    };
+    const rectOk = (cx, cy, ta, hw, hd) => {
+      for (const u of [-1, -0.5, 0, 0.5, 1]) for (const v of [-1, 0, 1]) {
+        const x = cx + Math.cos(ta) * u * hw + Math.sin(ta) * v * hd, y = cy + Math.sin(ta) * u * hw - Math.cos(ta) * v * hd;
+        if (!ok(x, y, 3)) return false;
+      }
+      return true;
+    };
+    let nm = 0, ng = 0, ngear = 0;
+    for (const [hx, hy, rad] of HARBORS) {
+      const cs = portCoast.filter(c => hyp(c[0] - hx, c[1] - hy) < rad).sort((a, b) => hyp(a[0] - hx, a[1] - hy) - hyp(b[0] - hx, b[1] - hy));
+      // 岸壁沿いは道路が通っているので、港の中で空いている所を海に近い順に探す。向きは最寄りの岸壁に合わせる
+      const nearCoast = (x, y) => { let b = null, bd = 1e9; for (const c of cs) { const d = hyp(c[0] - x, c[1] - y); if (d < bd) { bd = d; b = c; } } return [b, bd]; };
+      const cand = [];
+      for (let x = hx - rad; x <= hx + rad; x += 6) for (let y = hy - rad; y <= hy + rad; y += 6) {
+        if (hyp(x - hx, y - hy) > rad || inWaterRaw(x, y)) continue;
+        const [c, d] = nearCoast(x, y);
+        if (c && d < 110) cand.push([x, y, c, d]);
+      }
+      cand.sort((a, b) => a[3] - b[3]);
+      let market = null;
+      for (const [cx, cy, c] of cand) {
+        const ta = Math.atan2(c[2], -c[3]);   // 長い辺を岸壁と平行に、海側を -Y に
+        if (!rectOk(cx, cy, ta, 32, 17)) continue;
+        put('fish_market', cx, cy, -ta, 0);
+        for (let u = -30; u <= 30; u += 6) for (const v of [-14, 0, 14]) take(cx + Math.cos(ta) * u + Math.sin(ta) * v, cy + Math.sin(ta) * u - Math.cos(ta) * v, 4);
+        market = [cx, cy]; nm++; break;
+      }
+      // 漁協の事務所（市場から少し離して、正面を海へ）
+      for (const [cx, cy, c] of cand) {
+        if (market && hyp(cx - market[0], cy - market[1]) < 50) continue;
+        const ta = Math.atan2(-c[2], c[3]);
+        if (!rectOk(cx, cy, ta, 11, 9)) continue;
+        put('gyokyo', cx, cy, -ta, 0); take(cx, cy, 13); ng++; break;
+      }
+      // 岸壁の網・浮き玉・トロ箱・ドラム缶
+      const GEAR = ['net_pile', 'buoy_stack', 'fish_crates', 'drum_set', 'net_pile', 'fish_crates'];
+      for (const [x, y, nx, ny] of cs) for (const along of [-6, 5]) {
+        if (rr() < 0.4) continue;
+        const off = 4.5 + rr() * 4, tx = -ny, ty = nx, gx = x + nx * off + tx * along, gy = y + ny * off + ty * along;
+        if (!ok(gx, gy, 2.5)) continue;
+        put(GEAR[(rr() * GEAR.length) | 0], gx, gy, -Math.atan2(ty, tx) + (rr() - 0.5) * 0.6, 0); take(gx, gy, 3); ngear++;
+      }
+    }
+    stats.harbor = { market: nm, gyokyo: ng, gear: ngear };
+  }
+
   /* ---------- 道後公園（湯築城跡）: 武家屋敷（土塀・門・母屋・土蔵）、本壇の東屋、石碑、園路のベンチと灯籠 ---------- */
   function yuzuki() {
     if (typeof YUZUKI === 'undefined') return;
@@ -2543,6 +2605,7 @@ G3.street = (function () {
     furniture(scene);
     ports();
     coastline(scene);
+    fishingHarbor();
     crossings(scene);
     catenary(scene);
     gasStations(scene);

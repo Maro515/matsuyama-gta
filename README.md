@@ -9,3 +9,10 @@
 - 操作: WASD/矢印移動、E乗車/降車、Shiftダッシュ、Spaceブレーキ、M全域マップ（スマホ/iPadはタッチ操作対応）
 
 ※フィクションのパロディゲームです。地図は簡略化した再現です。
+
+## 開発
+
+- 編集するのは `src/`（`src/game.html` と `src/r3d/*.js`）と `assets/`。開発中は `python3 build/devserver.py 8891` を起動して http://localhost:8891/src/game.html を開く（組み立て不要）
+- 1ファイル版: `python3 build/assemble.py` で `index.html` を作る（素材を全部埋め込むので、ダブルクリックでオフラインでも動く）。生成物なのでリポジトリには入れない
+- 公開: main に push すると GitHub Actions（`.github/workflows/pages.yml`）が同じ手順で組み立てて GitHub Pages に出す
+- 素材を作り直したら: 3D モデルは `sh blender/build_all.sh`（最後に頂点の量子化まで行う）、画像は `sh build/compress_textures.sh`（KTX2 化）

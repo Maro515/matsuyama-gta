@@ -1,0 +1,38 @@
+# main に push したら 1ファイル版（index.html）を組み立てて GitHub Pages に公開する。
+# index.html は生成物なのでリポジトリには入れない（入れると毎回 10MB 近くが履歴に積もる）。
+# 組み立ては手元と同じ python3 build/assemble.py（標準ライブラリだけで動く）。
+name: Pages
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - uses: actions/checkout@v7.0.1
+      - name: 1ファイル版を組み立てる
+        run: |
+          python3 build/assemble.py
+          mkdir _site
+          mv index.html _site/index.html
+      - uses: actions/configure-pages@v6.0.0
+      - uses: actions/upload-pages-artifact@v5.0.0
+        with:
+          path: _site
+      - id: deployment
+        uses: actions/deploy-pages@v5.0.1

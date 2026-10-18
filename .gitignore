@@ -1,3 +1,6 @@
 build/node_modules/
 .DS_Store
 *.blend1
+# 1ファイル版は生成物（python3 build/assemble.py。公開は GitHub Actions が組み立てる）
+/index.html
+/_site/

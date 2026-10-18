@@ -2283,7 +2283,7 @@ G3.street = (function () {
     return G3.lmMat(m);
   }
   // 種類ごとの描画距離（これより遠いチャンクは描かない）。大物は常に描く。
-  const FAR = { guide_gantry: 1e9, tram_stop: 2200, karakuri_clock: 1e9, arcade_gate_okaido: 1600, arcade_gate_gintengai: 1600, arcade_gate_dogo: 1600, container_a: 2400, container_b: 2400, container_c: 2400, container_d: 2400, weed_a: 260, weed_b: 260, drainpipe: 700, meter_box: 300, laundry: 700, stair_flight: 900, tenant_a: 1400, tenant_b: 1400, tenant_c: 1400, shrub_a: 600, shrub_b: 600, niwaki: 1000, lighthouse_red: 3000, lighthouse_white: 3000, tetrapod: 650, wcont_a: 700, wcont_b: 700, wcont_c: 700, gs_canopy: 1600, gs_sign: 1600, fishing_boat: 1800,
+  const FAR = { guide_gantry: 1e9, tram_stop: 2200, karakuri_clock: 1e9, arcade_gate_okaido: 1600, arcade_gate_gintengai: 1600, arcade_gate_dogo: 1600, container_a: 2400, container_b: 2400, container_c: 2400, container_d: 2400, weed_a: 260, weed_b: 260, mesh_fence: 600, urichi_sign: 500, drainpipe: 700, meter_box: 300, laundry: 700, stair_flight: 900, tenant_a: 1400, tenant_b: 1400, tenant_c: 1400, shrub_a: 600, shrub_b: 600, niwaki: 1000, lighthouse_red: 3000, lighthouse_white: 3000, tetrapod: 650, wcont_a: 700, wcont_b: 700, wcont_c: 700, gs_canopy: 1600, gs_sign: 1600, fishing_boat: 1800,
     catenary_pole: 1100, park_toilet: 1000, solar_panel: 900, tv_antenna: 700, bus_shelter: 1000,
     guardrail: 1300, guard_pipe: 1000, hedge_planter: 1200, block_wall: 1000, awning_red: 1100, awning_green: 1100, awning_blue: 1100, awning_orange: 1100,
     sign_speed: 900, sign_stop: 900, curve_mirror: 900, parking_sign: 1200, clock_pole: 1400, map_board: 900 };
@@ -2394,6 +2394,53 @@ G3.street = (function () {
 
 
 
+
+
+  /* ---------- 郊外の空き地（金網フェンスで囲い、道路側に入口と売地の看板、中は雑草） ---------- */
+  function vacantLots(scene) {
+    const rr = mulberry32(9901);
+    const gb = new G3.GB(true);
+    let n = 0;
+    for (const r of ROADS) {
+      if (r.kind !== 'minor' && r.kind !== 'lane') continue;
+      for (let d = 40 + rr() * 60; d < r.pl.len - 60; d += 160 + rr() * 140) {
+        const p0 = plAt(r.pl, d);
+        if (zoneOf(p0.x, p0.y) !== 'suburb') continue;
+        const sg = rr() < 0.5 ? 1 : -1, W = 28 + rr() * 16, D = 22 + rr() * 14, o0 = r.kind === 'lane' ? r.w / 2 + 2 : r.w / 2 + G3.SW + 2.5;
+        const pts = lotFree(r, d, sg, W, D, o0);
+        if (!pts) continue;
+        // 4つ角
+        const c = [at(r, d, sg * o0), at(r, d + W, sg * o0), at(r, d + W, sg * (o0 + D)), at(r, d, sg * (o0 + D))];
+        const fenceLine = (A, B, gapAt) => {
+          const L = hyp(B.x - A.x, B.y - A.y), ang = Math.atan2(B.y - A.y, B.x - A.x), seg = 5;
+          for (let s2 = 0; s2 + seg <= L + 0.01; s2 += seg) {
+            if (gapAt !== undefined && Math.abs(s2 + seg / 2 - gapAt) < 4.5) continue;   // 入口
+            put('mesh_fence', A.x + Math.cos(ang) * s2, A.y + Math.sin(ang) * s2, -ang, 0);
+          }
+        };
+        fenceLine(c[0], c[1], W * (0.3 + rr() * 0.4));
+        fenceLine(c[1], c[2]); fenceLine(c[2], c[3]); fenceLine(c[3], c[0]);
+        // 売地の看板（道路向き）と中の雑草
+        const sp = at(r, d + W * 0.15, sg * (o0 + 1.5));
+        if (rr() < 0.7) put('urichi_sign', sp.x, sp.y, faceTo(sp.x, sp.y, p0.x, p0.y), 0);
+        for (let k = 0; k < 18; k++) {
+          const q = at(r, d + 2 + rr() * (W - 4), sg * (o0 + 2 + rr() * (D - 4)));
+          put(rr() < 0.6 ? 'weed_b' : 'weed_a', q.x, q.y, rr() * TAU, 0);
+        }
+        // 地面（砂利と土）
+        const y = heightAt(c[0].x, c[0].y) + 0.05;
+        gb.quad(c.map(q => [q.x, y, q.y]), [[0, 0], [W / 8, 0], [W / 8, D / 8], [0, D / 8]], [0.62, 0.58, 0.5]);
+        for (const q of pts) take(q.x, q.y, 6);
+        n++;
+      }
+    }
+    if (n) {
+      let tx = G3.tex.gravel || null;
+      const m = gb.mesh(new THREE.MeshStandardMaterial({ map: tx, vertexColors: true, roughness: 0.95, side: THREE.DoubleSide, polygonOffset: true, polygonOffsetFactor: -1, polygonOffsetUnits: -3 }), false);
+      scene.add(m);
+    }
+    stats.vacant = n;
+  }
 
   /* ---------- 建物の外まわり: 竪樋・メーター・アパートの外階段・テナントの縦看板・ベランダの洗濯物 ---------- */
   function exteriors() {
@@ -2715,6 +2762,7 @@ G3.street = (function () {
     houseYards(scene);
     greenery();
     exteriors();
+    vacantLots(scene);
     nightLights(scene);
     shopLights(scene);
     roofs();

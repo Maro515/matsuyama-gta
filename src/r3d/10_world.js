@@ -956,7 +956,7 @@ G3.world = (function () {
   function buildRoads(scene) {
     const flatY = (y) => (x, z) => heightAt(x, z) + y;
     const sorted = ROADS.slice().sort((a, b) => (a.kind === 'main') - (b.kind === 'main'));
-    const gbSide = new GB(false), gbCurb = new GB(false), gbW = new GB(false), gbY = new GB(false), gbArc = new GB(false);
+    const gbSide = new GB(false), gbCurb = new GB(false), gbW = new GB(false), gbY = new GB(false), gbArc = new GB(false), gbGut = new GB(false);
     sorted.forEach((r, k) => {
       if (r.kind === 'arcade') {
         ribbon(gbArc, r.pts, -r.w / 2, r.w / 2, flatY(0.12), 6);
@@ -981,6 +981,9 @@ G3.world = (function () {
           const eo = r.w / 2 - 0.9;
           ribbon(gbW, pts, eo - 0.22, eo + 0.22, flatY(0.07), 10);
           ribbon(gbW, pts, -eo - 0.22, -eo + 0.22, flatY(0.07), 10);
+          // 両端のU字溝（コンクリートの蓋とところどころ鉄の格子）
+          ribbon(gbGut, pts, r.w / 2 - 0.55, r.w / 2 + 0.45, flatY(0.09), 5);
+          ribbon(gbGut, pts, -r.w / 2 - 0.45, -r.w / 2 + 0.55, flatY(0.09), 5);
         }
         return;
       }
@@ -1029,6 +1032,24 @@ G3.world = (function () {
     scene.add(gbSide.mesh(WM.sidewalk, false));
     const cm = gbCurb.mesh(WM.curb, false); scene.add(cm);
     scene.add(gbW.mesh(WM.markW, false), gbY.mesh(WM.markY, false), gbArc.mesh(WM.paver, false));
+    // U字溝の蓋（50cmの蓋が並び、4枚に1枚は鉄の格子）
+    const gutTex = canvasTex(256, 32, g => {
+      for (let i = 0; i < 4; i++) {
+        const x0 = i * 64;
+        if (i === 2) {
+          g.fillStyle = '#3a3c3e'; g.fillRect(x0, 0, 64, 32);
+          g.fillStyle = '#16181a'; for (let k = 4; k < 60; k += 6) g.fillRect(x0 + k, 3, 3, 26);
+        } else {
+          g.fillStyle = i % 2 ? '#a8a49a' : '#b2aea4'; g.fillRect(x0, 0, 64, 32);
+          g.fillStyle = 'rgba(40,38,34,.55)'; g.fillRect(x0 + 26, 13, 12, 6);   // 蓋の持ち手の穴
+          g.fillStyle = 'rgba(60,56,50,.25)'; g.fillRect(x0, 0, 64, 3);
+        }
+        g.fillStyle = '#4a4844'; g.fillRect(x0, 0, 2, 32);
+      }
+    });
+    gutTex.wrapS = gutTex.wrapT = THREE.RepeatWrapping;
+    const gm = gbGut.mesh(new THREE.MeshStandardMaterial({ map: gutTex, roughness: 0.85, polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -40 }), false);
+    gm.receiveShadow = true; scene.add(gm);
     buildCrosswalks(scene);
     buildTramRails(scene);
     buildArcadeRoofs(scene);
@@ -1697,7 +1718,18 @@ G3.world = (function () {
     }
     // マンホール
     const mh = new GB(false);
-    for (const m of MANHOLES) {
+    // 幹線のマンホールに加えて、生活道路・路地にも（交差点を避けて）
+    const mhs = MANHOLES.slice();
+    for (const r of ROADS) {
+      if (r.kind !== 'minor' && r.kind !== 'lane') continue;
+      const step = r.kind === 'lane' ? 55 : 80;
+      for (let d = 25, k = 0; d < r.pl.len - 15; d += step, k++) {
+        if (r.junc.some(j => Math.abs(j.d - d) < j.road.w / 2 + 6)) continue;
+        const p = plAt(r.pl, d), o = (k % 2 ? 1 : -1) * (r.kind === 'lane' ? 1.8 : r.w * 0.16);
+        mhs.push([p.x - Math.sin(p.a) * o, p.y + Math.cos(p.a) * o]);
+      }
+    }
+    for (const m of mhs) {
       const y = heightAt(m[0], m[1]) + 0.08, r2 = 1.6;
       mh.quad([[m[0] - r2, y, m[1] + r2], [m[0] + r2, y, m[1] + r2], [m[0] + r2, y, m[1] - r2], [m[0] - r2, y, m[1] - r2]], [[0, 0], [1, 0], [1, 1], [0, 1]]);
     }

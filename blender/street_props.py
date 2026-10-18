@@ -2008,6 +2008,34 @@ def build_stage13():
     return [drainpipe(), meter_box(), stair_flight()] + [tenant_sign(n, l) for n, l in TENANTS] + [laundry()]
 
 
+
+# ======================================================================
+# 第14段: 空き地（金網フェンス・売地の看板）
+# ======================================================================
+def mesh_fence():
+    """金網フェンス 2m（高さ1.5m）。長手 X（0→2）、柱は x=0。"""
+    post = mat('SP_FencePost', '#3e5a3e', metal=0.5, rough=0.5)
+    net = mat('SP_FenceNet', '#5a6a5a', metal=0.5, rough=0.5, alpha=0.4)
+    p = [cyl('post', 0.03, 1.55, (0, 0, 0.775), post, verts=8), box('top', (2.0, 0.04, 0.04), (1.0, 0, 1.5), post),
+         box('bot', (2.0, 0.03, 0.03), (1.0, 0, 0.08), post), box('net', (2.0, 0.01, 1.38), (1.0, 0, 0.8), net)]
+    return join(p, 'mesh_fence', smooth_angle=30)
+
+
+def urichi_sign():
+    """売地の看板（2本足の板）。文字は +X 面。"""
+    m = M()
+    p = [cyl('leg', 0.03, 1.6, (0, -0.55, 0.8), m['steel'], verts=6), cyl('leg', 0.03, 1.6, (0, 0.55, 0.8), m['steel'], verts=6),
+         box('board', (0.03, 1.4, 0.9), (0, 0, 1.45), m['signw'])]
+    p.append(box('band', (0.035, 1.4, 0.25), (0.002, 0, 1.78), m['red']))
+    p.append(text3d('t', '売地', 0.32, (0.02, 0, 1.45), '+X', m['red']))
+    p.append(text3d('t2', 'みかん不動産', 0.1, (0.02, 0, 1.13), '+X', m['black']))
+    return join(p, 'urichi_sign', smooth_angle=30)
+
+
+def build_stage14():
+    return [mesh_fence(), urichi_sign()]
+
+
 def layout_preview(roots, path, cols=7, gap=2.2, big=()):
     small = [o for o in roots if o.name not in big]
     for i, o in enumerate(small):
@@ -2035,7 +2063,8 @@ if __name__ == '__main__':
     roots11 = build_stage11()
     roots12 = build_stage12()
     roots13 = build_stage13()
-    roots = roots1 + roots2 + roots3 + roots5 + roots6 + roots7 + roots8 + roots9 + roots10 + roots11 + roots12 + roots13
+    roots14 = build_stage14()
+    roots = roots1 + roots2 + roots3 + roots5 + roots6 + roots7 + roots8 + roots9 + roots10 + roots11 + roots12 + roots13 + roots14
     export_glb(os.path.join(ASSETS, 'glb', 'street.glb'), roots)
     only = argv_after()
     def away():

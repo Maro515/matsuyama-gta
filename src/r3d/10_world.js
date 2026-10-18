@@ -1208,7 +1208,9 @@ G3.world = (function () {
       r = new THREE.MeshStandardMaterial({ map: t || null, color: m.color, roughness: m.roughness, metalness: m.metalness, side: m.side });
     } else if (n.startsWith('NightGlow')) {
       r = m.clone();
-      r.userData.glowK = n.includes('Light') ? 8 : n.includes('Red') ? 5 : 2.6;
+      // Blender 側は昼の見た目のため発光強度0で書き出している → 発光色をここで与える
+      if (r.emissive && r.emissive.getHex() === 0) r.emissive.set(n.includes('Red') ? 0xff5a30 : /Light|Clock|Sign/.test(n) ? 0xfff2dc : 0xffcf8a);
+      r.userData.glowK = /Light|Clock|Sign/.test(n) ? 1.5 : n.includes('Red') ? 2.0 : 1.0;
       anim.glow.push(r);
     }
     lmCache[n] = r;
@@ -1272,6 +1274,7 @@ G3.world = (function () {
 
   /* ---------- 毎フレーム ---------- */
   function update(dt) {
+    if (G3.street) G3.street.update(dt);
     for (const t of anim.water) { t.offset.x += dt * 0.004; t.offset.y += dt * 0.0025; }
     for (const w of anim.wheels) {
       w.wheel.rotation.x += dt * 0.06;

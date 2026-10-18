@@ -486,7 +486,7 @@ G3.street = (function () {
     // 観光案内板・時計塔（観光地・駅前広場）
     const spots = [[7372, 2352, 'map_board'], [7452, 2240, 'map_board'], [6300, 2990, 'map_board'], [5905, 3585, 'map_board'],
       [4700, 2960, 'map_board'], [8060, 2560, 'map_board'], [1060, 1730, 'map_board'], [1300, 720, 'map_board'], [5650, 3000, 'map_board'],
-      [4700, 3060, 'clock_pole'], [5820, 3690, 'clock_pole'], [7420, 2380, 'clock_pole'], [1290, 740, 'clock_pole']];
+      [4700, 3060, 'clock_pole'], [5820, 3690, 'clock_pole'], [1290, 740, 'clock_pole']];
     for (const [sx, sy, nm] of spots) {
       const [x, y] = nudgeOffRoad(sx, sy, nm === 'clock_pole' ? 8 : 3);
       if (nearBld(x, y, 3)) continue;
@@ -579,19 +579,332 @@ G3.street = (function () {
     stats.parking_lot = n;
   }
 
+  /* ---------- 第3段: 建物まわり（店先・住宅・室外機） ---------- */
+  function frontOf(b) {
+    const cx = (b.x0 + b.x1) / 2, cy = (b.y0 + b.y1) / 2;
+    const ri = roadInfo(cx, cy);
+    if (!ri) return 0;
+    const dx = ri.x - cx, dy = ri.y - cy;
+    if (Math.abs(dx) > Math.abs(dy)) return dx > 0 ? 1 : 3;
+    return dy > 0 ? 2 : 0;
+  }
+  // 面 f の「壁上の点」(t: 0..1) と外向き法線
+  function wallPt(b, f, t, out = 0) {
+    const N = [[0, -1], [1, 0], [0, 1], [-1, 0]][f];
+    let x, y;
+    if (f === 0) { x = lerp(b.x0, b.x1, t); y = b.y0; }
+    else if (f === 2) { x = lerp(b.x1, b.x0, t); y = b.y1; }
+    else if (f === 1) { x = b.x1; y = lerp(b.y0, b.y1, t); }
+    else { x = b.x0; y = lerp(b.y1, b.y0, t); }
+    return { x: x + N[0] * out, y: y + N[1] * out, rot: -Math.atan2(N[1], N[0]), along: -Math.atan2(N[1], N[0]) - Math.PI / 2 };
+  }
+  const faceLen = (b, f) => (f % 2 === 0) ? b.x1 - b.x0 : b.y1 - b.y0;
+  const AWN = { '#d43c3c': 'awning_red', '#3f8a52': 'awning_green', '#2456a8': 'awning_blue', '#e8a020': 'awning_orange', '#7a3ca8': 'awning_red' };
+  const overlapsOther = (b, x, y, m) => {
+    gridNear(bldGrid, x, y, _ov);
+    for (const o of _ov) if (o !== b && x > o.x0 - m && x < o.x1 + m && y > o.y0 - m && y < o.y1 + m) return true;
+    return false;
+  };
+  const clearOfRoad = (x, y, m) => { const ri = roadInfo(x, y); return !ri || ri.d > ri.road.w / 2 + G3.SW + m; };
+
+  function buildingDetails() {
+    const rr = mulberry32(5304);
+    for (const b of buildings) {
+      if (b.noDraw) continue;
+      const f = frontOf(b), len = faceLen(b, f);
+      const cx = (b.x0 + b.x1) / 2, cy = (b.y0 + b.y1) / 2;
+      const z = zoneOf(cx, cy);
+      const shopFront = b.kind === 'shop' || (b.kind === 'office' && b.seed % 2 && b.hgt <= 4);
+      if (shopFront) {
+        if (z === 'dogo') {
+          // 暖簾と提灯
+          const w = wallPt(b, f, 0.5, 0.2);
+          put('noren', w.x, w.y, w.rot, 0);
+          for (const t of [0.5 - 4.5 / len, 0.5 + 4.5 / len]) {
+            const q = wallPt(b, f, t, 1.6);
+            put('chochin', q.x, q.y, 0, 6.8);
+          }
+        } else {
+          const n = Math.max(1, Math.min(4, Math.floor((len - 4) / 8.5)));
+          const kind = AWN[b.sg] || ['awning_red', 'awning_green', 'awning_blue', 'awning_orange'][b.seed % 4];
+          for (let i = 0; i < n; i++) {
+            const t = 0.5 + (i - (n - 1) / 2) * 8.2 / len;
+            const w = wallPt(b, f, t, 0.1);
+            put(kind, w.x, w.y, w.rot, 0);
+          }
+        }
+        if (rr() < 0.55) {
+          const q = wallPt(b, f, 0.5 + (rr() - 0.5) * 0.5, 4.2);
+          if (clearOfRoad(q.x, q.y, -1) && free(q.x, q.y, 1.5)) { put('stand_sign', q.x, q.y, q.rot, 0); take(q.x, q.y, 1.2); }
+        }
+        if (rr() < 0.4) {
+          const q = wallPt(b, f, rr() < 0.5 ? 0.12 : 0.88, 1.0);
+          put('potted_plant', q.x, q.y, q.rot, 0);
+        }
+        if (rr() < 0.35 || z === 'dogo') {
+          const q = wallPt(b, f, rr() < 0.5 ? 0.06 : 0.94, 3.0);
+          const nb = z === 'dogo' ? ['nobori_c', 'nobori_b', 'nobori_a', 'nobori_d'] : ['nobori_e', 'nobori_a', 'nobori_d'];
+          if (clearOfRoad(q.x, q.y, -1)) put(nb[(rr() * nb.length) | 0], q.x, q.y, q.along, 0);
+        }
+      }
+      if (b.kind === 'house') {
+        // 前庭のブロック塀（門の切れ目あり）
+        if (z !== 'center' && rr() < 0.8) {
+          const off = 4.2, ext = 2.5;
+          const L = len + ext * 2, sec = 5;
+          const gate = 0.3 + rr() * 0.4;
+          for (let s0 = 0; s0 + sec <= L + 0.01; s0 += sec) {
+            const tMid = (s0 + sec / 2 - ext) / len;
+            if (Math.abs(tMid - gate) * len < 4.5) continue;
+            const a = wallPt(b, f, (s0 - ext) / len, off), e = wallPt(b, f, (s0 + sec - ext) / len, off);
+            if (!clearOfRoad(a.x, a.y, 0.6) || !clearOfRoad(e.x, e.y, 0.6)) continue;
+            if (overlapsOther(b, a.x, a.y, 1) || overlapsOther(b, e.x, e.y, 1)) continue;
+            put('block_wall', a.x, a.y, a.along, 0);
+          }
+        }
+        if (rr() < 0.4) {
+          const q = wallPt(b, f, rr() < 0.5 ? 0.15 : 0.85, 0.9);
+          put('potted_plant', q.x, q.y, q.rot, 0);
+        }
+        // 側面: LPガスと室外機
+        const sf = (f + (rr() < 0.5 ? 1 : 3)) % 4;
+        if (rr() < 0.55) { const q = wallPt(b, sf, 0.3 + rr() * 0.2, 0.9); put('propane', q.x, q.y, q.rot, 0); }
+        const q2 = wallPt(b, (f + 2) % 4, 0.25 + rr() * 0.5, 1.0);
+        put('ac_unit', q2.x, q2.y, q2.rot, 0);
+        if (rr() < 0.5) { const q3 = wallPt(b, sf, 0.7 + rr() * 0.15, 1.0); put('ac_unit', q3.x, q3.y, q3.rot, 0); }
+      } else if (b.kind === 'mansion' || b.kind === 'hotel') {
+        // 裏面に各階の室外機（架台つり）
+        const back = (f + 2) % 4, bl = faceLen(b, back);
+        const per = Math.max(1, Math.floor(bl / 14));
+        for (let fl = 1; fl < b.hgt; fl++) {
+          for (let i = 0; i < per; i++) {
+            if (rr() < 0.25) continue;
+            const q = wallPt(b, back, (i + 0.5) / per + (rr() - 0.5) * 0.04, 0.8);
+            put('ac_unit', q.x, q.y, q.rot, Math.max(6, b.hW - FLOORH * b.hgt) + fl * FLOORH - 6.2);
+          }
+        }
+      } else {
+        // 事務所・店舗: 側面の地上に室外機
+        const sf = (f + 1 + (b.seed % 2) * 2) % 4;
+        const n = 1 + ((rr() * 3) | 0);
+        for (let i = 0; i < n; i++) {
+          const q = wallPt(b, sf, 0.2 + i * 0.22, 1.0);
+          put('ac_unit', q.x, q.y, q.rot, 0);
+        }
+      }
+    }
+  }
+  const FLOORH = 7;
+
+  /* ---------- 第3段: 住宅地のごみステーション ---------- */
+  function gomiStations() {
+    const rr = mulberry32(5305);
+    for (const r of ROADS) {
+      if (r.kind !== 'minor') continue;
+      walkSpots(r, 420, 220, rr, (sg, d) => {
+        const p = walkAt(r, sg, d, G3.SW + 2.2);
+        const z = zoneOf(p.x, p.y);
+        if (z === 'center') return;
+        if (nearBld(p.x, p.y, 2) || !free(p.x, p.y, 4) || inWaterRaw(p.x, p.y)) return;
+        put('gomi_station', p.x, p.y, roadFace(r, sg, d, p), 0);
+        take(p.x, p.y, 3);
+      });
+    }
+  }
+
+  /* ---------- 第3段: 道後（からくり時計・鉄柵・提灯・のぼり） ---------- */
+  function dogo(scene) {
+    const rr = mulberry32(5306);
+    // 坊っちゃんカラクリ時計（放生園）
+    {
+      const [x, y] = nudgeOffRoad(7418, 2372, 4);
+      put('karakuri_clock', x, y, faceTo(x, y, 7395, 2335), 0);
+      take(x, y, 8);
+    }
+    // 道後温泉駅前の黒い鋳鉄柵（道路沿いの歩道の外側）
+    const st = [7352, 2292];
+    for (const r of ROADS) {
+      if (r.kind === 'arcade') continue;
+      const cuts = G3.roadCuts(r);
+      for (const [sg, cl] of [[1, cuts.cutsL], [-1, cuts.cutsR]]) {
+        for (const [a, b] of G3.minusIntervals(r.pl.len, cl)) {
+          for (let d = a + 3; d + 5 <= b - 3; d += 5) {
+            const c = walkAt(r, sg, d + 2.5, G3.SW - 0.3);
+            if (hyp(c.x - st[0], c.y - st[1]) > 300) continue;
+            if (!free(c.x, c.y, 1)) continue;
+            const dd = sg > 0 ? d + 5 : d;
+            const p = walkAt(r, sg, dd, G3.SW - 0.3);
+            onWalk('iron_fence', p.x, p.y, -(c.a + (sg > 0 ? Math.PI : 0)));
+          }
+        }
+      }
+    }
+    // 商店街: 提灯の列（アーケードを横断する電線に吊る）・のぼり
+    const wire = [];
+    for (const r of ROADS) {
+      if (r.kind !== 'arcade') continue;
+      const isDogo = r.n === '道後商店街';
+      if (isDogo) {
+        for (let d = 8; d < r.pl.len - 6; d += 14) {
+          const a = at(r, d, -r.w / 2 + 1), b = at(r, d, r.w / 2 - 1);
+          const hy = 11.6;
+          wire.push(a.x, heightAt(a.x, a.y) + hy + 0.6, a.y, b.x, heightAt(b.x, b.y) + hy + 0.6, b.y);
+          for (let o = -r.w / 2 + 3; o <= r.w / 2 - 3; o += 3) {
+            const q = at(r, d, o);
+            put('chochin', q.x, q.y, 0, hy + 0.6 - Math.cos(o / r.w * Math.PI) * 0.6);
+          }
+        }
+      }
+      const nb = isDogo ? ['nobori_c', 'nobori_b', 'nobori_a', 'nobori_d'] : ['nobori_e', 'nobori_a', 'nobori_d', 'nobori_b'];
+      let k = 0;
+      for (let d = 7; d < r.pl.len - 5; d += 17) {
+        for (const sg of [1, -1]) {
+          const q = at(r, d + (sg > 0 ? 0 : 8), sg * (r.w / 2 - 1.2));
+          put(nb[(k++ + ((rr() * 2) | 0)) % nb.length], q.x, q.y, -q.a, 0.12);
+        }
+      }
+    }
+    if (wire.length) {
+      const wg = new THREE.BufferGeometry();
+      wg.setAttribute('position', new THREE.Float32BufferAttribute(wire, 3));
+      scene.add(new THREE.LineSegments(wg, new THREE.LineBasicMaterial({ color: 0x1d1f22 })));
+    }
+    // 石灯籠: 神社・寺・公園の参道入口
+    for (const [nm, lx, ly] of [['護国神社', 5563, 1815], ['石手寺', 8114, 2485], ['道後公園', 7430, 2470], ['道後温泉本館', 7434, 2155]]) {
+      const l = LMS.find(q => q.n === nm);
+      const cx = l && l.solid ? (l.solid[0] + l.solid[2]) / 2 : lx, cy = l && l.solid ? (l.solid[1] + l.solid[3]) / 2 : ly;
+      const ri = roadInfo(cx, cy);
+      if (!ri) continue;
+      const dx = cx - ri.x, dy = cy - ri.y, L = hyp(dx, dy) || 1;
+      const ux = dx / L, uy = dy / L;
+      const back = Math.min(L - 8, ri.road.w / 2 + G3.SW + 6);
+      for (const s of [1, -1]) {
+        const x = ri.x + ux * back - uy * s * 9, y = ri.y + uy * back + ux * s * 9;
+        if (nearBld(x, y, 1) || inWaterRaw(x, y)) continue;
+        put('stone_lantern', x, y, faceTo(x, y, ri.x, ri.y), 0);
+        take(x, y, 2);
+      }
+    }
+  }
+
+  /* ---------- 第3段: 港（コンテナ・係船柱） ---------- */
+  function ports() {
+    const rr = mulberry32(5307);
+    const PORTS = [[1000, 1790, 230], [1330, 660, 230], [4482, 300, 160]];
+    for (const [px, py, rad] of PORTS) {
+      // 岸壁の係船柱（海岸線ポリゴンに沿って）
+      const coast = [];
+      for (let i = 1; i < SEA.length; i++) {
+        const a = SEA[i - 1], b = SEA[i];
+        const L = hyp(b[0] - a[0], b[1] - a[1]);
+        for (let t = 0; t < L; t += 22) {
+          const x = lerp(a[0], b[0], t / L), y = lerp(a[1], b[1], t / L);
+          if (hyp(x - px, y - py) > rad) continue;
+          let nx = -(b[1] - a[1]) / L, ny = (b[0] - a[0]) / L;
+          if (inWaterRaw(x + nx * 6, y + ny * 6)) { nx = -nx; ny = -ny; }
+          if (inWaterRaw(x + nx * 6, y + ny * 6)) continue;
+          coast.push([x, y, nx, ny]);
+        }
+      }
+      for (const [x, y, nx, ny] of coast) {
+        const bx = x + nx * 2.2, by = y + ny * 2.2;
+        if (nearBld(bx, by, 1) || !clearOfRoad(bx, by, -G3.SW) || !free(bx, by, 2)) continue;
+        put('mooring_bollard', bx, by, -Math.atan2(-ny, -nx), 0);
+        take(bx, by, 2);
+      }
+      // コンテナヤード（岸壁の内側の空き地に2段積み）
+      let placed = 0;
+      for (let t = 0; t < 400 && placed < 7; t++) {
+        const c = coast[(rr() * coast.length) | 0];
+        if (!c) break;
+        const dist = 26 + rr() * 50;
+        const x = c[0] + c[2] * dist, y = c[1] + c[3] * dist;
+        const ang = Math.atan2(c[1] - y, c[0] - x) + Math.PI / 2;
+        const ux = Math.cos(ang), uy = Math.sin(ang);
+        const n = 2 + ((rr() * 3) | 0);
+        const pts = [];
+        for (let i = 0; i < n; i++) pts.push([x + ux * i * 16 - uy * 0, y + uy * i * 16]);
+        let ok = true;
+        for (const [qx, qy] of pts) for (const [ox, oy] of [[0, 0], [ux * 8, uy * 8], [-ux * 8, -uy * 8]]) {
+          const X = qx + ox, Y = qy + oy;
+          if (inWaterRaw(X, Y) || nearBld(X, Y, 4) || !clearOfRoad(X, Y, 3) || !free(X, Y, 7)) { ok = false; break; }
+        }
+        if (!ok) continue;
+        for (const [qx, qy] of pts) {
+          const nm = ['container_a', 'container_b', 'container_c', 'container_d'];
+          put(nm[(rr() * 4) | 0], qx, qy, -ang, 0);
+          if (rr() < 0.55) put(nm[(rr() * 4) | 0], qx, qy, -ang, 6.48);
+          take(qx, qy, 8);
+        }
+        placed++;
+      }
+    }
+  }
+
   /* ---------- インスタンス化 ---------- */
+  let blockMat = null;
+  function streetMat(m) {
+    if (m && m.name === 'SP_BlockTex') {
+      if (!blockMat) {
+        const t = G3.world.canvasTex(128, 128, g => {
+          g.fillStyle = '#8f8c84'; g.fillRect(0, 0, 128, 128);
+          const blk = (x, y, w, h) => { g.fillStyle = '#bdbab1'; g.fillRect(x + 2, y + 2, w - 4, h - 4); g.fillStyle = 'rgba(0,0,0,.05)'; g.fillRect(x + 2, y + h / 2, w - 4, h / 2 - 2); };
+          blk(0, 0, 64, 64); blk(64, 0, 64, 64); blk(-32, 64, 64, 64); blk(32, 64, 64, 64); blk(96, 64, 64, 64);
+        });
+        t.wrapS = t.wrapT = THREE.RepeatWrapping; t.flipY = false;
+        blockMat = new THREE.MeshStandardMaterial({ map: t, roughness: 0.92 });
+      }
+      return blockMat;
+    }
+    return G3.lmMat(m);
+  }
+  // 種類ごとの描画距離（これより遠いチャンクは描かない）。大物は常に描く。
+  const FAR = { guide_gantry: 1e9, tram_stop: 2200, karakuri_clock: 1e9, container_a: 2400, container_b: 2400, container_c: 2400, container_d: 2400,
+    guardrail: 1300, guard_pipe: 1000, hedge_planter: 1200, block_wall: 1000, awning_red: 1100, awning_green: 1100, awning_blue: 1100, awning_orange: 1100,
+    sign_speed: 900, sign_stop: 900, curve_mirror: 900, parking_sign: 1200, clock_pole: 1400, map_board: 900 };
+  const FAR_DEF = 650;
+  const CH = 400;   // チャンク一辺（ゲーム単位 = 160m）
+  const chunks = [];
   function flush(scene) {
+    const tmpV = new THREE.Vector3();
     for (const name in lists) {
       const node = G3.glbNode('street', name);
       stats[name] = lists[name].length;
       if (!node) continue;
-      node.traverse(c => { if (c.isMesh) c.material = Array.isArray(c.material) ? c.material.map(G3.lmMat) : G3.lmMat(c.material); });
-      const g = G3.instanceNode(node, lists[name]);
-      g.name = 'street_' + name;
-      g.userData.pos = lists[name].map(M => [M.elements[12], M.elements[14]]);
-      scene.add(g);
+      node.traverse(c => { if (c.isMesh) c.material = Array.isArray(c.material) ? c.material.map(streetMat) : streetMat(c.material); });
+      const groups = new Map();
+      for (const M of lists[name]) {
+        const k = Math.floor(M.elements[12] / CH) + ',' + Math.floor(M.elements[14] / CH);
+        (groups.get(k) || groups.set(k, []).get(k)).push(M);
+      }
+      const far = (FAR[name] || FAR_DEF) * (matchMedia('(pointer:coarse)').matches ? 0.7 : 1);
+      const all = [];
+      for (const [k, mats] of groups) {
+        const g = G3.instanceNode(node, mats, { shadow: far > 700 || /wall|fence|awning|box|booth|rack/.test(name) });
+        g.traverse(o => { if (o.isInstancedMesh) { o.computeBoundingSphere(); o.frustumCulled = true; } });
+        let cx = 0, cz = 0;
+        for (const M of mats) { cx += M.elements[12]; cz += M.elements[14]; }
+        cx /= mats.length; cz /= mats.length;
+        chunks.push({ g, x: cx, z: cz, far: far + CH * 0.75 });
+        for (const M of mats) all.push([M.elements[12], M.elements[14]]);
+        scene.add(g);
+      }
+      const tag = new THREE.Object3D();
+      tag.name = 'street_' + name; tag.userData.pos = all; tag.visible = false;
+      scene.add(tag);
     }
     lists = {};
+  }
+  let upT = 0;
+  function update(dt) {
+    upT -= dt;
+    if (upT > 0) return;
+    upT = 0.25;
+    const c = G3.camera.position;
+    for (const k of chunks) {
+      const dx = k.x - c.x, dz = k.z - c.z;
+      k.g.visible = dx * dx + dz * dz < k.far * k.far;
+    }
   }
 
   function build(scene) {
@@ -600,10 +913,14 @@ G3.street = (function () {
     tramStops();
     guideSigns(scene);
     signs();
+    dogo(scene);
     furniture(scene);
+    ports();
+    gomiStations();
     roadEdges();
+    buildingDetails();
     flush(scene);
     G3.street.stats = stats;
   }
-  return { build, zoneOf };
+  return { build, update, zoneOf };
 })();

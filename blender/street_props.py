@@ -23,15 +23,16 @@ def text3d(name, s, size, loc, facing, m, depth=0.004, rot_extra=0.0):
     cu.body = s
     cu.font = GOTHIC
     cu.size = size
-    cu.extrude = depth
+    cu.extrude = 0.0          # 平面文字（側面を作らず三角形を節約）
     cu.align_x = 'CENTER'
     cu.align_y = 'CENTER'
-    cu.resolution_u = 2
+    cu.resolution_u = 1
     o = bpy.data.objects.new(name, cu)
     bpy.context.scene.collection.objects.link(o)
     rz = {'-Y': 0, '+X': math.pi / 2, '+Y': math.pi, '-X': -math.pi / 2}[facing]
     o.rotation_euler = (math.pi / 2, rot_extra, rz)
-    o.location = loc
+    fv = {'-Y': (0, -1, 0), '+X': (1, 0, 0), '+Y': (0, 1, 0), '-X': (-1, 0, 0)}[facing]
+    o.location = (loc[0] + fv[0] * depth, loc[1] + fv[1] * depth, loc[2])
     bpy.context.view_layer.update()
     dg = bpy.context.evaluated_depsgraph_get()
     me = bpy.data.meshes.new_from_object(o.evaluated_get(dg))
@@ -163,7 +164,7 @@ def hedge_mesh(name, sx, sy, sz, loc, m, seed=1):
 
 
 def bush(name, x, y, z, r, m, seed):
-    o = ico(name, r, (0, 0, 0), m, sub=3, scale=(1.15, 1.0, 0.85))
+    o = ico(name, r, (0, 0, 0), m, sub=2, scale=(1.15, 1.0, 0.85))
     for v in o.data.vertices:
         n = noise.noise(v.co * 7.0 + Vector((seed * 3.3, seed, 0)))
         n2 = noise.noise(v.co * 19.0 + Vector((0, seed * 1.7, 0)))
@@ -447,14 +448,14 @@ def phone_booth():
 
 def wheel(name, x, r, m_tire, m_rim, m_spoke):
     parts = []
-    t = bpy.ops.mesh.primitive_torus_add(major_radius=r, minor_radius=0.018, major_segments=28, minor_segments=6,
+    t = bpy.ops.mesh.primitive_torus_add(major_radius=r, minor_radius=0.018, major_segments=20, minor_segments=4,
                                          location=(x, 0, r + 0.018), rotation=(math.pi / 2, 0, 0))
     o = bpy.context.active_object
     o.data.materials.append(m_tire)
     parts.append(o)
     parts.append(cyl('rim', r - 0.02, 0.012, (x, 0, r + 0.018), m_rim, verts=24, axis='Y', cap=False))
-    for k in range(8):
-        a = k / 8 * math.pi
+    for k in range(6):
+        a = k / 6 * math.pi
         parts.append(box('sp', (2 * (r - 0.03), 0.003, 0.003), (x, 0, r + 0.018), m_spoke, rot=('Y', a)))
     parts.append(cyl('hub', 0.025, 0.08, (x, 0, r + 0.018), m_spoke, verts=10, axis='Y'))
     return parts
@@ -668,6 +669,306 @@ def build_stage2():
 
 
 
+# ======================================================================
+# 第3段: 地区ごとの街具（道後・商店・住宅地・港）
+# ======================================================================
+def awning(name, c1, c2):
+    """店先の日除けテント（幅3m・出1.2m）。壁面が x=0、+X が道路側。"""
+    a = mat('SP_Awn_' + name, c1, rough=0.7)
+    b = mat('SP_Awn2_' + name, c2, rough=0.7) if c2 else a
+    m = M()
+    p = []
+    W, D, z0, z1 = 3.0, 1.2, 2.95, 2.45
+    n = 10
+    for i in range(n):
+        y0 = -W / 2 + i * W / n
+        mm = a if i % 2 == 0 else b
+        bm = bmesh.new()
+        v = [bm.verts.new(q) for q in ((0, y0, z0), (D, y0, z1), (D, y0 + W / n, z1), (0, y0 + W / n, z0))]
+        bm.faces.new(v)
+        o = mesh_from_bm('s', bm, [mm])
+        add_mod(o, 'SOLIDIFY', thickness=0.015)
+        p.append(o)
+        p.append(box('val', (0.012, W / n, 0.28), (D + 0.006, y0 + W / n / 2, z1 - 0.14), mm))
+    for s in (-1, 1):
+        p.append(prism('side', [(0, z0), (D, z1), (D, z1 - 0.28), (0, z1 - 0.1)], s * W / 2 - 0.006, s * W / 2 + 0.006, a, axis='Y'))
+    p.append(cyl('bar', 0.02, W, (D, 0, z1 - 0.02), m['steel'], verts=8, axis='Y'))
+    return join(p, name, smooth_angle=30)
+
+
+def stand_sign():
+    """店先のA型スタンド看板。"""
+    m = M()
+    fr = mat('SP_StandFrame', '#2a2c2e', rough=0.5)
+    board = mat('SP_Chalk', '#1e3a2c', rough=0.8)
+    p = []
+    for s in (-1, 1):
+        pl = box('b', (0.03, 0.55, 0.8), (s * 0.13, 0, 0.45), fr)
+        pl.rotation_euler = (0, s * -0.17, 0)
+        p.append(pl)
+        q = box('c', (0.032, 0.47, 0.6), (s * 0.135, 0, 0.47), board)
+        q.rotation_euler = (0, s * -0.17, 0)
+        p.append(q)
+    p.append(text3d('t', 'OPEN', 0.1, (0.17, 0, 0.62), '+X', m['signw'], depth=0.003, rot_extra=0.0))
+    p.append(text3d('t2', 'ランチ', 0.08, (0.19, 0, 0.45), '+X', mat('SP_ChalkY', '#f2d24a'), depth=0.003))
+    return join(p, 'stand_sign', smooth_angle=30)
+
+
+def noren():
+    """暖簾（藍染・白抜き文字）。壁面 x=0、入口の上に掛ける。"""
+    m = M()
+    ai = mat('SP_Noren', '#1f2f55', rough=0.85)
+    p = [cyl('rod', 0.02, 1.9, (0.12, 0, 2.3), mat('SP_Bamboo', '#b49a5a', rough=0.6), verts=8, axis='Y')]
+    for i in range(3):
+        y = -0.6 + i * 0.6
+        o = box('n', (0.012, 0.57, 0.9), (0.12, y, 1.84), ai)
+        p.append(o)
+    for i, ch in enumerate('営業中'):
+        p.append(text3d('t', ch, 0.16, (0.128, -0.6 + i * 0.6, 1.7), '+X', m['signw'], depth=0.003))
+    return join(p, 'noren', smooth_angle=30)
+
+
+def chochin():
+    """赤い提灯（直径40cm）。原点は吊り下げ点。"""
+    red = mat('NightGlow_Red', '#c8301e', rough=0.6, emit='#ff6a3a', estr=0.0)
+    blk = mat('SP_Black', '#141516', rough=0.5)
+    p = [sphere('body', 0.2, (0, 0, -0.36), red, seg=14, rings=10, scale=(1, 1, 1.35)),
+         cyl('top', 0.12, 0.06, (0, 0, -0.06), blk, verts=12),
+         cyl('bot', 0.12, 0.06, (0, 0, -0.66), blk, verts=12),
+         cyl('cord', 0.006, 0.05, (0, 0, -0.01), blk, verts=6)]
+    return join(p, 'chochin', smooth_angle=60)
+
+
+def nobori(name, col, txt, tcol='#ffffff'):
+    """のぼり旗（幅45cm×高さ1.8m）。旗面の法線 ±X。"""
+    m = M()
+    cloth = mat('SP_Nobori_' + name, col, rough=0.8)
+    tm = mat('SP_NoboriT_' + name, tcol, rough=0.8)
+    p = [cyl('pole', 0.014, 2.6, (0, 0, 1.3), m['white'], verts=8),
+         cyl('base', 0.16, 0.18, (0, 0, 0.09), mat('SP_WaterBase', '#3a5a9a', rough=0.5), verts=14),
+         cyl('top', 0.01, 0.48, (0, 0.24, 2.55), m['white'], verts=6, axis='Y'),
+         box('flag', (0.006, 0.46, 1.8), (0, 0.25, 1.62), cloth)]
+    sz = 0.34 if len(txt) <= 4 else 0.27
+    for f, x in (('+X', 0.006), ('-X', -0.006)):
+        p += [text3d('t', ch, sz, (x, 0.25, 2.3 - i * sz * 1.12), f, tm, depth=0.002) for i, ch in enumerate(txt)]
+    return join(p, name, smooth_angle=30)
+
+
+def iron_fence():
+    """道後駅前の黒い鋳鉄柵（飾り付き）2m区間。"""
+    iron = mat('SP_IronFence', '#1c1e20', metal=0.5, rough=0.5)
+    gold = mat('SP_FenceGold', '#b8933a', metal=0.9, rough=0.35)
+    p = [box('post', (0.07, 0.07, 1.0), (0, 0, 0.5), iron), sphere('fin', 0.05, (0, 0, 1.04), gold, seg=10, rings=6)]
+    for z in (0.12, 0.85):
+        p.append(box('rail', (2.0, 0.03, 0.035), (1.0, 0, z), iron))
+    for i in range(1, 16):
+        x = i * 2.0 / 16
+        p.append(box('bar', (0.014, 0.014, 0.73), (x, 0, 0.485), iron))
+        if i % 2:
+            p.append(cyl('sp', 0.022, 0.07, (x, 0, 0.9), iron, verts=4, r2=0.0))
+    for k in range(4):
+        x = 0.25 + k * 0.5
+        bpy.ops.mesh.primitive_torus_add(major_radius=0.18, minor_radius=0.011, major_segments=12, minor_segments=3,
+                                         location=(x, 0, 0.48), rotation=(math.pi / 2, 0, 0))
+        o = bpy.context.active_object
+        o.data.materials.append(iron)
+        p.append(o)
+    return join(p, 'iron_fence', smooth_angle=50)
+
+
+def stone_lantern():
+    """石灯籠（春日型）。"""
+    st = mat('SP_Stone', '#9c988e', rough=0.9)
+    p = [cyl('base', 0.42, 0.25, (0, 0, 0.125), st, verts=6),
+         cyl('shaft', 0.14, 1.0, (0, 0, 0.75), st, verts=12),
+         cyl('mid', 0.36, 0.2, (0, 0, 1.35), st, verts=6),
+         box('fire', (0.5, 0.5, 0.42), (0, 0, 1.66), st),
+         cyl('roof', 0.62, 0.3, (0, 0, 2.02), st, verts=6, r2=0.2),
+         sphere('jewel', 0.12, (0, 0, 2.27), st, seg=10, rings=6, scale=(1, 1, 1.3))]
+    win = mat('NightGlow_Warm', '#3a3226', rough=0.3, emit='#ffcf8a', estr=0.0)
+    for s in (1, -1):
+        p.append(box('w', (0.02, 0.24, 0.24), (s * 0.255, 0, 1.66), win))
+        p.append(box('w2', (0.24, 0.02, 0.24), (0, s * 0.255, 1.66), win))
+    return join(p, 'stone_lantern', smooth_angle=30)
+
+
+def karakuri_clock():
+    """坊っちゃんカラクリ時計（道後温泉駅前・放生園）。高さ約7.5m。"""
+    m = M()
+    white = mat('SP_KClockWhite', '#efe8d8', rough=0.6)
+    copper = mat('SP_KClockCopper', '#5a8f7a', metal=0.5, rough=0.45)
+    brick = mat('SP_KBrick', '#8a4a32', rough=0.85)
+    gold = mat('SP_FenceGold', '#b8933a', metal=0.9, rough=0.35)
+    face = mat('NightGlow_Clock', '#f6f4ec', rough=0.3, emit='#fff8e8', estr=0.0)
+    p = [cyl('plinth', 1.7, 0.6, (0, 0, 0.3), brick, verts=8),
+         cyl('stage', 1.3, 2.2, (0, 0, 1.7), white, verts=8),
+         cyl('band', 1.38, 0.18, (0, 0, 2.85), copper, verts=8),
+         cyl('mid', 1.0, 2.0, (0, 0, 3.95), white, verts=8),
+         cyl('band2', 1.1, 0.18, (0, 0, 5.0), copper, verts=8),
+         cyl('clock', 0.85, 1.2, (0, 0, 5.7), white, verts=8),
+         cyl('roof', 1.05, 1.2, (0, 0, 6.85), copper, verts=8, r2=0.15),
+         sphere('ball', 0.16, (0, 0, 7.55), gold, seg=10, rings=6),
+         cyl('spire', 0.03, 0.5, (0, 0, 7.85), gold, verts=6)]
+    for k in range(4):
+        a = k * math.pi / 2
+        cx, cy = math.cos(a) * 0.86, math.sin(a) * 0.86
+        c = cyl('face', 0.36, 0.05, (0, 0, 0), face, verts=24, axis='X')
+        c.rotation_euler = (0, 0, a); c.location = (cx, cy, 5.7)
+        p.append(c)
+        r = cyl('rim', 0.4, 0.04, (0, 0, 0), gold, verts=24, axis='X')
+        r.rotation_euler = (0, 0, a); r.location = (math.cos(a) * 0.84, math.sin(a) * 0.84, 5.7)
+        p.append(r)
+        hand = box('h', (0.01, 0.03, 0.26), (0, 0, 0), m['black'], rot=('X', 0.9))
+        hand.rotation_euler = (0, 0, a); hand.location = (math.cos(a) * 0.89, math.sin(a) * 0.89, 5.75)
+        p.append(hand)
+        # 舞台の窓（からくり人形が出る扉）
+        w = box('door', (0.06, 0.8, 1.2), (0, 0, 0), mat('SP_KDoor', '#6a2a22', rough=0.5))
+        w.rotation_euler = (0, 0, a); w.location = (math.cos(a) * 1.22, math.sin(a) * 1.22, 1.9)
+        p.append(w)
+        win = box('win', (0.05, 0.5, 0.8), (0, 0, 0), mat('NightGlow_Warm', '#3a3226', rough=0.3, emit='#ffcf8a', estr=0.0))
+        win.rotation_euler = (0, 0, a + math.pi / 4); win.location = (math.cos(a + math.pi / 4) * 0.94, math.sin(a + math.pi / 4) * 0.94, 3.95)
+        p.append(win)
+    return join(p, 'karakuri_clock', smooth_angle=30)
+
+
+def uv_box(o, su, sv):
+    """箱投影UV（側面: u=水平/su, v=z/sv）。"""
+    me = o.data
+    uv = me.uv_layers[0] if me.uv_layers else me.uv_layers.new(name='UVMap')
+    for p in me.polygons:
+        n = p.normal
+        for li in p.loop_indices:
+            v = me.vertices[me.loops[li].vertex_index].co
+            if abs(n.z) > 0.7:
+                uv.data[li].uv = (v.x / su, v.y / sv)
+            elif abs(n.x) > abs(n.y):
+                uv.data[li].uv = (v.y / su, v.z / sv)
+            else:
+                uv.data[li].uv = (v.x / su, v.z / sv)
+
+
+def block_wall():
+    """住宅のコンクリートブロック塀（2m区間・高さ1.2m）。目地は 'SP_BlockTex'（ゲーム側でブロック柄に差し替え）。"""
+    blk = mat('SP_BlockTex', '#b9b6ad', rough=0.9)
+    cap = mat('SP_BlockCap', '#a9a69e', rough=0.85)
+    hole = mat('SP_BlockHole', '#5a5852', rough=0.95)
+    w = box('wall', (2.0, 0.15, 1.2), (1.0, 0, 0.6), blk)
+    uv_box(w, 0.8, 0.4)
+    p = [w, box('cap', (2.0, 0.19, 0.06), (1.0, 0, 1.23), cap), box('foot', (2.0, 0.25, 0.12), (1.0, 0, 0.06), cap)]
+    for x in (0.6, 1.4):
+        for s in (-1, 1):
+            p.append(box('hole', (0.34, 0.006, 0.14), (x, s * 0.076, 0.9), hole))
+    return join(p, 'block_wall', smooth_angle=30)
+
+
+def propane():
+    """LPガスボンベ2本（住宅の外壁ぎわ）。"""
+    m = M()
+    g = mat('SP_LPG', '#c9ccd0', metal=0.4, rough=0.45)
+    p = []
+    for y in (-0.22, 0.22):
+        p += [cyl('c', 0.18, 1.1, (0, y, 0.6), g, verts=16), sphere('d', 0.18, (0, y, 1.15), g, seg=16, rings=6, scale=(1, 1, 0.5)),
+              cyl('cap', 0.09, 0.2, (0, y, 1.3), g, verts=10), cyl('ft', 0.17, 0.05, (0, y, 0.025), m['dark'], verts=14)]
+    p.append(box('chain', (0.02, 0.8, 0.02), (0.18, 0, 0.95), m['steel']))
+    p.append(box('reg', (0.12, 0.3, 0.14), (-0.05, 0, 1.5), m['grey']))
+    return join(p, 'propane', smooth_angle=40)
+
+
+def ac_unit():
+    """エアコン室外機。正面(ファン)+X。"""
+    m = M()
+    body = mat('SP_ACBody', '#e6e4dc', rough=0.5)
+    p = [box('b', (0.3, 0.8, 0.6), (0, 0, 0.36), body, bevel=0.01),
+         cyl('fan', 0.22, 0.02, (0.152, -0.1, 0.36), m['dark'], verts=20, axis='X'),
+         box('grill', (0.01, 0.2, 0.5), (0.152, 0.28, 0.36), m['grey'])]
+    for z in (0.2, 0.36, 0.52):
+        p.append(box('fg', (0.01, 0.46, 0.012), (0.163, -0.1, z), body))
+    for y in (-0.3, 0.3):
+        p.append(box('leg', (0.34, 0.05, 0.06), (0, y, 0.03), m['dark']))
+    p.append(cyl('pipe', 0.02, 0.5, (-0.1, 0.36, 0.7), m['white'], verts=6))
+    return join(p, 'ac_unit', smooth_angle=40)
+
+
+def gomi_station():
+    """ごみステーション（緑の折りたたみ収集庫＋ネット）。正面+X。"""
+    m = M()
+    green = mat('SP_GomiGreen', '#3d7a4a', rough=0.5)
+    net = mat('SP_GomiNet', '#2f6a8a', rough=0.8)
+    bag = mat('SP_GomiBag', '#e8eae6', rough=0.4, alpha=1.0)
+    p = [box('base', (1.0, 1.8, 0.04), (0, 0, 0.02), m['conc'])]
+    frame = box('frame', (0.9, 1.6, 1.0), (0, 0, 0.52), green)
+    add_mod(frame, 'WIREFRAME', thickness=0.03, use_replace=True)
+    p.append(frame)
+    for s in (-1, 1):
+        p.append(box('side', (0.88, 0.01, 0.95), (0, s * 0.79, 0.5), net))
+    p.append(box('back', (0.01, 1.56, 0.95), (-0.44, 0, 0.5), net))
+    p.append(box('lid', (0.92, 1.62, 0.02), (0, 0, 1.03), green))
+    rr = random.Random(4)
+    for i in range(5):
+        p.append(ico('bag', 0.22, (rr.uniform(-0.25, 0.25), rr.uniform(-0.6, 0.6), 0.25), bag, sub=1, scale=(1, 1, 1.1)))
+    p.append(box('plate', (0.01, 0.4, 0.25), (0.45, 0, 0.8), m['signw']))
+    return join(p, 'gomi_station', smooth_angle=40)
+
+
+def container(name, col):
+    """20フィート海上コンテナ（6.06×2.44×2.59m）。長手+X。"""
+    c = mat('SP_Cont_' + name, col, metal=0.3, rough=0.55)
+    m = M()
+    L, W, H = 6.06, 2.44, 2.59
+    p = [box('body', (L, W - 0.08, H - 0.1), (0, 0, H / 2), c)]
+    for i in range(23):
+        x = -L / 2 + 0.15 + i * (L - 0.3) / 22
+        for s in (-1, 1):
+            p.append(box('rib', (0.1, 0.05, H - 0.3), (x, s * (W / 2 - 0.03), H / 2), c))
+    for sx in (-1, 1):
+        for sy in (-1, 1):
+            for z in (0.08, H - 0.08):
+                p.append(box('cast', (0.18, 0.16, 0.16), (sx * (L / 2 - 0.09), sy * (W / 2 - 0.08), z), m['dark']))
+        for sy in (-1, 1):
+            p.append(box('cpost', (0.1, 0.1, H), (sx * (L / 2 - 0.05), sy * (W / 2 - 0.05), H / 2), c))
+    for z in (0.05, H - 0.05):
+        for s in (-1, 1):
+            p.append(box('rail', (L, 0.1, 0.12), (0, s * (W / 2 - 0.05), z), c))
+    for y in (-0.6, 0.6):
+        p.append(box('door', (0.04, 1.14, H - 0.3), (L / 2 + 0.02, y, H / 2), c))
+        for yy in (y - 0.3, y + 0.3):
+            p.append(cyl('bar', 0.02, H - 0.4, (L / 2 + 0.06, yy, H / 2), m['steel'], verts=6))
+    return join(p, name, smooth_angle=30)
+
+
+def mooring_bollard():
+    """岸壁の係船柱（ビット）。"""
+    iron = mat('SP_Bitt', '#262829', metal=0.5, rough=0.6)
+    yel = mat('SP_BittEdge', '#d9b62a', rough=0.5)
+    p = [cyl('base', 0.3, 0.1, (0, 0, 0.05), iron, verts=16), cyl('post', 0.18, 0.55, (0, 0, 0.35), iron, verts=16),
+         cyl('head', 0.28, 0.1, (0, 0, 0.65), iron, verts=16), box('edge', (0.6, 3.0, 0.02), (0.6, 0, 0.01), yel)]
+    return join(p, 'mooring_bollard', smooth_angle=40)
+
+
+def potted_plant():
+    """玄関先の植木鉢（2鉢）。"""
+    pot = mat('SP_Pot', '#9a5a3a', rough=0.7)
+    leaf = mat('SP_Leaf', '#3b7a33', rough=0.8)
+    p = []
+    for (x, y, r, h) in ((0, -0.2, 0.18, 0.3), (0.05, 0.22, 0.14, 0.24)):
+        p.append(cyl('pot', r, h, (x, y, h / 2), pot, verts=14, r2=r * 0.75))
+        p.append(ico('lf', r * 1.5, (x, y, h + r * 1.1), leaf, sub=2, scale=(1, 1, 1.2)))
+    return join(p, 'potted_plant', smooth_angle=60)
+
+
+def build_stage3():
+    return [awning('awning_red', '#c8322a', '#f2efe6'), awning('awning_green', '#2f7a46', '#f2efe6'),
+            awning('awning_blue', '#2a4f8e', '#f2efe6'), awning('awning_orange', '#e07a20', None),
+            stand_sign(), noren(), chochin(),
+            nobori('nobori_a', '#e8701c', 'みかん'), nobori('nobori_b', '#2a8a4a', '坊っちゃん団子'),
+            nobori('nobori_c', '#c8201e', '道後温泉'), nobori('nobori_d', '#1f3f8e', 'じゃこ天'),
+            nobori('nobori_e', '#f2d22a', '大売出し', '#c8201e'),
+            iron_fence(), stone_lantern(), karakuri_clock(), block_wall(), propane(), ac_unit(), gomi_station(),
+            container('container_a', '#b8402e'), container('container_b', '#2a5a8a'), container('container_c', '#3a7a4a'),
+            container('container_d', '#c8a03a'), mooring_bollard(), potted_plant()]
+
+
+
 def layout_preview(roots, path, cols=7, gap=2.2, big=()):
     small = [o for o in roots if o.name not in big]
     for i, o in enumerate(small):
@@ -685,14 +986,24 @@ if __name__ == '__main__':
     fonts()
     roots1 = build_stage1()
     roots2 = build_stage2()
-    roots = roots1 + roots2
+    roots3 = build_stage3()
+    roots = roots1 + roots2 + roots3
     export_glb(os.path.join(ASSETS, 'glb', 'street.glb'), roots)
-    for o in roots1:
-        o.location = (0, 60, 0)
-    layout_preview(roots2, os.path.join(PREV, 'street2.png'), cols=8, gap=2.0, big=('parking_sign',))
-    layout_preview(roots1, os.path.join(PREV, 'street1.png'), big=('guide_gantry', 'tram_stop'))
-    for o in roots:
-        o.location = (0, 40, 0)
-    g = bpy.data.objects['guide_gantry']; g.location = (-6, 0, 0)
-    t = bpy.data.objects['tram_stop']; t.location = (2, -4, 0)
-    preview(os.path.join(PREV, 'street1b.png'), target=(0, -2, 3), dist=20, elev=14, azim=-110, lens=40, res=(1400, 800), samples=48)
+    only = argv_after()
+    def away():
+        for o in roots:
+            o.location = (0, 200, 0)
+    for tag, grp, kw in (('3', roots3, dict(cols=9, gap=2.2, big=('karakuri_clock', 'container_a', 'container_b', 'container_c', 'container_d'))),
+                         ('2', roots2, dict(cols=8, gap=2.0, big=('parking_sign',))),
+                         ('1', roots1, dict(big=('guide_gantry', 'tram_stop')))):
+        if only and tag not in only:
+            continue
+        away()
+        layout_preview(grp, os.path.join(PREV, 'street%s.png' % tag), **kw)
+    if not only or 'big' in only:
+        away()
+        bpy.data.objects['karakuri_clock'].location = (-4, 0, 0)
+        for i, n in enumerate(('container_a', 'container_b', 'container_c', 'container_d')):
+            bpy.data.objects[n].location = (6, -6 + i * 2.6, 0 if i < 3 else 2.6)
+        bpy.data.objects['container_d'].location = (6, -3.4, 2.6)
+        preview(os.path.join(PREV, 'street3b.png'), target=(2, -2, 3), dist=22, elev=16, azim=-120, lens=40, res=(1400, 800), samples=48)

@@ -6492,12 +6492,86 @@ const TRAINS=[
  {pl:RAILS[0].pl,d:200,dir:1,sp:46,loop:false,type:'iyotetsu',cars:2,dwell:0},
  {pl:RAILS[3].pl,d:400,dir:1,sp:56,loop:false,type:'jr',cars:3,dwell:0},
 ];
-// 電停・駅（実在位置で停車する）
+// 伊予鉄 市内電車の電停（実名・実際の並び順）。位置はゲーム内の道路名＋道路上の距離で指定
+// [電停名, よみ, ローマ字, 道路, 距離]
+const TRAM_STOPS=[
+ ['松山市駅前','まつやましえきまえ','Matsuyama-shi Sta.','花園町通り',55],
+ ['南堀端','みなみほりばた','Minami-horibata','南堀端',344],
+ ['市役所前','しやくしょまえ','Shiyakusho-mae','東堀端',108],
+ ['県庁前','けんちょうまえ','Kencho-mae','東堀端',147],
+ ['大街道','おおかいどう','Okaido','一番町通り(R11)',684],
+ ['勝山町','かつやまちょう','Katsuyama-cho','一番町通り(R11)',895],
+ ['警察署前','けいさつしょまえ','Keisatsusho-mae','一番町通り(R11)',1068],
+ ['上一万','かみいちまん','Kami-ichiman','一番町通り(R11)',1241],
+ ['南町','みなみまち','Minami-machi','道後通り',300],
+ ['道後公園','どうごこうえん','Dogo-koen','道後通り',700],
+ ['道後温泉','どうごおんせん','Dogo-onsen','道後通り',958],
+ ['西堀端','にしほりばた','Nishi-horibata','南堀端',0],
+ ['大手町駅前','おおてまちえきまえ','Otemachi-eki-mae','大手町通り',380],
+ ['JR松山駅前','JRまつやまえきまえ','JR Matsuyama-eki-mae','大手町通り',832],
+ ['宮田町','みやたまち','Miyata-machi','古町通り',430],
+ ['古町','こまち','Komachi','古町通り',798],
+ ['萱町六丁目','かやまちろくちょうめ','Kayamachi 6-chome','平和通り',290],
+ ['本町六丁目','ほんまちろくちょうめ','Honmachi 6-chome','平和通り',570],
+ ['木屋町','きやちょう','Kiya-cho','平和通り',740],
+ ['高砂町','たかさごちょう','Takasago-cho','平和通り',910],
+ ['清水町','しみずまち','Shimizu-machi','平和通り',1080],
+ ['鉄砲町','てっぽうまち','Teppo-machi','平和通り',1230],
+ ['赤十字病院前','せきじゅうじびょういんまえ','Sekijuji-byoin-mae','平和通り',1380],
+ ['平和通一丁目','へいわどおりいっちょうめ','Heiwa-dori 1-chome','平和通り',1810],
+].map(([n,k,e,rn,rd])=>{const r=ROADS.find(q=>q.n===rn);const p=plAt(r.pl,clamp(rd,0,r.pl.len));return {n,k,e,x:p.x,y:p.y,on:[]};});
+// 電停ごとの安全地帯（幅の広い道路だけ。交差点の口にかかるときは少し離す）。狭い道路はポール式（歩道で待つ）
 {
+  const exact=(pl,x,y)=>{const d0=dOnPl(pl,x,y);let bd=1e9,bda=d0;for(let d=d0-14;d<=d0+14;d+=0.5){const dd=clamp(d,0,pl.len),p=plAt(pl,dd),k=hyp(p.x-x,p.y-y);if(k<bd){bd=k;bda=dd;}}return [bda,bd];};
+  const LINES=[[TRAM_LOOP,true],[DOGO_LINE,false]];
+  const wrap=(pl,d,loop)=>loop?((d%pl.len)+pl.len)%pl.len:clamp(d,0,pl.len);
+  const platOK=q=>{ // 長さ12m(±15)の安全地帯が幅の広い道路の中央にあり、交差点の口にかからない
+    const ri=roadInfo(q.x,q.y);
+    if(!ri||ri.road.w<42||ri.d>3)return false;
+    const pd=exact(ri.road.pl,q.x,q.y)[0];
+    return !ri.road.junc.some(j=>Math.abs(pd-j.d)<15+j.road.w/2+1);
+  };
+  for(const s of TRAM_STOPS){
+    s.plats=[];
+    const [pl,loop]=LINES.find(([pl])=>exact(pl,s.x,s.y)[1]<3)||[];
+    if(!pl)continue;
+    const d=exact(pl,s.x,s.y)[0];
+    if(!loop&&(d<20||d>pl.len-20))continue;   // 終点（道後温泉）は駅舎のホーム
+    for(const sg of [1,-1])for(const dd of [42,50,58,66]){
+      const q=plAt(pl,wrap(pl,d+sg*dd,loop));
+      if(!platOK(q))continue;
+      const nx=-Math.sin(q.a),ny=Math.cos(q.a);
+      s.plats.push({x:q.x+nx*sg*5.2,y:q.y+ny*sg*5.2,cx:q.x,cy:q.y,a:q.a,rot:-(q.a+(sg>0?0:Math.PI))});
+      break;
+    }
+  }
+  // 停車位置: 各方向の電車は自分の左側（日本は左側通行）の安全地帯に停まる。安全地帯がなければ電停の中心
+  for(const [ti,pl,loop] of [[0,TRAM_LOOP,true],[2,DOGO_LINE,false]]){
+    const tr=TRAINS[ti],L=[];
+    for(const s of TRAM_STOPS){
+      const [d,k]=exact(pl,s.x,s.y);
+      if(k>3||(!loop&&(d<20||d>pl.len-20)))continue;
+      const o={s,d,p:d,m:d};
+      for(const P of s.plats){
+        const [pd,pk]=exact(pl,P.cx,P.cy);
+        if(pk>2)continue;
+        const q=plAt(pl,pd),side=Math.sign((P.x-q.x)*-Math.sin(q.a)+(P.y-q.y)*Math.cos(q.a)); // +1 = +方向の右側
+        if(side<0)o.p=pd;else o.m=pd;
+      }
+      if(o.p===d)o.p=o.m;else if(o.m===d)o.m=o.p;   // 片側にしか安全地帯がない電停（交差点の角など）は交差点の中で停まらない
+      if(o.p===d&&o.m===d){ // 安全地帯がない: 電停が交差点の中なら手前で停まる
+        const q=plAt(pl,d),ri=roadInfo(q.x,q.y);
+        if(ri){const pd=exact(ri.road.pl,q.x,q.y)[0];if(ri.road.junc.some(j=>j.road.kind!=='lane'&&Math.abs(pd-j.d)<j.road.w/2+8)){o.p=wrap(pl,d-40,loop);o.m=wrap(pl,d+40,loop);}}
+      }
+      // ポール式の名標の位置（各方向の停車位置の左側の歩道）
+      if(!s.plats.length&&!s.poles)s.poles={pl,at:o.p===o.m?[[o.d,1],[o.d,-1]]:[[o.p,-1],[o.m,1]]};
+      L.push(o);
+    }
+    L.sort((a,b)=>a.d-b.d);
+    tr.stopL=L;tr.stops=L.map(o=>o.d);
+  }
+  TRAINS[1].stopL=TRAINS[0].stopL;TRAINS[1].stops=TRAINS[0].stops;
   const st=(tr,pts)=>{tr.stops=pts.map(pt=>dOnPl(tr.pl,pt[0],pt[1])).sort((a,b)=>a-b);};
-  st(TRAINS[0],[[5560,3120],[4740,2985],[4990,2280],[5900,2258],[6800,2248],[6800,3085],[6244,3105],[5896,3110]]);
-  TRAINS[1].stops=TRAINS[0].stops;
-  st(TRAINS[2],[[5870,3255],[5896,3110],[6244,3105],[6800,3085],[7180,2620]]);
   st(TRAINS[3],[[4700,3150],[3900,2830],[1800,1950],[1100,1150]]);
   st(TRAINS[4],[[4740,2985]]);
 }
@@ -7907,9 +7981,10 @@ function updTrains(dt){
     }
     const pdt=tr.d;
     tr.d+=tr.dir*tr.sp*dt;
-    if(tr.stops)for(const sd of tr.stops){ // 電停で停車
+    if(tr.stops)for(let i=0;i<tr.stops.length;i++){ // 電停で停車（市内電車は進行方向左側の安全地帯の横）
+      const sd=tr.stopL?(tr.dir>0?tr.stopL[i].p:tr.stopL[i].m):tr.stops[i];
       const passed=tr.dir>0?(sd>pdt&&sd<=tr.d):(sd<pdt&&sd>=tr.d);
-      if(passed){tr.d=sd;tr.dwell=2.4;break;}
+      if(passed){tr.d=sd;tr.dwell=tr.stopL?2.8:2.4;tr.at=tr.stopL?tr.stopL[i].s:null;break;}
     }
     if(tr.loop){
       if(tr.d>tr.pl.len)tr.d-=tr.pl.len;
@@ -9294,6 +9369,8 @@ function renderBigmap(){
   strokePl(c,RAILS[0].pl,26,'#e8862c');
   strokePl(c,RAILS[3].pl,26,'#607890');
   c.globalAlpha=1;c.restore();
+  // 電停
+  for(const s of TRAM_STOPS){const p=w2m(s.x,s.y);c.fillStyle='#fff';c.strokeStyle='#e8862c';c.lineWidth=1.5;c.beginPath();c.arc(p[0],p[1],2.6,0,TAU);c.fill();c.stroke();}
   // 道路等ラベル
   for(const ml of MAPLABELS){
     const p=w2m(ml[0]==='国道196号'?930:ml[1],ml[2]);
@@ -13365,25 +13442,111 @@ G3.street = (function () {
   }
 
   /* ---------- 第1段: 電停（安全地帯） ---------- */
-  function tramStops() {
-    const seen = [];
-    const add = (pl, d) => {
-      const p = plAt(pl, d);
-      if (seen.some(q => hyp(q[0] - p.x, q[1] - p.y) < 40)) return;
-      seen.push([p.x, p.y]);
-      for (const [sg, dd] of [[1, 42], [-1, -42]]) {
-        const q = plAt(pl, clamp(d + dd, 16, pl.len - 16));
-        const rq = roadInfo(q.x, q.y);
-        if (!rq || rq.road.w < 42 || rq.d > 3) continue;
-        const nx = -Math.sin(q.a), ny = Math.cos(q.a);
-        const x = q.x + nx * sg * 5.2, y = q.y + ny * sg * 5.2;
-        put('tram_stop', x, y, -(q.a + (sg > 0 ? 0 : Math.PI)), 0.04);
-        take(x, y, 14);
+  // 電停名標（伊予鉄の市内電車の電停名・よみ・ローマ字・前後の電停）。全部の名標を1枚のアトラスと1メッシュにまとめる
+  function tramBoards(scene, boards, cells) {
+    if (!boards.length) return;
+    const CW = 320, CH = 128, COLS = 6, ORANGE = '#ef7d16';
+    const keys = [...cells.keys()];
+    const rows = Math.ceil(keys.length / COLS), AW = CW * COLS, AH = CH * rows;
+    const cell = {};
+    keys.forEach((k, i) => { cell[k] = [(i % COLS) * CW, ((i / COLS) | 0) * CH]; });
+    const fit = (g, t, max, sz, wt, fam) => { g.font = `${wt} ${sz}px ${fam}`; while (g.measureText(t).width > max && sz > 9) { sz -= 1; g.font = `${wt} ${sz}px ${fam}`; } };
+    const SANS = '"Hiragino Sans","Hiragino Kaku Gothic ProN","Noto Sans JP","Yu Gothic","Meiryo",sans-serif';
+    const tex = G3.world.canvasTex(AW, AH, g => {
+      g.textBaseline = 'middle';
+      for (const k of keys) {
+        const b = cells.get(k), [x, y] = cell[k];
+        g.fillStyle = '#f7f6f0'; g.fillRect(x, y, CW, CH);
+        g.fillStyle = ORANGE; g.fillRect(x, y, CW, 17);
+        g.fillStyle = '#fff'; g.textAlign = 'left'; fit(g, '伊予鉄道 市内電車', 200, 11, 700, SANS); g.fillText('伊予鉄道 市内電車', x + 8, y + 9);
+        g.fillStyle = '#5a5a58'; g.textAlign = 'center'; fit(g, b.s.k, 280, 13, 600, SANS); g.fillText(b.s.k, x + CW / 2, y + 29);
+        g.fillStyle = '#1a1a1a'; fit(g, b.s.n, 296, 44, 900, SANS); g.fillText(b.s.n, x + CW / 2, y + 58);
+        g.fillStyle = '#3a3a3a'; fit(g, b.s.e, 280, 12, 600, 'Helvetica,Arial,sans-serif'); g.fillText(b.s.e, x + CW / 2, y + 85);
+        g.fillStyle = ORANGE; g.fillRect(x, y + 98, CW, 4);
+        g.fillStyle = '#2a2a2a'; g.font = `700 15px ${SANS}`;
+        if (b.left) { g.textAlign = 'left'; fit(g, '◀ ' + b.left, 150, 15, 700, SANS); g.fillText('◀ ' + b.left, x + 8, y + 115); }
+        if (b.right) { g.textAlign = 'right'; fit(g, b.right + ' ▶', 150, 15, 700, SANS); g.fillText(b.right + ' ▶', x + CW - 8, y + 115); }
       }
+    });
+    tex.anisotropy = 8;
+    const mat = new THREE.MeshStandardMaterial({ map: tex, roughness: 0.35, metalness: 0.0, emissive: 0xffffff, emissiveMap: tex, emissiveIntensity: 0 });
+    G3.world.anim.neon.push(mat);   // 夜は内照式で光る
+    const gb = new G3.GB(false), poles = new G3.GB(false);
+    const uvOf = (k, px, py) => [(cell[k][0] + px) / AW, 1 - (cell[k][1] + py) / AH];
+    const edge = k => { const t = uvOf(k, 4, 8); return [t, t, t, t]; };
+    for (const b of boards) {
+      // b: 中心(x,z,h)・面の法線(nx,nz)・幅/高さ/厚み(ゲーム単位)
+      const hw = b.w / 2, hh = b.h / 2, ht = b.t / 2;
+      const rx = b.nz, rz = -b.nx;   // 表面を見る人の右手（2D: (nz,-nx)）
+      const P = (s, r, u) => [b.x + b.nx * ht * s + rx * hw * r, b.y + hh * u, b.z + b.nz * ht * s + rz * hw * r];
+      const k = b.key;
+      // 表（+法線）: 左下→右下→右上→左上
+      gb.quad([P(1, -1, -1), P(1, 1, -1), P(1, 1, 1), P(1, -1, 1)], [uvOf(k, 0, CH), uvOf(k, CW, CH), uvOf(k, CW, 0), uvOf(k, 0, 0)]);
+      const kb = b.keyB;
+      // 裏（-法線）: 裏から見ると右手が逆
+      gb.quad([P(-1, 1, -1), P(-1, -1, -1), P(-1, -1, 1), P(-1, 1, 1)], [uvOf(kb, 0, CH), uvOf(kb, CW, CH), uvOf(kb, CW, 0), uvOf(kb, 0, 0)]);
+      gb.quad([P(-1, -1, 1), P(1, -1, 1), P(1, 1, 1), P(-1, 1, 1)], edge(k));       // 上
+      gb.quad([P(-1, 1, -1), P(1, 1, -1), P(1, -1, -1), P(-1, -1, -1)], edge(k));   // 下
+      gb.quad([P(1, 1, -1), P(-1, 1, -1), P(-1, 1, 1), P(1, 1, 1)], edge(k));       // 右
+      gb.quad([P(-1, -1, -1), P(1, -1, -1), P(1, -1, 1), P(-1, -1, 1)], edge(k));   // 左
+      if (b.pole) { // 単独のポール（緑・2本立て）
+        const r = 0.04 * U;
+        for (const s of [-0.85, 0.85]) { const px = b.x + rx * hw * s, py = b.z + rz * hw * s; poles.box(px - r, b.ground, py - r, px + r, b.y + hh, py + r, null, 4); }
+      }
+    }
+    const m = gb.mesh(mat, true); m.name = 'tram_boards';
+    scene.add(m);
+    if (poles.p.length) scene.add(poles.mesh(new THREE.MeshStandardMaterial({ color: 0x2e6b4a, roughness: 0.45, metalness: 0.3 }), true));
+    stats.tram_board = boards.length;
+  }
+  function tramStops(scene) {
+    if (typeof TRAM_STOPS === 'undefined') return;
+    const boards = [];
+    // 前後の電停（各路線の並び順。環状線は一周する）
+    const nb = new Map();
+    for (const [tr, loop] of [[TRAINS[0], true], [TRAINS[2], false]]) {
+      const L = TRAM_STOPS.map(s => { const d = dOnPl(tr.pl, s.x, s.y), p = plAt(tr.pl, d); return { s, d, k: hyp(p.x - s.x, p.y - s.y) }; }).filter(o => o.k < 12).sort((a, b) => a.d - b.d);
+      L.forEach((o, i) => {
+        if (nb.has(o.s)) return;
+        const pv = L[i - 1] || (loop ? L[L.length - 1] : null), nx = L[i + 1] || (loop ? L[0] : null);
+        nb.set(o.s, { pl: tr.pl, prev: pv && pv.s.n, next: nx && nx.s.n });
+      });
+    }
+    // 名標の文字: 表から見て右手の側に「次」の電停（線路の向き a に沿って +方向）
+    const cells = new Map();
+    const board = (s, x, z, h, nx, nz, a, extra) => {
+      const n = nb.get(s) || {};
+      const rx = nz, rz = -nx, fwd = rx * Math.cos(a) + rz * Math.sin(a);
+      const R = fwd >= 0 ? [n.prev, n.next] : [n.next, n.prev];
+      const key = s.n + '|' + R[0] + '|' + R[1], keyB = s.n + '|' + R[1] + '|' + R[0];
+      cells.set(key, { s, left: R[0], right: R[1] }); cells.set(keyB, { s, left: R[1], right: R[0] });
+      boards.push(Object.assign({ s, key, keyB, x, y: h, z, nx, nz }, extra));
     };
-    const t0 = TRAINS[0], t2 = TRAINS[2];
-    if (t0 && t0.stops) for (const d of t0.stops) add(t0.pl, d);
-    if (t2 && t2.stops) for (const d of t2.stops) add(t2.pl, d);
+    for (const s of TRAM_STOPS) {
+      for (const P of s.plats) {
+        put('tram_stop', P.x, P.y, P.rot, 0.04);
+        take(P.x, P.y, 14);
+        // 安全地帯の名標（モデル座標 (3.2,-0.4,2.215)m）を包む箱
+        const al = -P.rot, ca = Math.cos(al), sa = Math.sin(al), lx = 3.2, ly = -0.4;
+        const wx = P.x + U * (lx * ca + ly * sa), wz = P.y + U * (lx * sa - ly * ca);
+        board(s, wx, wz, heightAt(P.x, P.y) + 0.04 + U * 2.215, sa, -ca, P.a, { w: 1.1 * U, h: 0.45 * U, t: 0.07 * U });
+      }
+      if (s.plats.length || !s.poles) continue;
+      // 安全地帯のない電停（狭い道路）: 各方向の停車位置の左側の歩道にポール式の名標
+      for (const [pd, sg] of s.poles.at) {
+        const q = plAt(s.poles.pl, pd);
+        const ri = roadInfo(q.x, q.y), hw = ri ? ri.road.w / 2 : 18;
+        const nx = -Math.sin(q.a) * sg, ny = Math.cos(q.a) * sg;
+        let x = q.x + nx * (hw + 2.4), y = q.y + ny * (hw + 2.4);
+        for (let k = 0; k < 6 && !free(x, y, 2); k++) { x += Math.cos(q.a) * 4; y += Math.sin(q.a) * 4; }
+        const g = heightAt(x, y) + G3.CURB;
+        const bw = 0.9 * U;
+        board(s, x, y, g + U * 2.3, Math.cos(q.a), Math.sin(q.a), q.a, { w: bw, h: 0.4 * U, t: 0.05 * U, pole: true, ground: g });
+        take(x, y, 2.5);
+        if (typeof addCollider === 'function') for (const k of [-0.85, 0.85]) addCollider({ x: x + Math.sin(q.a) * bw / 2 * k, y: y - Math.cos(q.a) * bw / 2 * k, r: 0.3 });
+      }
+    }
+    tramBoards(scene, boards, cells);
   }
 
   /* ---------- 第2段: 歩道の街具 ---------- */
@@ -15594,7 +15757,7 @@ G3.street = (function () {
   function build(scene) {
     if (!G3.glb.street) return;
     seedOcc();
-    tramStops();
+    tramStops(scene);
     laneFurniture(scene);
     roadMarks(scene);
     guideSigns(scene);

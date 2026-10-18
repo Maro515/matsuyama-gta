@@ -291,6 +291,8 @@ const RIVERS=[
  {n:'石手川',w:55,pl:buildPl([[8500,3760],[7800,3900],[7000,4120],[6200,4300],[5400,4420],[4600,4480],[3800,4570],[3100,4750],[2800,4870]])},
  {n:'重信川',w:90,pl:buildPl([[8500,5000],[7300,4950],[6000,4900],[4800,4880],[3600,4870],[2800,4870],[2000,4960],[1200,5120],[560,5250]])},
 ];
+// 川の飛び石（歩いて渡れる線。生成の最後に入れるので、それまでの配置には影響しない）
+let STEPSTONES=[];
 // 堀（水面＝進入不可。道路が渡る所は橋、FOOTBRIDGES は歩道橋）。道路と平行に重ならないように引く
 const MOATS=[
  {n:'松山城の堀',w:24,pl:buildPl([[5700,2620],[5490,2620],[5490,3040],[5815,3040],[5815,2985]])},
@@ -517,7 +519,10 @@ function inWaterRaw(x,y){
     const p=rv.pl.pts;
     for(let i=1;i<p.length;i++){
       if(Math.abs(x-(p[i-1][0]+p[i][0])/2)>600&&Math.abs(x-p[i][0])>600)continue;
-      if(seg(x,y,p[i-1][0],p[i-1][1],p[i][0],p[i][1]).d<rv.w/2)return true;
+      if(seg(x,y,p[i-1][0],p[i-1][1],p[i][0],p[i][1]).d<rv.w/2){
+        for(const s of STEPSTONES)if(seg(x,y,s.ax,s.ay,s.bx,s.by).d<1.8)return false;
+        return true;
+      }
     }
   }return false;
 }
@@ -1183,6 +1188,68 @@ const CANAL_W=5,CANALS=[];
   }
 }
 
+/* ---------- 河川敷（石手川の桜並木・両岸の遊歩道・飛び石、重信川の中州） ----------
+   ほかの配置が全部決まった後に足すので既存の位置は変わらない */
+const RIVERSIDE={sakura:[],walks:[],bars:[]};
+{
+  const sr=mulberry32(9301);
+  const KP=[...MIKANS.map(m=>[m.x,m.y]),...GIGSPOTS.map(g=>[g[1],g[2]]),...MISSIONS.flatMap(m=>[m.start,...(m.goal?[m.goal]:[]),...(m.cps||[])])];
+  const clearAt=(x,y,m)=>{
+    if(x<20||y<20||x>W-20||y>H-20)return false;
+    const ri=roadInfo(x,y);
+    if(ri&&ri.d<ri.road.w/2+(ri.road.kind==='lane'?2:9)+m)return false;
+    if(inWaterRaw(x,y)||hillAt(x,y)||railDist(x,y)<m+8)return false;
+    gridNear(bldGrid,x,y,_ov);
+    for(const b of _ov)if(x>b.x0-m-2&&x<b.x1+m+2&&y>b.y0-m-2&&y<b.y1+m+2)return false;
+    for(const e of EXCLUDE)if(x>e[0]&&x<e[2]&&y>e[1]&&y<e[3])return false;
+    for(const f of FIELDS)if(x>f.x-m&&x<f.x+f.w+m&&y>f.y-m&&y<f.y+f.h+m)return false;
+    for(const cn of CANALS){const d=cn.vert?(Math.abs(x-cn.c)<CANAL_W/2+m&&y>cn.t0-m&&y<cn.t1+m):(Math.abs(y-cn.c)<CANAL_W/2+m&&x>cn.t0-m&&x<cn.t1+m);if(d)return false;}
+    if(KP.some(k=>hyp(k[0]-x,k[1]-y)<m+6))return false;
+    for(const t of TREES)if(hyp(t[0]-x,t[1]-y)<m+3)return false;
+    return true;
+  };
+  const at=(rv,d,off)=>{const p=plAt(rv.pl,d);return{x:p.x-Math.sin(p.a)*off,y:p.y+Math.cos(p.a)*off,a:p.a};};
+  RIVERS.forEach((rv,ri)=>{
+    // 遊歩道（川岸から5.5〜12.5）。道路で切れる
+    for(const sg of [1,-1]){
+      let d0=null;
+      for(let d=0;d<=rv.pl.len;d+=4){
+        const q=at(rv,d,sg*(rv.w/2+9));
+        const ok=d<rv.pl.len&&clearAt(q.x,q.y,3.5);
+        if(ok&&d0===null)d0=d;
+        if(!ok&&d0!==null){if(d-d0>=40)RIVERSIDE.walks.push({ri,sg,d0,d1:d-4});d0=null;}
+      }
+    }
+    // 桜並木（石手川の市街地の区間）
+    if(rv.n==='石手川'){
+      for(const sg of [1,-1])for(let d=0;d<rv.pl.len;d+=16+sr()*4){
+        const p=plAt(rv.pl,d);
+        if(p.x<4900||p.x>7900)continue;
+        const q=at(rv,d,sg*(rv.w/2+28+sr()*3));
+        if(clearAt(q.x,q.y,4))RIVERSIDE.sakura.push([q.x,q.y]);
+      }
+      // 飛び石: 橋から離れた所で、両岸に遊歩道がある場所に2か所
+      let last=-1e9;
+      for(let d=200;d<rv.pl.len-200&&STEPSTONES.length<2;d+=40){
+        const p=plAt(rv.pl,d);
+        if(p.x<5300||p.x>7700||d-last<900)continue;
+        let nearRoad=false;for(let k=-120;k<=120;k+=10){const c=plAt(rv.pl,Math.max(0,Math.min(rv.pl.len,d+k)));const r2=roadInfo(c.x,c.y);if(r2&&r2.d<r2.road.w/2+4){nearRoad=true;break;}}
+        if(nearRoad)continue;
+        const A=at(rv,d,rv.w/2+4),B=at(rv,d,-(rv.w/2+4));
+        if(!clearAt(at(rv,d,rv.w/2+9).x,at(rv,d,rv.w/2+9).y,3.5)||!clearAt(at(rv,d,-(rv.w/2+9)).x,at(rv,d,-(rv.w/2+9)).y,3.5))continue;
+        STEPSTONES.push({ax:A.x,ay:A.y,bx:B.x,by:B.y});last=d;
+      }
+    }
+    // 重信川の中州（砂利の島。見た目だけで水の判定はそのまま）
+    if(rv.n==='重信川'){
+      for(let d=300;d<rv.pl.len-300;d+=700+sr()*500){
+        const sg=sr()<0.5?1:-1, q=at(rv,d,sg*(rv.w/2-17));
+        RIVERSIDE.bars.push({x:q.x,y:q.y,a:q.a,l:60+sr()*70,w:12+sr()*8});
+      }
+    }
+  });
+}
+
 /* ---------- セーブ ---------- */
 const SAVEKEY='matsuyama-gta-save';
 function save(){
@@ -1450,6 +1517,8 @@ function addCollider(c){ // 円 {x,y,r} / 回転箱 {x,y,hx,hy,a}、m: 1=歩行�
   const x0=Math.floor((c.x-R)/PCELL),x1=Math.floor((c.x+R)/PCELL),y0=Math.floor((c.y-R)/PCELL),y1=Math.floor((c.y+R)/PCELL);
   for(let gy=y0;gy<=y1;gy++)for(let gx=x0;gx<=x1;gx++){const k=gy*4096+gx;let a=propGrid.get(k);if(!a){a=[];propGrid.set(k,a);}a.push(c);}
 }
+// 飛び石の両端: 車止め（歩行者は渡れる）
+for(const s of STEPSTONES){const a=Math.atan2(s.by-s.ay,s.bx-s.ax);for(const [x,y] of [[s.ax,s.ay],[s.bx,s.by]])addCollider({x,y,hx:1.2,hy:4,a,m:2});}
 // 伊佐爾波神社の石段の下: 車止め（歩行者は上れる）
 addCollider({x:7594,y:2240,hx:1.5,hy:11,a:0,m:2});
 // 用水路: 水のある区間は縁ごと進入不可（板橋・暗渠の所は通れる）
@@ -2260,6 +2329,17 @@ function drawTerrain(c,mini){
       c.stroke();
     }
   }
+  // 河川敷の遊歩道・桜・飛び石
+  c.lineCap='butt';
+  for(const w of RIVERSIDE.walks){
+    const rv=RIVERS[w.ri];c.strokeStyle='#d8ccb0';c.lineWidth=7;c.beginPath();
+    for(let d=w.d0;d<=w.d1;d+=8){const p=plAt(rv.pl,Math.min(d,w.d1)),o=w.sg*(rv.w/2+9),x=p.x-Math.sin(p.a)*o,y=p.y+Math.cos(p.a)*o;d===w.d0?c.moveTo(x,y):c.lineTo(x,y);}
+    c.stroke();
+  }
+  c.fillStyle='#f0b8c8';for(const t of RIVERSIDE.sakura){c.beginPath();c.arc(t[0],t[1],5,0,TAU);c.fill();}
+  c.strokeStyle='#9a968c';c.lineWidth=2.4;c.setLineDash([2.2,1.6]);
+  for(const s of STEPSTONES){c.beginPath();c.moveTo(s.ax,s.ay);c.lineTo(s.bx,s.by);c.stroke();}
+  c.setLineDash([]);
   // 用水路（コンクリートの縁＋水面、板橋）
   for(const cn of CANALS)for(const p of cn.parts){
     if(p[0]==='c')continue;

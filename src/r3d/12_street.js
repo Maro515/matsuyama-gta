@@ -133,6 +133,11 @@ G3.street = (function () {
     for (const r of ROADS) if (r.kind === 'lane') for (let d = 0; d <= r.pl.len; d += 6) { const p = plAt(r.pl, d); take(p.x, p.y, r.w / 2 - 0.5); }
     // 追加ランドマークの石段・参道の前（歩道の柵や街具で入口を塞がない）
     for (const l of LMS) if (l.ex) for (let x = l.ex[0] - 12; x <= l.ex[2] + 12; x += 4) for (let y = l.ex[1] - 12; y <= l.ex[3] + 12; y += 4) take(x, y, 3);
+    // 河川敷の桜と遊歩道
+    if (typeof RIVERSIDE !== 'undefined') {
+      for (const t of RIVERSIDE.sakura) take(t[0], t[1], 2);
+      for (const w of RIVERSIDE.walks) { const rv = RIVERS[w.ri]; for (let d = w.d0; d <= w.d1; d += 5) { const p = plAt(rv.pl, d), o = w.sg * (rv.w / 2 + 9); take(p.x - Math.sin(p.a) * o, p.y + Math.cos(p.a) * o, 2.5); } }
+    }
     // 用水路の上と縁には物を置かない
     if (typeof CANALS !== 'undefined') for (const cn of CANALS) for (let t = cn.t0; t <= cn.t1; t += 4) take(cn.vert ? cn.c : t, cn.vert ? t : cn.c, CANAL_W / 2 + 1);
   }
@@ -1646,6 +1651,20 @@ G3.street = (function () {
 
   /* ---------- 第6段: 河川敷の運動場 ---------- */
   function riverside() {
+    // 遊歩道の外側にベンチ（川向き）と公園灯を交互に
+    if (typeof RIVERSIDE !== 'undefined') {
+      let k = 0, nw = 0;
+      for (const w of RIVERSIDE.walks) {
+        const rv = RIVERS[w.ri];
+        for (let d = w.d0 + 20; d < w.d1 - 10; d += 46) {
+          const p = plAt(rv.pl, d), o = w.sg * (rv.w / 2 + 15.5), x = p.x - Math.sin(p.a) * o, y = p.y + Math.cos(p.a) * o;
+          if (nearBld(x, y, 2) || !free(x, y, 1.5) || !clearOfRoad(x, y, 2)) continue;
+          if (k++ % 2 === 0) put('bench', x, y, faceTo(x, y, p.x, p.y), 0); else put('park_lamp', x, y, 0, 0);
+          take(x, y, 2); nw++;
+        }
+      }
+      stats.riverwalk = nw;
+    }
     const rr = mulberry32(5605);
     let nb = 0, ns = 0;
     for (const rv of RIVERS) {
@@ -1657,9 +1676,14 @@ G3.street = (function () {
         const okAt = (X, Y) => { const ri = roadInfo(X, Y); return !(inWaterRaw(X, Y) || nearBld(X, Y, 3) || !free(X, Y, 8) || (ri && ri.d < ri.road.w / 2 + G3.SW + 6) || railDist(X, Y) < 15 ||
           FIELDS.some(f => X > f.x - 4 && X < f.x + f.w + 4 && Y > f.y - 4 && Y < f.y + f.h + 4)); };
         if ((nb + ns) % 2 === 0) {
-          if (!okAt(x, y)) continue;
-          put('backstop', x, y, -(p.a), 0);
-          if (typeof addCollider === 'function') addCollider({ x, y, hx: 0.4, hy: 15, a: p.a, m: 3 });
+          const e1 = [x - Math.cos(p.a) * 15, y - Math.sin(p.a) * 15], e2 = [x + Math.cos(p.a) * 15, y + Math.sin(p.a) * 15];
+          const rdist = (X, Y) => { let m = 1e9; const q = rv.pl.pts; for (let i = 1; i < q.length; i++) m = Math.min(m, seg(X, Y, q[i - 1][0], q[i - 1][1], q[i][0], q[i][1]).d); return m; };
+          let cross = false;   // 曲がった所で遊歩道に掛からないか（線上を全部見る）
+          for (let k = -15; k <= 15; k += 3) if (rdist(x + Math.cos(p.a) * k, y + Math.sin(p.a) * k) < rv.w / 2 + 14) { cross = true; break; }
+          if (cross || !okAt(x, y) || !free(e1[0], e1[1], 1.5) || !free(e2[0], e2[1], 1.5) || inWaterRaw(e1[0], e1[1]) || inWaterRaw(e2[0], e2[1])) continue;
+          // 川と平行に立てる（遊歩道を横切らない）
+          put('backstop', x, y, -(p.a + Math.PI / 2), 0);
+          if (typeof addCollider === 'function') addCollider({ x, y, hx: 0.4, hy: 15, a: p.a + Math.PI / 2, m: 3 });
           take(x, y, 18); nb++;
         } else {
           const a = [x - Math.cos(p.a) * 50, y - Math.sin(p.a) * 50], b = [x + Math.cos(p.a) * 50, y + Math.sin(p.a) * 50];

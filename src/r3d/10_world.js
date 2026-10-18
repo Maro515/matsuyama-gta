@@ -377,6 +377,66 @@ G3.world = (function () {
     scene.add(sw.mesh(WM.stone, false));
     buildBridges(scene);
   }
+
+  /* ---------- 河川敷（遊歩道・護岸の石張り・飛び石・中州） ---------- */
+  function buildRiverside(scene) {
+    if (typeof RIVERSIDE === 'undefined') return;
+    const gbP = new GB(true), gbR = new GB(true), gbS = new GB(true);
+    // 橋の欄干などに掛かる所で遊歩道を切る（橋は buildWater で先にできている）
+    const trimmed = [];
+    for (const w of RIVERSIDE.walks) {
+      const rv = RIVERS[w.ri];
+      let d0 = null;
+      for (let d = w.d0; d <= w.d1 + 3; d += 3) {
+        const dd = Math.min(d, w.d1), p = plAt(rv.pl, dd);
+        let ok = d <= w.d1;
+        if (ok) for (const off of [6, 9, 12]) { const o = w.sg * (rv.w / 2 + off); if (typeof propHit === 'function' && propHit(p.x - Math.sin(p.a) * o, p.y + Math.cos(p.a) * o, 1.2, false)) { ok = false; break; } }
+        if (ok && d0 === null) d0 = dd;
+        if (!ok && d0 !== null) { if (dd - d0 >= 30) trimmed.push({ ...w, d0, d1: dd - 4 }); d0 = null; }
+      }
+    }
+    RIVERSIDE.walks = trimmed;
+    // 遊歩道（ダスト舗装の帯＋縁石）
+    for (const w of RIVERSIDE.walks) {
+      const rv = RIVERS[w.ri], pts = subPts(rv.pl, w.d0, w.d1);
+      const o0 = w.sg * (rv.w / 2 + 5.5), o1 = w.sg * (rv.w / 2 + 12.5);
+      ribbon(gbP, pts, Math.min(o0, o1), Math.max(o0, o1), () => 0.07, 8, C('#efdcb2'));
+      for (const o of [o0, o1]) ribbon(gbP, pts, o - 0.3, o + 0.3, () => 0.18, 4, C('#a8a49a'));
+    }
+    // 水際の石張り護岸（両岸、道路の橋の所は橋が上に載る）
+    for (const rv of RIVERS) for (const sg of [1, -1]) {
+      const o0 = sg * (rv.w / 2 - 2.5), o1 = sg * (rv.w / 2 + 2.2);
+      ribbon(gbR, rv.pl.pts, Math.min(o0, o1), Math.max(o0, o1), () => 0.09, 5, C('#9d998f'));
+    }
+    // 飛び石（平たい石を少しずらして並べる）
+    const rs = mulberry32(9302);
+    for (const s of STEPSTONES) {
+      const L = hyp(s.bx - s.ax, s.by - s.ay), ux = (s.bx - s.ax) / L, uy = (s.by - s.ay) / L;
+      for (let d = 1.3; d < L; d += 2.7) {
+        const lat = (rs() - 0.5) * 1.0, x = s.ax + ux * d - uy * lat, y = s.ay + uy * d + ux * lat, r0 = 1.15 + rs() * 0.3;
+        const k = 9, P = [];
+        for (let i = 0; i < k; i++) { const a = i / k * TAU, rr = r0 * (0.85 + rs() * 0.3); P.push([x + Math.cos(a) * rr, y + Math.sin(a) * rr]); }
+        const top = 0.22 + rs() * 0.06, col = C(rs() < 0.5 ? '#a9a59b' : '#b8b3a8');
+        for (let i = 0; i < k; i++) {
+          const a = P[i], b = P[(i + 1) % k];
+          gbS.tri([[x, top, y], [b[0], top, b[1]], [a[0], top, a[1]]], [[0, 0], [1, 0], [0, 1]], col);
+          gbS.quad([[a[0], -0.4, a[1]], [b[0], -0.4, b[1]], [b[0], top, b[1]], [a[0], top, a[1]]], [[0, 0], [1, 0], [1, 1], [0, 1]], col.map(v => v * 0.8));
+        }
+      }
+    }
+    // 重信川の中州（砂利の楕円）
+    for (const b of RIVERSIDE.bars) {
+      const k = 18, ca = Math.cos(b.a), sa = Math.sin(b.a), P = [];
+      for (let i = 0; i < k; i++) { const t = i / k * TAU, u = Math.cos(t) * b.l / 2, v = Math.sin(t) * b.w / 2 * (0.8 + 0.2 * Math.cos(t * 3)); P.push([b.x + ca * u - sa * v, b.y + sa * u + ca * v]); }
+      for (let i = 0; i < k; i++) { const a = P[i], c = P[(i + 1) % k]; gbS.tri([[b.x, 0.1, b.y], [c[0], 0.1, c[1]], [a[0], 0.1, a[1]]], [[b.x / 8, b.y / 8], [c[0] / 8, c[1] / 8], [a[0] / 8, a[1] / 8]], C('#c9bfa8')); }
+    }
+    const off = { polygonOffset: true, polygonOffsetFactor: -1, polygonOffsetUnits: -3 };
+    const mp = new THREE.MeshStandardMaterial({ map: G3.tex.gravel, vertexColors: true, roughness: 0.95, side: THREE.DoubleSide, ...off });
+    const mr = new THREE.MeshStandardMaterial({ map: G3.tex.stonewall, vertexColors: true, roughness: 0.9, side: THREE.DoubleSide, ...off });
+    const ms = new THREE.MeshStandardMaterial({ map: G3.tex.gravel, vertexColors: true, roughness: 0.9, side: THREE.DoubleSide });
+    for (const [gb, m] of [[gbP, mp], [gbR, mr], [gbS, ms]]) { const o = gb.mesh(m, false); o.receiveShadow = true; scene.add(o); }
+  }
+
   /* ---------- 用水路（CANALS: 田畑のあいだのコンクリート水路・板橋・暗渠の口・水門） ---------- */
   function buildCanals(scene) {
     if (typeof CANALS === 'undefined' || !CANALS.length) return;
@@ -1298,7 +1358,7 @@ G3.world = (function () {
   const treeChunks = [];
   let treeT = 0;
   function buildTrees(scene) {
-    const groups = { broad_a: [], broad_b: [], pine: [], street: [], mikan: [], far: [] };
+    const groups = { broad_a: [], broad_b: [], pine: [], street: [], mikan: [], far: [], sakura: [] };
     const r = mulberry32(99);
     const avenue = new Set();
     for (const t of TREES) {
@@ -1312,6 +1372,7 @@ G3.world = (function () {
       else (r() < .5 ? groups.broad_a : groups.broad_b).push(M4(t[0], y, t[1], r() * TAU, s));
     }
     for (const o of ORCHARDS) groups.mikan.push(M4(o[0], heightAt(o[0], o[1]), o[1], r() * TAU, U * (0.85 + r() * 0.3)));
+    if (typeof RIVERSIDE !== 'undefined') for (const t of RIVERSIDE.sakura) groups.sakura.push(M4(t[0], heightAt(t[0], t[1]), t[1], r() * TAU, U * (0.85 + r() * 0.3)));
     // 山の森（遠景用の軽いモデル）
     for (const h of HILLS3) {
       const n = Math.round(h.rx * h.ry / (h.castle ? 900 : 1500) * G3.Q.trees);
@@ -1329,7 +1390,7 @@ G3.world = (function () {
     for (const k in groups) groups[k] = groups[k].filter(M => { _p.setFromMatrixPosition(M); return !inWaterRaw(_p.x, _p.z); });
     for (const k in groups) for (const M of groups[k]) { _p.setFromMatrixPosition(M); addCollider({ x: _p.x, y: _p.z, r: k === 'mikan' ? 0.45 : 0.7 }); }
     // 600単位のチャンクに分けて視錐台カリング＋距離で間引く
-    const TFAR = { mikan: 1300, street: 1600, broad_a: 2200, broad_b: 2200, pine: 2200, far: 1e9 };
+    const TFAR = { mikan: 1300, street: 1600, broad_a: 2200, broad_b: 2200, pine: 2200, far: 1e9, sakura: 2200 };
     for (const k in groups) {
       if (!groups[k].length) continue;
       const node = glbNode('trees', 'tree_' + k) || fallbackTree(k);
@@ -1349,7 +1410,7 @@ G3.world = (function () {
     }
     // 樹冠の下の柔らかい接地影（AOの代わり）
     const blobs = [];
-    for (const k of ['broad_a', 'broad_b', 'pine', 'street', 'mikan']) for (const M of groups[k]) blobs.push([M, k === 'mikan' ? 1.6 : k === 'street' ? 3.0 : 3.8]);
+    for (const k of ['broad_a', 'broad_b', 'pine', 'street', 'mikan', 'sakura']) for (const M of groups[k]) blobs.push([M, k === 'mikan' ? 1.6 : k === 'street' ? 3.0 : 3.8]);
     const bg = new THREE.PlaneGeometry(2, 2); bg.rotateX(-Math.PI / 2);
     const bm = new THREE.MeshBasicMaterial({ color: 0x000000, alphaMap: G3.radialTex(), transparent: true, opacity: 0.42, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -3, polygonOffsetUnits: -60 });
     const bi = new THREE.InstancedMesh(bg, bm, blobs.length);
@@ -1702,6 +1763,7 @@ G3.world = (function () {
     buildBackdrop(scene);
     buildFields(scene);
     buildCanals(scene);
+    buildRiverside(scene);
     buildRoads(scene);
     buildFrontage(scene);
     buildRailways(scene);

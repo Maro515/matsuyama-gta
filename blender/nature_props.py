@@ -20,8 +20,8 @@ def leaf_texture(name, kind='broad', n=512, seed=5):
     rng = np.random.default_rng(seed)
     img = np.zeros((n, n, 4), dtype=np.float32)
     yy, xx = np.mgrid[0:n, 0:n].astype(np.float32)
-    cnt = {'broad': 260, 'pine': 70, 'mikan': 300}[kind]
-    base = {'broad': (0.20, 0.36, 0.13), 'pine': (0.13, 0.25, 0.11), 'mikan': (0.12, 0.27, 0.09)}[kind]
+    cnt = {'broad': 260, 'pine': 70, 'mikan': 300, 'sakura': 900}[kind]
+    base = {'broad': (0.20, 0.36, 0.13), 'pine': (0.13, 0.25, 0.11), 'mikan': (0.12, 0.27, 0.09), 'sakura': (0.98, 0.58, 0.70)}[kind]
     for _ in range(cnt):
         r = np.sqrt(rng.random()) * n * 0.42
         a = rng.random() * 2 * np.pi
@@ -29,6 +29,12 @@ def leaf_texture(name, kind='broad', n=512, seed=5):
         th = rng.random() * np.pi
         shade = rng.uniform(0.65, 1.35)
         c = np.array(base) * shade
+        if kind == 'sakura':   # 花びら: 淡いピンク〜白、ところどころ若葉
+            k = rng.random()
+            c = np.array((1.0, 0.84, 0.89)) * rng.uniform(0.92, 1.04) if k < 0.3 else np.array(base) * rng.uniform(0.85, 1.08)
+            if k > 0.95:
+                c = np.array((0.42, 0.55, 0.25))
+            c = np.clip(c, 0, 1)
         if kind == 'pine':
             for k in range(14):
                 t = th + (k / 14 - 0.5) * 1.6
@@ -39,7 +45,7 @@ def leaf_texture(name, kind='broad', n=512, seed=5):
                         img[max(0, py - 1):py + 1, max(0, px - 1):px + 1, :3] = c * (0.8 + 0.4 * s)
                         img[max(0, py - 1):py + 1, max(0, px - 1):px + 1, 3] = 1
             continue
-        L, Wd = (rng.uniform(16, 26), rng.uniform(7, 11)) if kind == 'broad' else (rng.uniform(13, 19), rng.uniform(6, 9))
+        L, Wd = (rng.uniform(16, 26), rng.uniform(7, 11)) if kind == 'broad' else (rng.uniform(6, 10), rng.uniform(5, 8)) if kind == 'sakura' else (rng.uniform(13, 19), rng.uniform(6, 9))
         x0, x1 = int(max(0, cx - L)), int(min(n, cx + L + 1))
         y0, y1 = int(max(0, cy - L)), int(min(n, cy + L + 1))
         if x1 <= x0 or y1 <= y0:
@@ -245,6 +251,11 @@ def tree_mikan(name='tree_mikan'):
     return join([wood, cd], name, smooth_angle=80)
 
 
+def tree_sakura(name='tree_sakura'):
+    """ソメイヨシノ（満開。枝が横に広がる傘形）。"""
+    return tree_broad(name, 6.2, 4.2, 9, seed=21, leaf='leaf_sakura', inner='#e8a2b8', count=260, csize=1.1)
+
+
 def tree_far(name='tree_far'):
     lm = leaves('Far', '#34532c')
     parts = [cyl('t', 0.15, 2.0, (0, 0, 1.0), bark(), verts=5),
@@ -257,11 +268,12 @@ def build_trees():
     leaf_texture('leaf_broad', 'broad', seed=5)
     leaf_texture('leaf_pine', 'pine', seed=6)
     leaf_texture('leaf_mikan', 'mikan', seed=7)
+    leaf_texture('leaf_sakura', 'sakura', seed=8)
     roots = []
     for (n, fn) in (('tree_broad_a', lambda: tree_broad('tree_broad_a', 8.5, 3.6, 8, 1)),
                     ('tree_broad_b', lambda: tree_broad('tree_broad_b', 6.5, 2.8, 6, 2, inner='#2c4622', count=180, csize=1.0)),
                     ('tree_pine', tree_pine), ('tree_street', tree_street), ('tree_mikan', tree_mikan),
-                    ('tree_far', tree_far)):
+                    ('tree_far', tree_far), ('tree_sakura', tree_sakura)):
         o = fn()
         o.name = n
         roots.append(o)

@@ -27,6 +27,10 @@ G3.refl = (function () {
     ns++;
   }
 
+  // 街灯の灯具（光の円錐 24_beams.js でも使う）
+  const LAMPS3 = [];
+  function lamp(x, z, y) { LAMPS3.push([x, z, y]); add(x, z, y, 0.7, 0.3, 0xfff0d2, 1.25); }
+
   /* ---------- 見通し（建物の高さのラスター） ---------- */
   const LC = 6, LW = Math.ceil(W / LC), LH = Math.ceil(H / LC);
   let occ = null;
@@ -308,6 +312,6 @@ G3.refl = (function () {
     attrV.needsUpdate = true;
     carLights(cam);
   }
-  return { add, paved, build, update, los, mask: () => UNI.uMask.value, maskK: () => UNI.uMaskK.value,
+  return { add, lamp, lamps: LAMPS3, paved, build, update, los, mask: () => UNI.uMask.value, maskK: () => UNI.uMaskK.value,
     stats: () => ({ ns, cand: cand.length, cars: dgeo ? dgeo.instanceCount : 0 }) };
 })();

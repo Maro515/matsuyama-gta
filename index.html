@@ -13296,7 +13296,7 @@ G3.world = (function () {
     // 雨の夜の映り込み: 灯具はポールから道路側へ 2.15m・高さ 6.4m（nature_props.street_lamp）
     for (const l of LAMPS) {
       const r = roadAngleAt(l[0], l[1]), c = Math.cos(r.toRoad), s = Math.sin(r.toRoad);
-      G3.refl.add(l[0] + c * 2.15 * U, l[1] + s * 2.15 * U, heightAt(l[0], l[1]) + CURB + 6.4 * U, 0.7, 0.3, 0xfff0d2, 1.25);
+      G3.refl.lamp(l[0] + c * 2.15 * U, l[1] + s * 2.15 * U, heightAt(l[0], l[1]) + CURB + 6.4 * U);
     }
     // 当たり判定（見た目どおりに止まる）
     LAMPS.forEach((l, i) => addCollider({ x: l[0], y: l[1], r: 0.5, brk: 95, bid: 'lamp#' + i }));
@@ -13619,6 +13619,7 @@ G3.world = (function () {
     G3.birds.update(dt);
     G3.rainfx.update(dt);
     if (G3.cyclists) G3.cyclists.update(dt);
+    if (G3.beams) G3.beams.update(dt);
     // 風: ふだんはそよ風、雨や曇りの日は強く
     SWAY.uSwayT.value = (SWAY.uSwayT.value + dt) % 1000;
     SWAY.uWind.value.z += ((0.35 + 0.25 * S.cloudI + 0.9 * S.rainI) - SWAY.uWind.value.z) * Math.min(1, dt * 0.3);
@@ -13740,6 +13741,7 @@ G3.world = (function () {
     G3.refl.build(scene); lapw('refl');
     G3.birds.build(scene); lapw('birds');
     G3.rainfx.build(scene); lapw('rainfx');
+    if (G3.beams) { G3.beams.build(scene); lapw('beams'); }
   }
   return { build, update, updEnv, patchClouds, WM, anim, canvasTex };
 })();
@@ -17012,7 +17014,7 @@ G3.street = (function () {
     boats();
     cranes();
     // 雨の夜の映り込み: 街灯の灯具（ポールから 2.15m・高さ 6.4m）とコンビニの明るい店先（flush で lists は空になる）
-    for (const M of lists.xlamp || []) { const e = M.elements; G3.refl.add(e[12] + e[0] * 2.15, e[14] + e[2] * 2.15, e[13] + 6.4 * U, 0.7, 0.3, 0xfff0d2, 1.25); }
+    for (const M of lists.xlamp || []) { const e = M.elements; G3.refl.lamp(e[12] + e[0] * 2.15, e[14] + e[2] * 2.15, e[13] + 6.4 * U); }
     for (const M of lists.konbini || []) {
       const e = M.elements, fx = e[0] / U, fz = e[2] / U;
       G3.refl.add(e[12] + fx * 6.2 * U, e[14] + fz * 6.2 * U, e[13] + 1.4 * U, 7 * U, 1.1 * U, 0xf2f8ff, 0.45, fx, fz);
@@ -17067,6 +17069,10 @@ G3.refl = (function () {
     SC.push(_c.r * k, _c.g * k, _c.b * k, kind);
     ns++;
   }
+
+  // 街灯の灯具（光の円錐 24_beams.js でも使う）
+  const LAMPS3 = [];
+  function lamp(x, z, y) { LAMPS3.push([x, z, y]); add(x, z, y, 0.7, 0.3, 0xfff0d2, 1.25); }
 
   /* ---------- 見通し（建物の高さのラスター） ---------- */
   const LC = 6, LW = Math.ceil(W / LC), LH = Math.ceil(H / LC);
@@ -17349,7 +17355,7 @@ G3.refl = (function () {
     attrV.needsUpdate = true;
     carLights(cam);
   }
-  return { add, paved, build, update, los, mask: () => UNI.uMask.value, maskK: () => UNI.uMaskK.value,
+  return { add, lamp, lamps: LAMPS3, paved, build, update, los, mask: () => UNI.uMask.value, maskK: () => UNI.uMaskK.value,
     stats: () => ({ ns, cand: cand.length, cars: dgeo ? dgeo.instanceCount : 0 }) };
 })();
 
@@ -18926,6 +18932,105 @@ G3.cyclists = (function () {
     riderIMs.forEach((im, k) => { im.count = cnt[k]; im.instanceMatrix.needsUpdate = true; for (const a of Object.values(im.userData.atts)) a.needsUpdate = true; });
   }
   return { build, update, events, stats: () => ({ n: list.length }) };
+})();
+
+</script>
+<script>
+'use strict';
+/* =========================================================
+   光の円錐（夜の雨・もや）
+   雨の夜は空気中の水滴で、街灯の真下へ落ちる光や車のヘッドライトの光が円錐として見える。
+   晴れた夜もうっすら。円錐の板を加算で描き、根元ほど明るく・正面から見るほど濃く・地面に近いほど薄くする
+   ========================================================= */
+G3.beams = (function () {
+  const THREE = G3.THREE, U = G3.U;
+  const MAX = 240;
+  const UNI = { uInt: { value: 0 } };
+  const VS = `
+    attribute vec4 iCol;
+    varying float vT;
+    varying vec3 vN;
+    varying vec3 vV;
+    varying vec4 vC;
+    varying float vD;
+    void main() {
+      vT = clamp(-position.y, 0.0, 1.0);
+      vec4 wp = modelMatrix * instanceMatrix * vec4(position, 1.0);
+      vN = normalize((modelMatrix * instanceMatrix * vec4(normal, 0.0)).xyz);
+      vV = cameraPosition - wp.xyz;
+      vD = length(vV);
+      vC = iCol;
+      gl_Position = projectionMatrix * viewMatrix * wp;
+    }`;
+  const FS = `
+    uniform float uInt;
+    varying float vT;
+    varying vec3 vN;
+    varying vec3 vV;
+    varying vec4 vC;
+    varying float vD;
+    void main() {
+      float fall = pow(1.0 - vT, 1.6) * smoothstep(0.0, 0.06, vT);
+      float facing = abs(dot(vN, vV / vD));
+      float a = fall * facing * facing * vC.a * uInt * smoothstep(3.0, 14.0, vD);
+      if (a < 0.002) discard;
+      gl_FragColor = vec4(vC.rgb * a, 1.0);
+    }`;
+  let mesh = null, aCol = null;
+  function build(scene) {
+    const g = new THREE.ConeGeometry(1, 1, 20, 1, true);
+    g.translate(0, -0.5, 0);   // 頂点（灯具）が原点、底（光の先）が y=-1
+    aCol = new THREE.InstancedBufferAttribute(new Float32Array(MAX * 4), 4);
+    aCol.setUsage(THREE.DynamicDrawUsage);
+    g.setAttribute('iCol', aCol);
+    const mat = new THREE.ShaderMaterial({ uniforms: UNI, vertexShader: VS, fragmentShader: FS, transparent: true, depthWrite: false,
+      blending: THREE.AdditiveBlending, side: THREE.DoubleSide });
+    mesh = new THREE.InstancedMesh(g, mat, MAX);
+    mesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+    mesh.count = 0; mesh.frustumCulled = false; mesh.visible = false; mesh.renderOrder = 5; mesh.name = 'light_beams';
+    scene.add(mesh);
+  }
+  const _m = new THREE.Matrix4(), _q = new THREE.Quaternion(), _p = new THREE.Vector3(), _s = new THREE.Vector3(), _d = new THREE.Vector3(), DOWN = new THREE.Vector3(0, -1, 0);
+  let near = [], popT = 0;
+  function update(dt) {
+    if (!mesh) return;
+    const night = clamp(1 - G3.day * 1.7, 0, 1);
+    const I = night * (0.1 + 0.9 * S.rainI);
+    UNI.uInt.value = I;
+    mesh.visible = I > 0.01;
+    if (!mesh.visible) return;
+    const cam = G3.camera.position;
+    if ((popT -= dt) <= 0) {
+      popT = 0.5;
+      near = [];
+      for (const l of (G3.refl && G3.refl.lamps) || []) { const dx = l[0] - cam.x, dz = l[1] - cam.z; if (dx * dx + dz * dz < 360 * 360) near.push(l); }
+    }
+    let n = 0;
+    const put = (x, y, z, dir, len, rad, r, g, b, a) => {
+      if (n >= MAX) return;
+      _p.set(x, y, z); _q.setFromUnitVectors(DOWN, dir); _s.set(rad, len, rad);
+      _m.compose(_p, _q, _s); mesh.setMatrixAt(n, _m);
+      aCol.setXYZW(n, r, g, b, a); n++;
+    };
+    // 街灯: 真下へ
+    for (const l of near) { const gy = heightAt(l[0], l[1]); const len = Math.max(4, l[2] - gy); put(l[0], l[2] - 0.3, l[1], DOWN, len, len * 0.55, 1.0, 0.9, 0.72, 0.36); }
+    // 車のヘッドライト: 前やや下へ 14m
+    const one = (c) => {
+      const dx = c.x - cam.x, dz = c.y - cam.z;
+      if (dx * dx + dz * dz > 260 * 260) return;
+      const t = CARTYPES[c.type] || CARTYPES.sedan, ca = Math.cos(c.a), sa = Math.sin(c.a);
+      const gy = heightAt(c.x, c.y), fh = t.l / 2 - 0.1, lat = Math.max(0, t.w / 2 - 0.8);
+      _d.set(ca, -0.13, sa).normalize();
+      for (const s of c.type === 'bike' ? [0] : [-1, 1]) put(c.x + ca * fh - sa * lat * s, gy + 1.9, c.y + sa * fh + ca * lat * s, _d, 35, 7.5, 1.0, 0.95, 0.85, 0.42);
+    };
+    for (const c of traffic) one(c);
+    for (const c of polices) one(c);
+    if (S.mode === 'car' && S.pcar) one(S.pcar);
+    mesh.count = n;
+    mesh.instanceMatrix.needsUpdate = true;
+    aCol.needsUpdate = true;
+  }
+  return { build, update, stats: () => ({ n: mesh ? mesh.count : 0 }) };
 })();
 
 </script>

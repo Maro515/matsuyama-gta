@@ -2071,7 +2071,7 @@ G3.world = (function () {
     // 雨の夜の映り込み: 灯具はポールから道路側へ 2.15m・高さ 6.4m（nature_props.street_lamp）
     for (const l of LAMPS) {
       const r = roadAngleAt(l[0], l[1]), c = Math.cos(r.toRoad), s = Math.sin(r.toRoad);
-      G3.refl.add(l[0] + c * 2.15 * U, l[1] + s * 2.15 * U, heightAt(l[0], l[1]) + CURB + 6.4 * U, 0.7, 0.3, 0xfff0d2, 1.25);
+      G3.refl.lamp(l[0] + c * 2.15 * U, l[1] + s * 2.15 * U, heightAt(l[0], l[1]) + CURB + 6.4 * U);
     }
     // 当たり判定（見た目どおりに止まる）
     LAMPS.forEach((l, i) => addCollider({ x: l[0], y: l[1], r: 0.5, brk: 95, bid: 'lamp#' + i }));
@@ -2394,6 +2394,7 @@ G3.world = (function () {
     G3.birds.update(dt);
     G3.rainfx.update(dt);
     if (G3.cyclists) G3.cyclists.update(dt);
+    if (G3.beams) G3.beams.update(dt);
     // 風: ふだんはそよ風、雨や曇りの日は強く
     SWAY.uSwayT.value = (SWAY.uSwayT.value + dt) % 1000;
     SWAY.uWind.value.z += ((0.35 + 0.25 * S.cloudI + 0.9 * S.rainI) - SWAY.uWind.value.z) * Math.min(1, dt * 0.3);
@@ -2515,6 +2516,7 @@ G3.world = (function () {
     G3.refl.build(scene); lapw('refl');
     G3.birds.build(scene); lapw('birds');
     G3.rainfx.build(scene); lapw('rainfx');
+    if (G3.beams) { G3.beams.build(scene); lapw('beams'); }
   }
   return { build, update, updEnv, patchClouds, WM, anim, canvasTex };
 })();

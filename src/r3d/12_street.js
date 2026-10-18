@@ -3264,7 +3264,7 @@ G3.street = (function () {
     boats();
     cranes();
     // 雨の夜の映り込み: 街灯の灯具（ポールから 2.15m・高さ 6.4m）とコンビニの明るい店先（flush で lists は空になる）
-    for (const M of lists.xlamp || []) { const e = M.elements; G3.refl.add(e[12] + e[0] * 2.15, e[14] + e[2] * 2.15, e[13] + 6.4 * U, 0.7, 0.3, 0xfff0d2, 1.25); }
+    for (const M of lists.xlamp || []) { const e = M.elements; G3.refl.lamp(e[12] + e[0] * 2.15, e[14] + e[2] * 2.15, e[13] + 6.4 * U); }
     for (const M of lists.konbini || []) {
       const e = M.elements, fx = e[0] / U, fz = e[2] / U;
       G3.refl.add(e[12] + fx * 6.2 * U, e[14] + fz * 6.2 * U, e[13] + 1.4 * U, 7 * U, 1.1 * U, 0xf2f8ff, 0.45, fx, fz);

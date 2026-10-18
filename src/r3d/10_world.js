@@ -6,7 +6,7 @@ G3.world = (function () {
   const THREE = G3.THREE;
   const U = G3.U;
   const WM = {};      // マテリアル
-  const anim = { wheels: [], gondola: null, water: [], signals: [], winMats: [], lightPools: [], neon: [], wet: [], glow: [] };
+  const anim = { wheels: [], gondola: null, water: [], signals: [], winMats: [], lightPools: [], neon: [], wet: [], glow: [], carts: [] };
 
   /* ---------- ジオメトリ・ビルダー ---------- */
   class GB {
@@ -376,6 +376,109 @@ G3.world = (function () {
     });
     scene.add(sw.mesh(WM.stone, false));
     buildBridges(scene);
+  }
+
+
+  /* ---------- みかん山の段々畑（石積み・みかんの列・農道・モノレールと運搬車） ---------- */
+  function buildEstates(scene) {
+    if (typeof ESTATES === 'undefined' || !ESTATES.length) return;
+    const gbW = new GB(true), gbR = new GB(true), gbP = new GB(true), gbM = new GB(true);
+    const rs = mulberry32(9401);
+    const rowTex = canvasTex(128, 128, g => {   // みかんの葉と実
+      const r2 = mulberry32(9402);
+      g.fillStyle = '#2c4a22'; g.fillRect(0, 0, 128, 128);
+      for (let i = 0; i < 260; i++) { g.fillStyle = ['#3b5e2b', '#2f5226', '#4a6e34', '#24401c'][(r2() * 4) | 0]; g.beginPath(); g.ellipse(r2() * 128, r2() * 128, 4 + r2() * 4, 2 + r2() * 2, r2() * 3, 0, TAU); g.fill(); }
+      for (let i = 0; i < 34; i++) { const x = r2() * 128, y = 10 + r2() * 108; g.fillStyle = '#f08a1c'; g.beginPath(); g.arc(x, y, 2.6 + r2() * 1.2, 0, TAU); g.fill(); g.fillStyle = 'rgba(255,220,150,.6)'; g.beginPath(); g.arc(x - 0.8, y - 0.8, 0.9, 0, TAU); g.fill(); }
+    });
+    rowTex.wrapS = rowTex.wrapT = THREE.RepeatWrapping;
+    for (const e of ESTATES) {
+      const h = HILLS[e.hi], Rav = (h.rx + h.ry) / 2;
+      const N = t => { const nx = Math.cos(t) / h.rx, ny = Math.sin(t) / h.ry, l = Math.hypot(nx, ny); return [nx / l, ny / l]; };   // 外向き（下り）
+      const T = t => { const tx = -Math.sin(t) * h.rx, ty = Math.cos(t) * h.ry, l = Math.hypot(tx, ty); return [tx / l, ty / l]; };
+      const g = (x, y) => heightAt(x, y);
+      // 石積みの段: 下り側の面＋天端
+      for (const w of e.walls) for (const [t0, t1] of w.segs) {
+        const st = 3.5 / (w.r * Rav);
+        let A = null;
+        for (let t = t0; ; t += st) {
+          const tt = Math.min(t, t1), [x, y] = estatePt(e, w.r, tt), n = N(tt);
+          const top = g(x, y) + 0.7, bot = g(x + n[0] * 3, y + n[1] * 3) - 0.4;
+          const B = { x, y, ix: x - n[0] * 0.8, iy: y - n[1] * 0.8, top, bot };
+          if (A) {
+            const c = C(rs() < 0.5 ? '#a19c90' : '#948f84');
+            gbW.quad([[A.x, A.bot, A.y], [B.x, B.bot, B.y], [B.x, B.top, B.y], [A.x, A.top, A.y]], [[0, 0], [st * w.r * Rav / 3, 0], [st * w.r * Rav / 3, (B.top - B.bot) / 3], [0, (A.top - A.bot) / 3]], c);
+            gbW.quad([[A.x, A.top, A.y], [B.x, B.top, B.y], [B.ix, B.top, B.iy], [A.ix, A.top, A.iy]], [[0, 0], [1, 0], [1, 0.25], [0, 0.25]], c.map(v => v * 1.08));
+          }
+          A = B;
+          if (tt >= t1) break;
+        }
+      }
+      // みかんの列（生け垣状。高さ約0.9m）
+      for (const w of e.rows) for (const [t0, t1] of w.segs) {
+        const st = 3.5 / (w.r * Rav);
+        let A = null, u = 0;
+        for (let t = t0; ; t += st) {
+          const tt = Math.min(t, t1), [x, y] = estatePt(e, w.r, tt), n = N(tt);
+          const P = o => [x + n[0] * o, y + n[1] * o];
+          const [ox, oy] = P(1.3), [ix, iy] = P(-1.3), [ox2, oy2] = P(0.8), [ix2, iy2] = P(-0.8);
+          const gm = g(x, y);
+          const B = { o: [ox, g(ox, oy), oy], i: [ix, g(ix, iy), iy], o2: [ox2, gm + 2.3, oy2], i2: [ix2, gm + 2.3, iy2], u };
+          if (A) {
+            const u0 = A.u / 6, u1 = B.u / 6, col = C(rs() < 0.5 ? '#ffffff' : '#e6eedc');
+            gbR.quad([A.o, B.o, B.o2, A.o2], [[u0, 0], [u1, 0], [u1, 0.45], [u0, 0.45]], col);
+            gbR.quad([A.o2, B.o2, B.i2, A.i2], [[u0, 0.45], [u1, 0.45], [u1, 0.7], [u0, 0.7]], col);
+            gbR.quad([A.i2, B.i2, B.i, A.i], [[u0, 0.7], [u1, 0.7], [u1, 1.15], [u0, 1.15]], col);
+          }
+          A = B; u += st * w.r * Rav;
+          if (tt >= t1) break;
+        }
+      }
+      // 農道（コンクリート）: 山すそから上へ
+      const rTop = e.R0 - 0.02, rBot = e.R1 + 0.04, tw = T(e.tc);
+      let A = null;
+      for (let r = rBot; r >= rTop - 1e-9; r -= 4 / Rav) {
+        const [x, y] = estatePt(e, r, e.tc);
+        const L = [x + tw[0] * 4.5, y + tw[1] * 4.5], R = [x - tw[0] * 4.5, y - tw[1] * 4.5];
+        const B = [[L[0], g(L[0], L[1]) + 0.4, L[1]], [R[0], g(R[0], R[1]) + 0.4, R[1]]];   // 山の面は粗い多角形なので少し浮かせる
+        if (A) gbP.quad([A[0], A[1], B[1], B[0]], [[0, 0], [1, 0], [1, 1.3], [0, 1.3]], C('#c4c0b6'));
+        A = B;
+      }
+      // モノレール（支柱＋角レール）
+      const rt = r => e.tc + 9 / (r * Rav);
+      const railPts = [];
+      for (let r = e.railT0; r >= e.railT1 - 1e-9; r -= 2.5 / Rav) { const [x, y] = estatePt(e, r, rt(r)); railPts.push([x, g(x, y) + 1.7, y]); }
+      for (let i = 0; i < railPts.length; i++) {
+        const p = railPts[i];
+        if (i % 2 === 0) gbM.box(p[0] - 0.12, p[1] - 1.75, p[2] - 0.12, p[0] + 0.12, p[1], p[2] + 0.12, C('#9aa0a4'), 2);
+        if (i) {
+          const q = railPts[i - 1], dx = p[0] - q[0], dz = p[2] - q[2], l = Math.hypot(dx, dz) || 1, sx = -dz / l * 0.2, sz = dx / l * 0.2;
+          gbM.quad([[q[0] + sx, q[1], q[2] + sz], [p[0] + sx, p[1], p[2] + sz], [p[0] + sx, p[1] + 0.45, p[2] + sz], [q[0] + sx, q[1] + 0.45, q[2] + sz]], [[0, 0], [1, 0], [1, 1], [0, 1]], C('#b4babe'));
+          gbM.quad([[q[0] - sx, q[1] + 0.45, q[2] - sz], [p[0] - sx, p[1] + 0.45, p[2] - sz], [p[0] - sx, p[1], p[2] - sz], [q[0] - sx, q[1], q[2] - sz]], [[0, 0], [1, 0], [1, 1], [0, 1]], C('#b4babe'));
+          gbM.quad([[q[0] - sx, q[1] + 0.45, q[2] - sz], [q[0] + sx, q[1] + 0.45, q[2] + sz], [p[0] + sx, p[1] + 0.45, p[2] + sz], [p[0] - sx, p[1] + 0.45, p[2] - sz]], [[0, 0], [1, 0], [1, 1], [0, 1]], C('#c8ced2'));
+        }
+      }
+      // 運搬車（エンジン＋荷台にみかんのコンテナ）。レールに沿って上り下り
+      // 部品は頂点カラーで1メッシュにまとめる（描画回数を増やさない）
+      const parts = [];
+      const mk = (w2, h2, d2, col, x, y, z) => {
+        const gg = new THREE.BoxGeometry(w2, h2, d2).toNonIndexed(); gg.translate(x, y, z);
+        const c = new THREE.Color(col), n = gg.attributes.position.count, ca = new Float32Array(n * 3);
+        for (let i = 0; i < n; i++) { ca[i * 3] = c.r; ca[i * 3 + 1] = c.g; ca[i * 3 + 2] = c.b; }
+        gg.setAttribute('color', new THREE.BufferAttribute(ca, 3)); gg.deleteAttribute('uv'); parts.push(gg);
+      };
+      mk(1.6, 1.4, 1.4, 0x3a6ea8, 1.6, 1.2, 0); mk(3.0, 0.25, 2.0, 0x8a8e90, -0.6, 0.6, 0);
+      for (const [cx, cz] of [[-1.3, -0.5], [-1.3, 0.5], [0.1, -0.5], [0.1, 0.5]]) mk(1.2, 0.8, 0.85, 0xf2a020, cx, 1.15, cz);
+      mk(0.5, 0.5, 0.5, 0x222222, 2.2, 1.9, 0.3);
+      if (!buildEstates.cartMat) buildEstates.cartMat = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.6 });
+      const cart = new THREE.Mesh(T3.mergeGeometries(parts), buildEstates.cartMat);
+      cart.castShadow = true;
+      scene.add(cart);
+      anim.carts.push({ o: cart, pts: railPts, ph: rs() * 100 });
+    }
+    const mw = new THREE.MeshStandardMaterial({ map: G3.tex.stonewall, vertexColors: true, roughness: 0.9, side: THREE.DoubleSide });
+    const mr = new THREE.MeshStandardMaterial({ map: rowTex, vertexColors: true, roughness: 0.85, side: THREE.DoubleSide });
+    const mp = new THREE.MeshStandardMaterial({ map: G3.tex.concrete, vertexColors: true, roughness: 0.9, side: THREE.DoubleSide, polygonOffset: true, polygonOffsetFactor: -1, polygonOffsetUnits: -3 });
+    for (const [gb, m, sh] of [[gbW, mw, true], [gbR, mr, true], [gbP, mp, false], [gbM, WM.metal, true]]) { const o = gb.mesh(m, sh); o.receiveShadow = true; scene.add(o); }
   }
 
   /* ---------- 河川敷（遊歩道・護岸の石張り・飛び石・中州） ---------- */
@@ -1736,6 +1839,16 @@ G3.world = (function () {
       const t = (Math.sin(tSec * .12) + 1) / 2;
       anim.gondola.o.position.lerpVectors(anim.gondola.a, anim.gondola.b, t);
     }
+    // モノレールの運搬車: 約70秒で山すそと上を往復（止まりながら）
+    for (const c of anim.carts) {
+      const ph = ((performance.now() / 1000 + c.ph) % 70) / 70, s2 = clamp(0.5 - 0.5 * Math.cos(ph * TAU) * 1.15, 0, 1);
+      const f = s2 * (c.pts.length - 1), i = Math.min(c.pts.length - 2, Math.floor(f)), k = f - i;
+      const a = c.pts[i], b = c.pts[i + 1];
+      c.o.position.set(lerp(a[0], b[0], k), lerp(a[1], b[1], k) + 0.45, lerp(a[2], b[2], k));
+      c.o.rotation.set(0, -Math.atan2(b[2] - a[2], b[0] - a[0]), 0);
+      c.o.rotateZ(Math.atan2(b[1] - a[1], Math.hypot(b[0] - a[0], b[2] - a[2])));
+      c.o.scale.setScalar(1.25);
+    }
     for (const s of anim.signals) {
       const col = sigCol(s.sg.g);
       const on = { G: col === '#3ee06a', Y: col === '#ffd23c', R: col === '#ff4646' };
@@ -1770,6 +1883,7 @@ G3.world = (function () {
     buildBuildings(scene);
     buildLandmarks(scene);
     buildTrees(scene);
+    buildEstates(scene);
     buildProps(scene);
     if (G3.street) G3.street.build(scene);
   }

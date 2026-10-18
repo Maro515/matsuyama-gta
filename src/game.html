@@ -2408,8 +2408,28 @@ function spawnPedAt(x,y,flee){
   const p={x,y,a:Math.random()*TAU,sp:12+Math.random()*6,flee:flee?2:0,fa:Math.random()*TAU,
     c:cols[(Math.random()*cols.length)|0],pc:PANTS[(Math.random()*PANTS.length)|0],
     hc:HAIRC[(Math.random()*HAIRC.length)|0],sk:SKINC[(Math.random()*SKINC.length)|0],
-    down:0,t:Math.random()*10};
+    down:0,t:Math.random()*10,s:0.93+Math.random()*0.13};
+  pedOutfit(x,y,p);
   peds.push(p);return p;
+}
+/* 地域と時間に合った服装と背丈: 道後は浴衣の観光客、中心街の昼は会社員、学校の近くは制服の学生、公園の近くは子ども、郊外はお年寄りも */
+const OUTFIT={
+  yukata:[['#2a3e6a','#2a3e6a'],['#e8e0cc','#e8e0cc'],['#5a2a3a','#5a2a3a'],['#3a5a7a','#3a5a7a'],['#d8c8a8','#d8c8a8'],['#2e4a3a','#2e4a3a']],   // 上下同じ色で一枚の着物に
+  office:[['#f2f2ee','#22262e'],['#e8eef4','#2a2e38'],['#2a3040','#2a3040'],['#1e2228','#1e2228'],['#f4f0e8','#3a3c44'],['#3a4050','#3a4050']],
+  student:[['#1e2a48','#1e2a48'],['#f2f2ee','#1e2a48'],['#1a1c22','#1a1c22'],['#f2f2ee','#2a2c34']],   // 学ラン・セーラー服・ブレザー
+  kid:[['#e8a020','#2a4f8e'],['#d84a4a','#3a3c44'],['#4aa8d8','#2e3844'],['#f2d23a','#5a6a4a'],['#e890b0','#6b4a3c']],
+  elder:[['#a8a090','#55584e'],['#7a7e88','#4a4038'],['#c8bca0','#3c4250'],['#6a5a4a','#55584e']],
+};
+const SCHOOLS=LMS.filter(l=>l.t==='school');
+function pedOutfit(x,y,p){
+  const z=(typeof G3!=='undefined'&&G3.street&&G3.street.zoneOf)?G3.street.zoneOf(x,y):'suburb';
+  const day=(typeof G3!=='undefined'&&G3.day!=null)?G3.day:1, r=Math.random();
+  const set=(k)=>{const o=OUTFIT[k][(Math.random()*OUTFIT[k].length)|0];p.c=o[0];p.pc=o[1];p.outfit=k;};
+  if(z==='dogo'&&r<0.45){set('yukata');p.sp*=0.75;return;}   // 浴衣はゆっくり歩く
+  if(day>0.4&&SCHOOLS.some(l=>hyp(l.x-x,l.y-y)<650)&&r<0.45){set('student');p.s=0.9+Math.random()*0.1;return;}
+  if(day>0.4&&inPark(x,y,160)&&r<0.3){set('kid');p.s=0.64+Math.random()*0.14;p.sp*=1.15;return;}
+  if(z==='center'&&day>0.4&&r<0.4){set('office');return;}
+  if(z==='suburb'&&r<0.22){set('elder');p.hc=['#c8c8c4','#9a9a96','#e0e0dc'][(Math.random()*3)|0];p.s=0.9+Math.random()*0.06;p.sp*=0.7;return;}
 }
 function pedGreen(g){ // 歩行者信号（車両の赤の間、最後の1.5秒は点滅＝渡り始めない）
   const t=tSec%16;

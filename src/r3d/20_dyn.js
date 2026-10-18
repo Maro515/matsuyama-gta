@@ -674,6 +674,7 @@ G3.dyn = (function () {
       o = pedPool.pop() || makeHuman(false);
       o.visible = true;
       dressHuman(o, p);
+      o.scale.setScalar(U * (p.s || 1));   // 背丈（子どもは小さく）
       pedObjs.set(p, o);
     }
     o.position.set(p.x, p.y3 != null ? p.y3 : onSidewalkY(p.x, p.y), p.y);

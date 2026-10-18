@@ -3146,7 +3146,7 @@ G3.street = (function () {
       if (S.mid) strip(gbE, a, -0.55, 0.55, 0.085, S.mid, 3);
       if (S.grass) for (const sg of [1, -1]) strip(gbE, a, sg > 0 ? h - 0.55 : -h - 0.25, sg > 0 ? h + 0.25 : -h + 0.55, 0.08, S.grass, 4);
       // 小物（両端に交互）
-      const list = FURN[a.style] || FURN.jutaku;
+      const list = a.dest ? [['potted_plant', 0.4]] : FURN[a.style] || FURN.jutaku;   // 建物へのアプローチは鉢植えだけ
       let k = (rr() * 2) | 0;
       if (a.w >= 5) for (let d = 4 + rr() * 4; d < a.pl.len - 4; d += 6 + rr() * 7, k++) {
         if (rr() < 0.25) continue;
@@ -3167,7 +3167,7 @@ G3.street = (function () {
         nItem++;
       }
       // 建物のない側はブロック塀（道後の石畳は土塀）で囲む＝空き地を横切るだけの道に見せない。ところどころ切れ目
-      if (a.style !== 'tsuchi' && a.style !== 'yoko') {
+      if (a.style !== 'tsuchi' && a.style !== 'yoko' && !a.dest) {   // 建物へのアプローチ（萬翠荘など）は塀で囲まない
         const ishi = a.style === 'ishi', SEG = ishi ? 9.5 : 5;
         for (const sg of [1, -1]) {
           let run = rr() < 0.7;
@@ -3232,7 +3232,7 @@ G3.street = (function () {
         }
       }
       // 道後の石畳: 入口に石灯籠（幅のある路地）
-      if (a.style === 'ishi' && a.w >= 6 && a.junc.length) {
+      if (a.style === 'ishi' && a.w >= 6 && a.junc.length && !a.dest) {
         const j = a.junc[0], d = j.d < 1 ? 3 : a.pl.len - 3, q = alleyAt(a, d), sg = rr() < 0.5 ? 1 : -1;
         const x = q.x + q.nx * sg * (h - 0.6), y = q.y + q.ny * sg * (h - 0.6);
         if (free(x, y, 0.6)) { put('stone_lantern', x, y, -q.a, 0); take(x, y, 1.2); }
@@ -3244,14 +3244,14 @@ G3.street = (function () {
         const d = e ? a.pl.len - 2.4 : 2.4, q = alleyAt(a, d), sg = rr() < 0.5 ? 1 : -1;
         const x = q.x + q.nx * sg * (h - 0.35), y = q.y + q.ny * sg * (h - 0.35);
         const out = Math.atan2(e ? Math.sin(q.a) : -Math.sin(q.a), e ? Math.cos(q.a) : -Math.cos(q.a));   // 道路の方
-        const dead = !ends[1 - e].road;
+        const dead = !ends[1 - e].road && !a.dest;   // 奥が建物の入口なら「行き止まり」は立てない
         let nm = null;
         if (dead && rr() < 0.6) nm = 'ikidomari';
         else if ((a.style === 'ura' || a.style === 'yoko' || a.style === 'ishi') && rr() < 0.3) nm = 'sign_pedonly';
         else if ((a.style === 'jutaku' || a.style === 'ura') && a.w >= 5 && rr() < 0.25) nm = 'curve_mirror';
         if (nm && free(x, y, 0.4)) { put(nm, x, y, -out, 0); take(x, y, 0.8); }
       }
-      if (ends.some(o => !o.road) && a.style !== 'tsuchi' && rr() < 0.3) {
+      if (ends.some(o => !o.road) && a.style !== 'tsuchi' && !a.dest && rr() < 0.3) {
         const e = ends[0].road ? 1 : 0, q = alleyAt(a, e ? a.pl.len - 1.2 : 1.2);
         if (free(q.x, q.y, 0.6)) { put('small_shrine', q.x, q.y, -(q.a + (e ? Math.PI : 0)), 0); take(q.x, q.y, 1.2); }
       }
@@ -3259,7 +3259,7 @@ G3.street = (function () {
       if (a.named) {
         const e = a.junc.length && a.junc[0].d > 1 ? 1 : 0, q = alleyAt(a, e ? a.pl.len - 2 : 2), sg = 1;
         const x = q.x + q.nx * sg * (h + 0.9), y = q.y + q.ny * sg * (h + 0.9), g = heightAt(x, y);
-        addBoard({ n: a.n, k: a.k, e: a.e }, null, null, x, y, g + U * 2.3, Math.cos(q.a), Math.sin(q.a), q.a, { w: 0.9 * U, h: 0.4 * U, t: 0.05 * U, pole: true, ground: g }, '道後 散策路', '#4a2e1e');
+        addBoard({ n: a.n, k: a.k, e: a.e }, null, null, x, y, g + U * 2.3, Math.cos(q.a), Math.sin(q.a), q.a, { w: 0.9 * U, h: 0.4 * U, t: 0.05 * U, pole: true, ground: g }, a.hd || '道後 散策路', '#4a2e1e');
         take(x, y, 1.5);
       }
       // 立ち話の人（飲み屋横丁・石畳）

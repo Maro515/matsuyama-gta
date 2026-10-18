@@ -129,11 +129,57 @@ G3.world = (function () {
     WM.greenhouse = new THREE.MeshStandardMaterial({ color: 0xe9eff1, roughness: 0.35, transparent: true, opacity: 0.72, side: THREE.DoubleSide, depthWrite: false });
     WM.ghFrame = new THREE.MeshStandardMaterial({ color: 0xb8bcbf, roughness: 0.4, metalness: 0.7 });
     // 外壁（夜間は窓が個別に点灯）
+    // 窓の向こうの部屋（インテリアマッピング）: 種類 0=住まい 1=事務所 2=店 3=倉庫、SPLIT=1 は1スパンに窓が2つ（左右で別の部屋）
+    const ROOMK = { office: 1, glass: 1, goffice: 1, shop: 2, gshop: 2, gmachiya: 2, warehouse: 3, gwarehouse: 3 };
+    const ROOM_GLSL = `
+      // 視線 r（接線空間: x=+u, y=+v, z=壁の奥）を部屋の箱に当て、当たった面の色を返す。cg=天井灯の明るさ
+      vec3 facRoom(vec2 uvT, vec3 r, float hr, float hr2, float kind, float split, out float cg) {
+        float W = 3.6, H = 2.8, D = 3.4;
+        if (split > 0.5) { W = 1.8; uvT.x = fract(uvT.x * 2.0); }
+        vec3 p = vec3(uvT.x * W, uvT.y * H, 0.0);
+        vec3 q = vec3(r.x, r.y, max(r.z, 0.04));
+        float tx = q.x > 0.0 ? (W - p.x) / q.x : (q.x < 0.0 ? -p.x / q.x : 1e5);
+        float ty = q.y > 0.0 ? (H - p.y) / q.y : (q.y < 0.0 ? -p.y / q.y : 1e5);
+        float tz = D / q.z;
+        float t = min(tx, min(ty, tz));
+        vec3 h = p + q * t;
+        float dep = clamp(h.z / D, 0.0, 1.0), u = h.x / W, v = h.y / H;
+        vec3 wall = hr < 0.25 ? vec3(.86,.83,.76) : hr < 0.5 ? vec3(.80,.81,.83) : hr < 0.75 ? vec3(.82,.75,.63) : vec3(.72,.79,.75);
+        vec3 flo = hr2 < 0.5 ? vec3(.42,.30,.20) : vec3(.36,.38,.42), cei = vec3(.92,.92,.90);
+        if (kind > 0.5 && kind < 1.5) { wall = vec3(.84,.85,.86); flo = vec3(.30,.32,.36); }
+        else if (kind > 1.5 && kind < 2.5) { wall = vec3(.92,.91,.88); flo = vec3(.66,.63,.58); }
+        else if (kind > 2.5) { wall = vec3(.42,.43,.44); flo = vec3(.28); cei = vec3(.36); }
+        vec3 c = wall;
+        cg = 0.0;
+        if (t == tz) {   // 奥の壁
+          if (kind < 0.5) {   // 住まい: ソファ・棚の影と額
+            float x0 = 0.08 + hr2 * 0.32, x1 = x0 + 0.32 + hr * 0.25;
+            if (v < 0.34 && u > x0 && u < x1) c = mix(vec3(.24,.19,.16), vec3(.48,.38,.30), hr2);
+            if (v > 0.46 && v < 0.62 && abs(u - 0.3 - hr * 0.4) < 0.07) c = vec3(.55,.42,.30) * (0.6 + hr2 * 0.6);
+          } else if (kind < 1.5) {   // 事務所: 机の列・仕切り・書類棚
+            if (v < 0.30) c = vec3(.56,.58,.61);
+            if (v < 0.27 && fract(u * 3.0) < 0.1) c = vec3(.28,.30,.33);
+            if (v > 0.33 && v < 0.64 && fract(u * 2.0 + 0.25) < 0.38) c = vec3(.64,.61,.55);
+          } else if (kind < 2.5) {   // 店: 色とりどりの商品棚
+            float sh = fract(v * 4.0);
+            float pr = fract(sin(floor(u * 10.0) * 12.9898 + floor(v * 4.0) * 78.233 + hr * 31.0) * 43758.5);
+            if (v < 0.8) c = sh > 0.14 ? mix(vec3(.86,.32,.22), mix(vec3(.24,.52,.86), vec3(.95,.82,.3), pr), pr) * 0.75 + 0.12 : vec3(.78);
+          }
+        } else if (t == ty) {
+          if (q.y > 0.0) { c = cei; cg = smoothstep(0.42, 0.0, length(vec2(u - 0.5, dep - 0.5))); if (kind > 0.5 && kind < 1.5) cg = max(cg, step(0.5, fract(u * 2.0)) * step(0.45, fract(dep * 3.0)) * 0.8); }
+          else { c = flo; if (kind > 0.5 && kind < 1.5) c *= 0.9 + 0.1 * step(0.5, fract(u * 6.0)); }
+        } else {
+          c = wall * 0.86;
+          if (kind > 1.5 && kind < 2.5 && v < 0.8) c = mix(c, vec3(.72,.52,.32), step(0.6, fract(v * 4.0)) * 0.5);
+        }
+        return pow(c, vec3(1.15)) * mix(1.0, 0.42, dep);
+      }`;
     for (const f of ['office', 'glass', 'mansion', 'shop', 'house', 'hotel', 'gshop', 'goffice', 'ghouse', 'machiya', 'gmachiya', 'warehouse', 'gwarehouse', 'danchi']) {
       const m = new THREE.MeshStandardMaterial({ map: G3.tex['fac_' + f], vertexColors: true, roughness: 0.8, metalness: 0.0, envMapIntensity: 0.9 });
       const mask = G3.tex['facm_' + f];
       const ground = f[0] === 'g';
-      const uni = { uMask: { value: mask }, uNight: { value: 0 }, uRatio: { value: ground ? 0.7 : 0.38 }, uEmit: { value: ground ? 0.5 : 0.36 } };
+      const uni = { uMask: { value: mask }, uNight: { value: 0 }, uRatio: { value: ground ? 0.7 : 0.38 }, uEmit: { value: ground ? 0.5 : 0.36 },
+        uKind: { value: ROOMK[f] || 0 }, uSplit: { value: f === 'office' || f === 'glass' ? 1 : 0 }, uRoomOn: G3.roomOn || (G3.roomOn = { value: 1 }) };
       m.onBeforeCompile = sh => {
         Object.assign(sh.uniforms, uni);
         sh.vertexShader = sh.vertexShader
@@ -141,7 +187,7 @@ G3.world = (function () {
           .replace('#include <begin_vertex>', '#include <begin_vertex>\nvSeed=seed;vFacY=(modelMatrix*vec4(transformed,1.0)).y;')
           .replace('varying float vSeed;', 'varying float vSeed;varying float vFacY;');
         sh.fragmentShader = sh.fragmentShader
-          .replace('#include <common>', '#include <common>\nuniform sampler2D uMask;uniform float uNight,uRatio,uEmit;varying float vSeed;varying float vFacY;\nfloat h21(vec2 p){return fract(sin(dot(p,vec2(127.1,311.7)))*43758.5453);}')
+          .replace('#include <common>', '#include <common>\nuniform sampler2D uMask;uniform float uNight,uRatio,uEmit,uKind,uSplit,uRoomOn;varying float vSeed;varying float vFacY;\nfloat h21(vec2 p){return fract(sin(dot(p,vec2(127.1,311.7)))*43758.5453);}\n' + ROOM_GLSL)
           .replace('#include <map_fragment>', '#include <map_fragment>\nvec4 facM=texture2D(uMask,vMapUv);float glassM=max(facM.r,facM.g);\ndiffuseColor.rgb*=mix(0.62,1.0,smoothstep(0.0,4.5,vFacY));')
           .replace('#include <roughnessmap_fragment>', '#include <roughnessmap_fragment>\nroughnessFactor=mix(roughnessFactor,0.1,glassM);')
           .replace('#include <emissivemap_fragment>', `#include <emissivemap_fragment>
@@ -149,7 +195,45 @@ G3.world = (function () {
             float hA=h21(cel+vec2(.17,0.)),hB=h21(cel+vec2(0.,.31));
             float lA=step(hA,uRatio),lB=step(hB,uRatio);
             vec3 warm=mix(vec3(1.,.74,.42),vec3(.82,.9,1.),step(.72,fract(hA*7.)));
-            totalEmissiveRadiance+=(facM.r*lA+facM.g*lB)*warm*uNight*uEmit;`);
+            float litW=facM.r*lA+facM.g*lB;
+            if(glassM>0.02&&uRoomOn>0.5){
+              vec3 Nv=normalize(normal);
+              vec3 upV=normalize((viewMatrix*vec4(0.,1.,0.,0.)).xyz);
+              if(abs(dot(Nv,upV))<0.5){
+                // 壁の接線（UVの+u・+v）を微分から作り、視線を部屋の座標へ
+                vec3 q0=dFdx(-vViewPosition),q1=dFdy(-vViewPosition);
+                vec2 st0=dFdx(vMapUv),st1=dFdy(vMapUv);
+                vec3 q1p=cross(q1,Nv),q0p=cross(Nv,q0);
+                vec3 Tv=q1p*st0.x+q0p*st1.x,Bv=q1p*st0.y+q0p*st1.y;
+                Tv=normalize(Tv-Nv*dot(Nv,Tv));Bv=normalize(Bv-Nv*dot(Nv,Bv)-Tv*dot(Tv,Bv));
+                vec3 rd=normalize(-vViewPosition);
+                vec3 rT=vec3(dot(rd,Tv),dot(rd,Bv),-dot(rd,Nv));
+                float sideR=step(facM.r,facM.g);
+                vec2 cr=cel+vec2(sideR*.5,0.);
+                float hr=h21(cr+vec2(3.1,1.7)),hr2=h21(cr+vec2(5.3,9.1));
+                float cg;
+                vec3 rc=facRoom(fract(vMapUv),rT,hr,hr2,uKind,uSplit,cg);
+                float lit=mix(lA,lB,sideR);
+                // 窓のすぐ内側のカーテン（住まい）・ブラインド（事務所）
+                float Wd=uSplit>0.5?1.8:3.6;
+                float ux=fract(vMapUv.x*(uSplit>0.5?2.0:1.0))*Wd;
+                float tc=0.18/max(rT.z,0.04);
+                float cxp=ux+rT.x*tc,gap=(0.06+hr*0.3)*Wd;
+                if(uKind<0.5&&hr2>0.55&&abs(cxp-Wd*0.5)>gap){
+                  rc=(hr<0.33?vec3(.86,.8,.66):hr<0.66?vec3(.78,.82,.9):vec3(.9,.78,.72))*(0.82+0.18*sin(cxp*28.))*0.9;cg=0.35;
+                }else if(uKind>0.5&&uKind<1.5&&hr2>0.66){
+                  float yy=fract(vMapUv.y)*2.8+rT.y*tc;
+                  rc=mix(rc,vec3(.82,.83,.8)*(0.75+0.25*step(.5,fract(yy*9.))),0.72);cg=max(cg,0.25);
+                }
+                vec3 lc=mix(vec3(1.,.8,.55),vec3(.86,.93,1.),step(.6,fract(hr*5.)+(uKind>0.5&&uKind<1.5?0.5:0.)));
+                vec3 dayR=rc*(0.03+0.24*(1.-uNight));
+                vec3 ngtR=(rc*0.8+lc*cg*0.8)*lc*lit*uNight*uEmit*1.65;
+                totalEmissiveRadiance+=glassM*(dayR+ngtR);
+                diffuseColor.rgb=mix(diffuseColor.rgb,diffuseColor.rgb*0.3,glassM*0.85);
+                litW=0.0;
+              }
+            }
+            totalEmissiveRadiance+=litW*warm*uNight*uEmit;`);
       };
       m.customProgramCacheKey = () => 'fac' + (ground ? 'g' : 'u');
       m.userData.uni = uni;

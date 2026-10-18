@@ -967,6 +967,111 @@ G3.street = (function () {
     }
   }
   const FLOORH = 7;
+
+  /* ---------- 店の正面の看板（店名看板）2026-10-19 ----------
+     店名は架空（実在の店名は使わない）。種類: 0=板（白地など） 1=木の看板（道後・町家） 2=内照の箱看板（夜に光る）
+     1枚の帯状アトラス（256×64 のマス）に描き、全部を1メッシュにまとめる */
+  const SHOP_NAMES = [
+    ['鯛めし', '伊予の宿', '#1f4f8a', '#fff', 'm', 2], ['うどん', '一番町', '#f2efe6', '#a01a1a', 'm', 0], ['鍋焼きうどん', '坊っちゃん亭', '#fff6e0', '#2a2a2a', 'm', 0],
+    ['じゃこ天', '三津屋', '#c85a1a', '#fff', 'g', 2], ['居酒屋', 'みかん', '#2a1a14', '#f2c84a', 'm', 2], ['焼鳥', '鳥五郎', '#a01818', '#fff', 'm', 2],
+    ['ラーメン', '道後軒', '#d8a020', '#2a1a10', 'g', 2], ['お好み焼', 'みつはま', '#f08a1c', '#fff', 'g', 2], ['喫茶', 'マドンナ', '#5a3a22', '#f2e6c8', 'm', 0],
+    ['珈琲', '城山', '#3a2a20', '#e8d0a0', 'm', 0], ['パン工房', 'いよかん', '#e8d8b0', '#7a3a10', 'g', 0], ['洋菓子', 'タルト堂', '#f6e8ec', '#a02848', 'm', 0],
+    ['和菓子', '松風堂', '#f2efe6', '#2a4a2a', 'm', 0], ['そば処', '石手', '#2a2a2a', '#f2efe6', 'm', 0], ['寿司', '瀬戸内', '#f2efe6', '#1a1a1a', 'm', 0],
+    ['定食', '大街道食堂', '#1e5a3a', '#fff', 'g', 2], ['カレー', 'キャプテン', '#e8b020', '#5a2a10', 'g', 2], ['中華料理', '萬福', '#c8201e', '#f2d27a', 'g', 2],
+    ['とんかつ', '勝山', '#f2efe6', '#5a2a1a', 'm', 0], ['焼肉', '伊予牛', '#1a1a1a', '#e85a2a', 'g', 2], ['うなぎ', '重信', '#2a1a10', '#f2e6c8', 'm', 0],
+    ['たこ焼', 'まる', '#e84a2a', '#fff', 'g', 2], ['BURGER', 'SETOUCHI', '#1a3a6a', '#f2c84a', 'g', 2], ['PIZZA', 'OSHIMA', '#2a7a3a', '#fff', 'g', 2],
+    ['カフェ', '椿', '#f2efe6', '#7a2a3a', 'm', 0], ['BAR', 'SHIKI', '#14141a', '#7ad0ff', 'g', 2], ['スナック', '夕子', '#3a1a3a', '#ff9ad0', 'm', 2],
+    ['メガネ', 'ミカミ', '#1a4f9a', '#fff', 'g', 2], ['時計・宝石', 'ほしの', '#14141a', '#e8c860', 'm', 0], ['靴', 'トキワ', '#b02828', '#fff', 'g', 2],
+    ['洋品店', 'マツヤマ', '#f2efe6', '#1a3a6a', 'g', 0], ['呉服', 'いよ絣', '#2a3a5a', '#f2efe6', 'm', 0], ['くすり', 'みかん堂', '#2a7ad0', '#fff', 'g', 2],
+    ['ドラッグ', 'セトウチ', '#e8f2f8', '#1a5aa8', 'g', 2], ['書店', '坊っちゃん', '#1e5a3a', '#f2efe6', 'm', 0], ['文具', 'えんぴつ屋', '#f2efe6', '#2a4a8a', 'g', 0],
+    ['花', '椿園', '#f2f8ee', '#2a7a3a', 'g', 0], ['酒', '宇和島屋', '#2a1a10', '#f2e6c8', 'm', 0], ['米穀', '石手川', '#f2efe6', '#3a3a3a', 'm', 0],
+    ['電器', 'イヨデン', '#1a3a8a', '#fff', 'g', 2], ['カメラ', '光陽', '#1a1a1a', '#f2c84a', 'g', 0], ['自転車', 'サイクル伊予', '#2a7a3a', '#fff', 'g', 0],
+    ['おもちゃ', 'ポンポン', '#f2c84a', '#c82020', 'g', 2], ['楽器', 'ひびき', '#3a2a5a', '#f2efe6', 'g', 0], ['茶', '大街道茶舗', '#2a4a2a', '#f2e6c8', 'm', 0],
+    ['果物', 'みかん山', '#f08a1c', '#fff', 'g', 0], ['八百屋', '八百松', '#2a7a3a', '#fff', 'm', 0], ['鮮魚', '三津浜', '#1a5aa8', '#fff', 'm', 0],
+    ['精肉', '伊予の牛', '#a01818', '#fff', 'g', 0], ['美容室', 'LUNA', '#f6f2ee', '#5a3a6a', 'g', 2], ['理容', 'いよ', '#f2efe6', '#1a3a8a', 'g', 0],
+    ['クリーニング', 'しろたえ', '#e8f2f8', '#1a5aa8', 'g', 2], ['歯科', '中央', '#f2f8f8', '#1a7a7a', 'g', 2], ['整骨院', '城東', '#f2efe6', '#2a6a3a', 'g', 0],
+    ['学習塾', 'えひめ塾', '#1a3a8a', '#f2c84a', 'g', 2], ['写真館', 'ひかり', '#2a2a2a', '#f2efe6', 'm', 0], ['コインランドリー', 'ふわり', '#2a8ad0', '#fff', 'g', 2],
+    ['旅行', 'しまなみトラベル', '#127a6a', '#fff', 'g', 2], ['携帯', 'MIKAN MOBILE', '#f08a1c', '#fff', 'g', 2], ['不動産', 'ほりばた', '#2a4a8a', '#fff', 'g', 0],
+    // 木の看板（道後・町家の店）
+    ['土産', 'みかん屋', '#5a3a22', '#f2d27a', 'm', 1], ['坊っちゃん団子', '本舗', '#4a2e1e', '#f2e6c8', 'm', 1], ['旅館', '湯の香', '#3a2a1e', '#f2e6c8', 'm', 1],
+    ['砥部焼', '器の店', '#4a3424', '#e8eef4', 'm', 1], ['今治タオル', '湯上がり', '#3a2a1e', '#f2e6c8', 'm', 1], ['地酒', '道後蔵', '#2a1e14', '#e8c860', 'm', 1],
+    ['履物', '下駄屋', '#4a3424', '#f2e6c8', 'm', 1], ['甘味処', '椿茶屋', '#5a3a22', '#f2d27a', 'm', 1], ['蒲鉾', 'じゃこ天の店', '#4a2e1e', '#f2e6c8', 'm', 1],
+    ['鯛めし', '湯月', '#3a2a1e', '#e8c860', 'm', 1], ['伊予柑', '果汁の店', '#4a3424', '#f2c84a', 'm', 1], ['畳', '久米表具', '#3a2a1e', '#f2e6c8', 'm', 1],
+  ];
+  function shopSigns(scene) {
+    const rr = mulberry32(5701);
+    const CW = 256, CH = 64, COLS = 8, N = SHOP_NAMES.length, ROWS = Math.ceil(N / COLS);
+    const GOTH = '"Hiragino Sans","Hiragino Kaku Gothic ProN","Noto Sans JP","Yu Gothic","Meiryo",sans-serif';
+    const MIN = '"Hiragino Mincho ProN","Yu Mincho","Noto Serif JP",serif';
+    const tex = G3.world.canvasTex(CW * COLS, CH * ROWS, g => {
+      g.textBaseline = 'middle';
+      SHOP_NAMES.forEach(([t, sub, bg, fg, font, kind], i) => {
+        const x = (i % COLS) * CW, y = ((i / COLS) | 0) * CH;
+        g.fillStyle = bg; g.fillRect(x, y, CW, CH);
+        if (kind === 1) {   // 木目
+          for (let k = 0; k < 9; k++) { g.fillStyle = `rgba(255,255,255,${0.03 + (k % 3) * 0.02})`; g.fillRect(x, y + 4 + k * 7, CW, 2); }
+          g.strokeStyle = 'rgba(0,0,0,.45)'; g.lineWidth = 4; g.strokeRect(x + 3, y + 3, CW - 6, CH - 6);
+        } else {
+          g.strokeStyle = kind === 2 ? 'rgba(255,255,255,.55)' : 'rgba(0,0,0,.18)'; g.lineWidth = 3; g.strokeRect(x + 4, y + 4, CW - 8, CH - 8);
+        }
+        const fam = font === 'm' ? MIN : GOTH;
+        g.fillStyle = fg; g.textAlign = 'center';
+        // 大きい字＝主名（短い方を大きく）、小さい字＝種類
+        const main = sub.length <= t.length && /[^\x00-\x7f]/.test(sub) ? sub : t, small = main === sub ? t : sub;
+        let sz = 34; g.font = `900 ${sz}px ${fam}`;
+        while (g.measureText(main).width > CW * 0.66 && sz > 14) { sz--; g.font = `900 ${sz}px ${fam}`; }
+        g.fillText(main, x + CW * 0.6, y + CH / 2 + 2);
+        let s2 = 18; g.font = `700 ${s2}px ${fam}`;
+        while (g.measureText(small).width > CW * 0.26 && s2 > 9) { s2--; g.font = `700 ${s2}px ${fam}`; }
+        g.fillText(small, x + CW * 0.15, y + CH / 2 + 1);
+      });
+    });
+    tex.anisotropy = 8;
+    const mat = new THREE.MeshStandardMaterial({ map: tex, roughness: 0.5, emissive: 0xffffff, emissiveMap: tex, emissiveIntensity: 0 });
+    G3.world.anim.neon.push(mat);
+    const gb = new G3.GB(false), gbF = new G3.GB(true);
+    const FR = [0.22, 0.22, 0.24];
+    const woodIdx = SHOP_NAMES.map((s, i) => s[5] === 1 ? i : -1).filter(i => i >= 0), plainIdx = SHOP_NAMES.map((s, i) => s[5] !== 1 ? i : -1).filter(i => i >= 0);
+    let n = 0;
+    for (const b of buildings) {
+      if (b.noDraw) continue;
+      const shopFront = b.kind === 'shop' || (b.kind === 'office' && b.seed % 2 && b.hgt <= 4);
+      if (!shopFront || b.sty === 'warehouse') continue;
+      const f = frontOf(b), len = faceLen(b, f);
+      if (len < 9) continue;
+      const cx = (b.x0 + b.x1) / 2, cy = (b.y0 + b.y1) / 2, z = zoneOf(cx, cy);
+      const wood = z === 'dogo' || b.sty === 'machiya';
+      const gH = Math.max(6, b.hW - FLOORH * (b.sty === 'machiya' ? 1 : b.hgt));
+      const z0 = Math.max(gH + 0.15, 7.7), hgt = wood ? 1.8 : 2.1;
+      if (z0 + hgt > b.hW - 0.4) continue;   // 平屋で看板を付ける壁がない
+      const nSign = len > 30 ? 2 : 1;
+      for (let k = 0; k < nSign; k++) {
+        const list = wood ? woodIdx : plainIdx;
+        const idx = list[((b.seed * 7 + k * 13 + ((rr() * 1000) | 0)) >>> 0) % list.length];
+        const w = Math.min(len / nSign - 2.5, hgt * 4.2 * (0.9 + rr() * 0.3));
+        const tc = nSign === 1 ? 0.5 : (k === 0 ? 0.27 : 0.73);
+        const C0 = wallPt(b, f, tc, 0.32), N = [[0, -1], [1, 0], [0, 1], [-1, 0]][f];
+        const tx = -N[1], ty = N[0];   // 壁に沿う向き（表から見て右）
+        const g0 = heightAt(C0.x, C0.y);
+        const P = (s, zz, o) => [C0.x + tx * s * w / 2 + N[0] * o, g0 + zz, C0.y + ty * s * w / 2 + N[1] * o];
+        const u0 = (idx % COLS) / COLS, u1 = u0 + 1 / COLS, v1 = 1 - ((idx / COLS) | 0) / ROWS, v0 = v1 - 1 / ROWS;
+        // 表から見て左下→右下→右上→左上（右手は -tx 側になるので s を反転）
+        gb.quad([P(1, z0, 0.04), P(-1, z0, 0.04), P(-1, z0 + hgt, 0.04), P(1, z0 + hgt, 0.04)], [[u0, v0], [u1, v0], [u1, v1], [u0, v1]]);
+        // 枠（厚み 0.3 の箱）
+        const e = 0.25;
+        const Q = (s, zz, o) => [C0.x + tx * s * (w / 2 + e) + N[0] * o, g0 + zz, C0.y + ty * s * (w / 2 + e) + N[1] * o];
+        gbF.quad([Q(1, z0 + hgt + e, 0), Q(-1, z0 + hgt + e, 0), Q(-1, z0 + hgt + e, -0.32), Q(1, z0 + hgt + e, -0.32)].reverse(), [[0, 0], [1, 0], [1, 1], [0, 1]], FR);
+        gbF.quad([Q(1, z0 - e, -0.32), Q(-1, z0 - e, -0.32), Q(-1, z0 - e, 0), Q(1, z0 - e, 0)].reverse(), [[0, 0], [1, 0], [1, 1], [0, 1]], FR);
+        gbF.quad([Q(1, z0 - e, 0), Q(1, z0 - e, -0.32), Q(1, z0 + hgt + e, -0.32), Q(1, z0 + hgt + e, 0)], [[0, 0], [1, 0], [1, 1], [0, 1]], FR);
+        gbF.quad([Q(-1, z0 - e, -0.32), Q(-1, z0 - e, 0), Q(-1, z0 + hgt + e, 0), Q(-1, z0 + hgt + e, -0.32)], [[0, 0], [1, 0], [1, 1], [0, 1]], FR);
+        gbF.quad([Q(1, z0 - e, -0.03), Q(-1, z0 - e, -0.03), Q(-1, z0 + hgt + e, -0.03), Q(1, z0 + hgt + e, -0.03)], [[0, 0], [1, 0], [1, 1], [0, 1]], FR);
+        n++;
+      }
+    }
+    if (gb.p.length) { const m = gb.mesh(mat, false); m.name = 'shop_signs'; scene.add(m); }
+    if (gbF.p.length) scene.add(gbF.mesh(G3.world.WM.metal, false));
+    stats.shop_sign = n;
+  }
   // 倉庫・工場のまわり: 横のコンテナ、シャッター前のカラーコーン、室外機
   function warehouseYard(b, f, rr) {
     const sf = (f + (b.seed % 2 ? 1 : 3)) % 4;
@@ -3142,6 +3247,7 @@ G3.street = (function () {
     gomiStations();
     roadEdges();
     buildingDetails();
+    shopSigns(scene);
     houseYards(scene);
     greenery();
     exteriors();

@@ -32,10 +32,84 @@ G3.dyn = (function () {
   }
   // 車種ごとに一度だけ部品をまとめた「ひな形」を作り、以後は複製する（形状は共有。走行中に結合処理をしない）
   const carTemplates = {};
+  /* ナンバープレート（日本の様式。自家用=白地緑字、軽=黄地黒字、事業用=緑地白字、軽の事業用=黒地黄字。地名は「愛媛」）
+     1枚のアトラス（スタイル4×8枚）。車ごとにどれかの1枚を貼る */
+  const PLATE_STYLES = [['#f4f4ee', '#1e6a3a'], ['#f2d23a', '#1a1a1a'], ['#1e6a3a', '#f4f4ee'], ['#1a1a1a', '#f2d23a']];
+  let plateTex = null;
+  const plateMats = [];
+  function plateAtlas() {
+    if (plateTex) return plateTex;
+    const CW = 256, CH = 128;
+    const HIRA = 'あいうえさすせそたちつてとなにぬねのはひふほまみむめもやゆよらりるろ', BIZ = 'かきくけこを';
+    const rp = mulberry32(6601);
+    const cv = document.createElement('canvas'); cv.width = CW * 8; cv.height = CH * 4;
+    const g = cv.getContext('2d');
+    const F = '"Hiragino Sans","Hiragino Kaku Gothic ProN","Noto Sans JP","Yu Gothic",sans-serif';
+    PLATE_STYLES.forEach(([bg, fg], si) => {
+      for (let k = 0; k < 8; k++) {
+        const x = k * CW, y = si * CH;
+        g.fillStyle = bg; g.fillRect(x, y, CW, CH);
+        g.strokeStyle = fg; g.lineWidth = 4; g.strokeRect(x + 5, y + 5, CW - 10, CH - 10);
+        const cls = si === 1 || si === 3 ? ['580', '581', '583'][k % 3] : si === 2 ? ['500', '100', '200'][k % 3] : ['500', '530', '300', '501'][k % 4];
+        g.fillStyle = fg; g.textBaseline = 'middle'; g.textAlign = 'center';
+        g.font = `700 30px ${F}`; g.fillText('愛媛 ' + cls, x + CW / 2, y + 30);
+        const kana = (si >= 2 ? BIZ : HIRA)[(rp() * (si >= 2 ? BIZ.length : HIRA.length)) | 0];
+        g.font = `700 28px ${F}`; g.fillText(kana, x + 30, y + 90);
+        // 一連番号: 4桁は「12-34」、3桁以下は頭を「・」で埋める（・・42）
+        const num = (rp() * 9999 + 1) | 0, s4 = String(num);
+        const txt = num >= 1000 ? s4.slice(0, 2) + '-' + s4.slice(2) : s4.padStart(4, '・');
+        g.font = `800 52px ${F}`; g.fillText(txt, x + CW / 2 + 26, y + 87);
+      }
+    });
+    plateTex = new THREE.CanvasTexture(cv);
+    plateTex.colorSpace = THREE.SRGBColorSpace;
+    plateTex.anisotropy = 4;
+    for (let si = 0; si < 4; si++) for (let k = 0; k < 8; k++) {
+      const t = plateTex.clone();
+      t.repeat.set(1 / 8, 1 / 4); t.offset.set(k / 8, 1 - (si + 1) / 4);
+      t.needsUpdate = true;
+      plateMats.push(new THREE.MeshStandardMaterial({ name: 'PlateTex', map: t, roughness: 0.45, metalness: 0.1 }));
+    }
+    return plateTex;
+  }
+  const PLATE_KIND = { kei: 1, keitruck: 3, taxi: 2, bus: 2, truck: 2 };
+  // ひな形のナンバー（白い板＋緑の帯）を、外向きの面に貼る薄い板（テクスチャ付き）に置き換える
+  function plateQuads(t) {
+    t.updateMatrixWorld(true);
+    const inv = new THREE.Matrix4().copy(t.matrixWorld).invert();
+    const rm = [], add = [];
+    t.traverse(m => {
+      if (!m.isMesh) return;
+      const n = (Array.isArray(m.material) ? m.material[0] : m.material).name || '';
+      if (/^PlateText/.test(n)) { rm.push(m); return; }
+      if (!/^Plate/.test(n)) return;
+      // 前後のナンバーが1つの部品にまとまっていることがあるので、前（x>0）と後ろで分けて箱を求める
+      const M = new THREE.Matrix4().multiplyMatrices(inv, m.matrixWorld), pos = m.geometry.attributes.position, v = new THREE.Vector3();
+      const bbs = [new THREE.Box3(), new THREE.Box3()];
+      for (let i = 0; i < pos.count; i++) { v.fromBufferAttribute(pos, i).applyMatrix4(M); bbs[v.x > 0 ? 0 : 1].expandByPoint(v); }
+      bbs.forEach((bb, k) => {
+        if (bb.isEmpty()) return;
+        const front = k === 0;
+        const pg = new THREE.PlaneGeometry(bb.max.z - bb.min.z, bb.max.y - bb.min.y);
+        pg.rotateY(front ? Math.PI / 2 : -Math.PI / 2);
+        pg.translate(front ? bb.max.x + 0.004 : bb.min.x - 0.004, (bb.min.y + bb.max.y) / 2, (bb.min.z + bb.max.z) / 2);
+        add.push(pg);
+      });
+      rm.push(m);
+    });
+    for (const m of rm) m.parent.remove(m);
+    if (!add.length) return;
+    const geo = add.length > 1 ? G3.T.mergeGeometries(add, false) : add[0];
+    const pm = new THREE.Mesh(geo, plateMats[0] || new THREE.MeshStandardMaterial({ name: 'PlateTex', color: 0xf4f4ee }));
+    pm.name = 'plate_quads';
+    t.add(pm);
+  }
   function carTemplate(type) {
     if (carTemplates[type]) return carTemplates[type];
     const node = G3.glbNode('vehicles', type);
     const t = node ? node.clone(true) : fallbackCar(type);
+    plateAtlas();
+    plateQuads(t);
     compactCar(t);
     return (carTemplates[type] = t);
   }
@@ -63,6 +137,7 @@ G3.dyn = (function () {
         c.material = Array.isArray(c.material) ? nm : nm[0];
       }
       if (/^wheel_/.test(c.name)) ud.wheels.push({ o: c, front: /F/.test(c.name.slice(6)) });
+      if (c.name === 'plate_quads' && plateMats.length) c.material = plateMats[(PLATE_KIND[type] || 0) * 8 + ((Math.random() * 8) | 0)];
     });
     // 車体下の接地影
     {

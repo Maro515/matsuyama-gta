@@ -2393,6 +2393,7 @@ G3.world = (function () {
     G3.refl.update(dt);
     G3.birds.update(dt);
     G3.rainfx.update(dt);
+    if (G3.cyclists) G3.cyclists.update(dt);
     // 風: ふだんはそよ風、雨や曇りの日は強く
     SWAY.uSwayT.value = (SWAY.uSwayT.value + dt) % 1000;
     SWAY.uWind.value.z += ((0.35 + 0.25 * S.cloudI + 0.9 * S.rainI) - SWAY.uWind.value.z) * Math.min(1, dt * 0.3);

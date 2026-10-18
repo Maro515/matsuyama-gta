@@ -149,6 +149,76 @@ G3.dyn = (function () {
     act.stop();
     return (drvGeo = g);
   }
+  /* 自転車に乗る人: 骨を回して前傾・ハンドルへ腕・ペダルの円上の足（2本の骨の逆運動学）にし、ペダル角 4 段階で固める。
+     自転車（street_props.bicycle、+X 前）の座標 m に合わせ、腰がサドル、足がペダルに来る */
+  let cycGeos;
+  function cyclistGeometries() {
+    if (cycGeos !== undefined) return cycGeos;
+    cycGeos = null;
+    const src = G3.glb.human;
+    if (!src || !pedGeometry(src)) return null;
+    const out = [];
+    const SADDLE = new THREE.Vector3(-0.2, 0.93, 0), BB = new THREE.Vector3(0.02, 0.3, 0), CRANK = 0.16;
+    for (let ph = 0; ph < 4; ph++) {
+      const o = makeHuman(false);
+      scene.remove(o);
+      let body = null;
+      o.traverse(c => { if (c.isSkinnedMesh) body = c; });
+      o.position.set(0, 0, 0); o.rotation.set(0, 0, 0); o.scale.setScalar(1);
+      o.updateMatrixWorld(true);
+      const bones = {}; body.skeleton.bones.forEach(b => { bones[b.name] = b; });
+      const wq = new THREE.Quaternion(), pq = new THREE.Quaternion(), v0 = new THREE.Vector3(), v1 = new THREE.Vector3();
+      // ワールドの軸まわりに骨を回す
+      const rotW = (b, axis, ang) => { b.parent.getWorldQuaternion(pq); const q = new THREE.Quaternion().setFromAxisAngle(axis, ang); b.quaternion.premultiply(pq.clone().invert().multiply(q).multiply(pq)); o.updateMatrixWorld(true); };
+      // 骨 b の向き（b→子）をワールドの dir に向ける
+      const aim = (b, child, dir) => { b.getWorldPosition(v0); child.getWorldPosition(v1); const cur = v1.sub(v0).normalize(); b.parent.getWorldQuaternion(pq); const q = new THREE.Quaternion().setFromUnitVectors(cur, dir.clone().normalize()); b.quaternion.premultiply(pq.clone().invert().multiply(q).multiply(pq)); o.updateMatrixWorld(true); };
+      const Z = new THREE.Vector3(0, 0, 1);
+      rotW(bones.spine, Z, -0.32);   // 前傾
+      rotW(bones.neck, Z, 0.22);     // 顔は前へ
+      const hipW = new THREE.Vector3(); bones.hips.getWorldPosition(hipW);
+      const off = SADDLE.clone().sub(hipW);   // 腰をサドルへ動かす量（最後に全体を平行移動。目標は人の座標へ直して使う）
+      // 腕: 肩からハンドルの握りへ
+      for (const [ua, fa, hd, s] of [['upperarmL', 'forearmL', 'handL', -1], ['upperarmR', 'forearmR', 'handR', 1]]) {
+        const sh = new THREE.Vector3(); bones[ua].getWorldPosition(sh);
+        const grip = new THREE.Vector3(0.38, 1.03, s * 0.27).sub(off);
+        // 肘は少し外・下に曲げる
+        const mid = sh.clone().lerp(grip, 0.5).add(new THREE.Vector3(-0.02, -0.08, s * 0.06));
+        aim(bones[ua], bones[fa], mid.clone().sub(sh));
+        const el = new THREE.Vector3(); bones[fa].getWorldPosition(el);
+        aim(bones[fa], bones[hd], grip.clone().sub(el));
+      }
+      // 脚: ペダル（右足は半周ずれ）
+      for (const [th, sn, ft, s, a0] of [['thighL', 'shinL', 'footL', -1, 0], ['thighR', 'shinR', 'footR', 1, Math.PI]]) {
+        const a = a0 + ph / 4 * Math.PI * 2;
+        const foot = new THREE.Vector3(BB.x + Math.cos(a) * CRANK, BB.y + Math.sin(a) * CRANK, s * 0.12).sub(off);   // 人の座標へ
+        const H = new THREE.Vector3(); bones[th].getWorldPosition(H);
+        const K0 = new THREE.Vector3(); bones[sn].getWorldPosition(K0);
+        const F0 = new THREE.Vector3(); bones[ft].getWorldPosition(F0);
+        const L1 = H.distanceTo(K0), L2 = K0.distanceTo(F0);
+        const d = Math.min(foot.distanceTo(H), L1 + L2 - 0.005);
+        const dir = foot.clone().sub(H).normalize();
+        // 膝は前（+X）へ曲がる: 腰→足の線に垂直で +X 寄りの向き
+        const side = new THREE.Vector3(0, 0, 1), bend = new THREE.Vector3().crossVectors(side, dir).normalize();
+        if (bend.x < 0) bend.negate();
+        const ca = (L1 * L1 + d * d - L2 * L2) / (2 * L1 * d), ang = Math.acos(clamp(ca, -1, 1));
+        const knee = H.clone().add(dir.clone().multiplyScalar(Math.cos(ang) * L1)).add(bend.multiplyScalar(Math.sin(ang) * L1));
+        aim(bones[th], bones[sn], knee.clone().sub(H));
+        const K1 = new THREE.Vector3(); bones[sn].getWorldPosition(K1);
+        aim(bones[sn], bones[ft], foot.clone().sub(K1));
+      }
+      const g = pedGeo.clone(), pos = g.attributes.position, v = new THREE.Vector3();
+      for (let i = 0; i < pos.count; i++) {
+        v.fromBufferAttribute(pos, i);
+        body.applyBoneTransform(i, v);
+        v.applyMatrix4(body.matrixWorld).add(off);
+        pos.setXYZ(i, v.x, v.y, v.z);
+      }
+      g.deleteAttribute('skinIndex'); g.deleteAttribute('skinWeight');
+      g.computeVertexNormals(); g.computeBoundingSphere();
+      out.push(g);
+    }
+    return (cycGeos = out);
+  }
   // 運転席の頭の位置（車のモデル座標 m）: 前ガラスの下端から少し後ろ・窓の高さの中ほど・右側
   const carSeat = {};
   function seatOf(type) {
@@ -915,5 +985,5 @@ G3.dyn = (function () {
     updSkids();
     updFerryPlane();
   }
-  return { build, update, dent, pools: () => Object.fromEntries(Object.entries(carPool).map(([k, v]) => [k, v.length])) };
+  return { build, update, dent, cyclistGeometries, pools: () => Object.fromEntries(Object.entries(carPool).map(([k, v]) => [k, v.length])) };
 })();

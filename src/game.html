@@ -1648,6 +1648,10 @@ function caw(vol){ // カラスの「カァー」（のこぎり波を声道っ�
     o.connect(f);f.connect(g);g.connect(AC.destination);o.start(t0);o.stop(t0+0.36);
   }
 }
+function bell(vol){ // 自転車のベル「チリンチリン」
+  if(!AC||S.muted)return;
+  for(let i=0;i<2;i++){sweep(4400,4330,0.32,'sine',vol,i*0.13);sweep(6200,6150,0.2,'sine',vol*0.35,i*0.13);}
+}
 function gullCall(vol){ // カモメの「ミャー」
   if(!AC||S.muted)return;
   const n=1+((Math.random()*3)|0);
@@ -1728,6 +1732,8 @@ function ambientAudio(dt){
     ambGullT-=dt;
     if(ambGullT<=0){ambGullT=2.5+Math.random()*5;const n=G3.birds.near('gull',380);if(n>0)gullCall(0.012+Math.min(0.012,n*0.002));}
   }
+  // 自転車のベル
+  if(typeof G3!=='undefined'&&G3.cyclists){const ev=G3.cyclists.events;while(ev.length){const e=ev.shift();const d=hyp(e.x-S.px,e.y-S.py);if(d<60)bell(0.03*(1-d/60)+0.006);}}
   // 昼は鳥のさえずり、夜は虫の声（郊外・公園ほど多い）
   ambBirdT-=dt;
   if(ambBirdT<=0){
@@ -5031,6 +5037,6 @@ document.getElementById('bigmapClose').addEventListener('click',toggleMap);
 addEventListener('beforeunload',save);
 requestAnimationFrame(ts=>{last=ts;requestAnimationFrame(frame);});
 </script>
-<!--BUILD:R3D--><script src="r3d/00_core.js"></script><script src="r3d/10_world.js"></script><script src="r3d/12_street.js"></script><script src="r3d/14_wet.js"></script><script src="r3d/16_birds.js"></script><script src="r3d/18_rainfx.js"></script><script src="r3d/20_dyn.js"></script><!--/BUILD:R3D-->
+<!--BUILD:R3D--><script src="r3d/00_core.js"></script><script src="r3d/10_world.js"></script><script src="r3d/12_street.js"></script><script src="r3d/14_wet.js"></script><script src="r3d/16_birds.js"></script><script src="r3d/18_rainfx.js"></script><script src="r3d/20_dyn.js"></script><script src="r3d/22_cyclists.js"></script><!--/BUILD:R3D-->
 </body>
 </html>

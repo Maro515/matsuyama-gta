@@ -547,6 +547,7 @@ const R3 = { ok: false, state: 'idle' };
       setLoad(0.93, '人と車を配置中…');
       await new Promise(r => setTimeout(r, 30));
       G3.dyn.build(); lap('dyn');
+      if (G3.cyclists) G3.cyclists.build(G3.scene);   // 自転車（人の形を使うので dyn の後）
       if (G3.world.patchClouds) G3.world.patchClouds(G3.scene);   // 雲の影（全マテリアルに差し込み、下準備でシェーダーを作る）
       updEnv(0.016);
       updCamera(1);

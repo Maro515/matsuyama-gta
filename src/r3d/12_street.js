@@ -61,9 +61,33 @@ G3.street = (function () {
     }
   }
   const putM = (name, M) => { (lists[name] || (lists[name] = [])).push(M); };
+  // 人が座る・立ち止まる場所（モデル座標 m）: [姿勢, x, y, 床の高さ(座面), 向きの追加角(度)]
+  const AMBSPOT = {
+    bench: [['sit', -0.12, -0.45, 0.46, 0], ['sit', -0.12, 0.45, 0.46, 0]],
+    bus_shelter: [['sit', -0.5, -0.9, 0.47, 0], ['sit', -0.5, -0.1, 0.47, 0], ['stand', 0.5, 1.2, 0, 0]],
+    tram_stop: [['stand', -3.5, 0.15, 0.22, -90], ['stand', 1.5, 0.2, 0.22, -90], ['stand', 3.9, 0.1, 0.22, -90], ['sit', -0.3, -0.62, 0.69, 90]],
+    platform: [['stand', -8, 0.3, 0.9, -90], ['stand', -1.5, 0.2, 0.9, -90], ['stand', 5, 0.35, 0.9, -90], ['sit', -3.2, -0.98, 1.37, -90], ['sit', -2.6, -0.98, 1.37, -90]],
+    konbini: [['stand', 7.0, -2.0, 0, 180], ['stand', 7.3, 3.0, 0, 20]],
+    taxi_sign: [['stand', 0.7, 0.6, 0, 0]],
+    map_board: [['stand', 1.3, 0.3, 0, 180]],
+    small_shrine: [['stand', 1.6, 0.2, 0, 180]],
+    phone_booth: [['stand', 0.0, 0.0, 0.08, 180]],
+  };
+  const amb = [];
+  function ambSpots(name, x, y, rot, lift) {
+    const sp = AMBSPOT[name];
+    if (!sp) return;
+    const al = -rot, ca = Math.cos(al), sa = Math.sin(al);
+    for (const [pose, lx, ly, hs, da] of sp) {
+      const wx = x + U * (lx * ca + ly * sa), wy = y + U * (lx * sa - ly * ca);
+      const base = heightAt(x, y) + lift;
+      amb.push({ x: wx, y: wy, a: al + da * Math.PI / 180, pose, h: base + U * (pose === 'sit' ? hs - 0.72 : hs) });
+    }
+  }
   const put = (name, x, y, rot, lift = 0, s = 1) => {
     (lists[name] || (lists[name] = [])).push(G3.M4(x, heightAt(x, y) + lift, y, rot, U * s));
     collide(name, x, y, rot, lift);
+    ambSpots(name, x, y, rot, lift);
   };
   // 歩道上（縁石の高さ）に置く
   const onWalk = (name, x, y, rot, s) => put(name, x, y, rot, G3.CURB, s);
@@ -766,6 +790,7 @@ G3.street = (function () {
     {
       const [x, y] = nudgeOffRoad(7418, 2372, 4);
       put('karakuri_clock', x, y, faceTo(x, y, 7395, 2335), 0);
+      kclock = [x, y];
       take(x, y, 8);
     }
     // 道後温泉駅前の黒い鋳鉄柵（道路沿いの歩道の外側）
@@ -1749,6 +1774,32 @@ G3.street = (function () {
     }
   }
 
+  /* ---------- 人の集まる場所（バス停・商店街・からくり時計） ---------- */
+  let kclock = null;
+  function extraAmb() {
+    for (const b of BUSSTOPS) {
+      const ri = roadInfo(b[0], b[1]);
+      if (!ri) continue;
+      const th = Math.atan2(ri.y - b[1], ri.x - b[0]);
+      for (const k of [2.5, -3]) {
+        const x = b[0] + Math.cos(th + Math.PI / 2) * k, y = b[1] + Math.sin(th + Math.PI / 2) * k;
+        if (!propHit(x, y, 1, false)) amb.push({ x, y, a: th + (k > 0 ? 0.3 : -0.3), pose: 'stand', h: heightAt(x, y) + G3.CURB });
+      }
+    }
+    for (const r of ROADS) {
+      if (r.kind !== 'arcade') continue;
+      for (let d = 10; d < r.pl.len - 8; d += 17) for (const sg of [1, -1]) {
+        const p = at(r, d + (sg > 0 ? 0 : 8), sg * (r.w / 2 - 3.4));
+        if (propHit(p.x, p.y, 1.2, false)) continue;
+        amb.push({ x: p.x, y: p.y, a: Math.atan2(sg * Math.cos(p.a), -sg * Math.sin(p.a)), pose: 'stand', h: heightAt(p.x, p.y) + 0.12 });
+      }
+    }
+    if (kclock) for (let k = 0; k < 7; k++) {
+      const a = 0.9 + k * 0.62, x = kclock[0] + Math.cos(a) * 15, y = kclock[1] + Math.sin(a) * 15;
+      if (!propHit(x, y, 1, false) && !blockedAt(x, y, 1, false)) amb.push({ x, y, a: a + Math.PI, pose: 'stand', h: heightAt(x, y) });
+    }
+  }
+
   /* ---------- 囲まれて取れないみかんを外へ出す（IDは変えないのでセーブと整合） ---------- */
   function blockedFoot(x, y) { return blockedAt(x, y, 2.2, false) || !!propHit(x, y, 2.2, false); }
   // ランドマークの敷地内から、歩いて敷地の外（+15）へ出られるか
@@ -1826,7 +1877,19 @@ G3.street = (function () {
     cranes();
     flush(scene);
     freeKeyPoints();
+    extraAmb();
     G3.street.stats = stats;
+    G3.street.amb = amb;
   }
-  return { build, update, zoneOf };
+  // 鳴っている踏切までの距離（なければ大きな値）
+  function activeCrossing(x, y) {
+    let best = 1e9;
+    for (const k of xings) {
+      if (k.k <= 0.01) continue;
+      const p = plAt(k.pl, k.d), d = hyp(p.x - x, p.y - y);
+      if (d < best) best = d;
+    }
+    return best;
+  }
+  return { build, update, zoneOf, activeCrossing };
 })();

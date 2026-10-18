@@ -201,7 +201,8 @@ G3.dyn = (function () {
   function onSidewalkY(x, y) {
     const h = heightAt(x, y);
     const ri = roadInfo(x, y);
-    if (ri && ri.road.kind !== 'arcade' && ri.d > ri.road.w / 2 - 0.2 && ri.d < ri.road.w / 2 + SW + 0.2) return h + CURB;
+    if (ri && ri.road.kind !== 'arcade' && ri.d > ri.road.w / 2 - 0.2 &&
+      ri.d < ri.road.w / 2 + (typeof INFILL_BLVD !== 'undefined' && INFILL_BLVD.has(ri.road.n) && INFILL_AREA(x, y) ? INFILL_FRONT + 0.3 : SW + 0.2)) return h + CURB;
     if (ri && ri.road.kind === 'arcade' && ri.d < ri.road.w / 2) return h + 0.12;
     return h + (ri && ri.d < ri.road.w / 2 ? 0.05 : 0);
   }
@@ -214,9 +215,13 @@ G3.dyn = (function () {
       dressHuman(o, p);
       pedObjs.set(p, o);
     }
-    o.position.set(p.x, onSidewalkY(p.x, p.y), p.y);
+    o.position.set(p.x, p.y3 != null ? p.y3 : onSidewalkY(p.x, p.y), p.y);
     o.rotation.set(0, -p.a, 0);
-    if (p.down > 0) {
+    if (p.static) {
+      tickHuman(o, p.pose === 'sit' ? 'sit' : 'idle', p.pose === 'sit' ? 1 : 0.6 + (p.t % 1) * 0.4, dt);
+    } else if (p.wait) {
+      tickHuman(o, 'idle', 0.8, dt);
+    } else if (p.down > 0) {
       o.rotation.set(0, -p.a, Math.PI / 2 * 0.98);
       o.position.y += 0.35;
       tickHuman(o, 'idle', 0.2, dt);

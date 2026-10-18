@@ -131,6 +131,8 @@ G3.street = (function () {
     // ゲーム上の大事な地点（みかん・ギグ・ミッション）は空けておく
     for (const k of KEYPTS) take(k[0], k[1], 7);
     for (const r of ROADS) if (r.kind === 'lane') for (let d = 0; d <= r.pl.len; d += 6) { const p = plAt(r.pl, d); take(p.x, p.y, r.w / 2 - 0.5); }
+    // 追加ランドマークの石段・参道の前（歩道の柵や街具で入口を塞がない）
+    for (const l of LMS) if (l.ex) for (let x = l.ex[0] - 12; x <= l.ex[2] + 12; x += 4) for (let y = l.ex[1] - 12; y <= l.ex[3] + 12; y += 4) take(x, y, 3);
     // 用水路の上と縁には物を置かない
     if (typeof CANALS !== 'undefined') for (const cn of CANALS) for (let t = cn.t0; t <= cn.t1; t += 4) take(cn.vert ? cn.c : t, cn.vert ? t : cn.c, CANAL_W / 2 + 1);
   }

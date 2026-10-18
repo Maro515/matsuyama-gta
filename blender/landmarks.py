@@ -726,6 +726,161 @@ def shrine():
     return finish_lm('shrine', P)
 
 
+
+def isaniwa():
+    """伊佐爾波神社（石垣の上の朱塗りの回廊と楼門、八幡造の本殿。西側に135段の石段＝ゲームでは26段）。
+    敷地中心が原点。石垣の上面は 6m（ゲーム側 DECKS と合わせる）。+X=東、石段は西(-X)。"""
+    M = L()
+    P = []
+    hiwada = mat('LM_Hiwada', '#5a3a28', rough=0.8)
+    gravel = mat('LM_Gravel', '#cbc5b6', rough=0.95)
+    granite = mat('LM_Granite', '#8d897f', rough=0.85)
+    H = 6.0
+    # 石垣（台形）と上面の玉砂利
+    P.append(batter_box('ishigaki', -20, -16.8, 20, 16.8, 0, H, 0.6, M['stone']))
+    P.append(box('deck', (38.6, 32.4, 0.06), (0, 0, H + 0.03), gravel))
+    # 石段（西）: X -30.4 → -19.4 で 0 → 6m
+    n, x0, x1, w = 26, -30.4, -19.4, 7.2
+    dx, dz = (x1 - x0) / n, H / n
+    for i in range(n):
+        P.append(box('step', (dx + 0.02, w + 1.0, (i + 1) * dz), (x0 + dx * (i + 0.5), 0, (i + 1) * dz / 2), granite))
+    ang = math.atan2(H, x1 - x0)
+    L2 = math.hypot(H, x1 - x0)
+    for sy in (-1, 1):   # 両側の石の手すり壁（斜め）
+        P.append(box('rail', (L2 + 0.6, 0.5, 0.9), ((x0 + x1) / 2, sy * (w / 2 + 0.25), H / 2 + 0.55), granite, rot=('Y', -ang)))
+    # 石段下の石鳥居
+    tx = -31.9
+    for sy in (-1, 1):
+        P.append(cyl('thashira', 0.32, 5.0, (tx, sy * 2.6, 2.5), granite, verts=14))
+    P.append(box('tkasagi', (0.6, 7.4, 0.45), (tx, 0, 5.15), granite))
+    P.append(box('tnuki', (0.4, 6.2, 0.35), (tx, 0, 4.3), granite))
+    # 楼門（回廊の西辺の中央。通り抜けられるよう柱だけ）
+    gx0, gx1, gw = -17.0, -11.0, 5.2
+    for (px, py) in ((gx0, -gw), (gx0, gw), (gx1, -gw), (gx1, gw), (gx0, -2.4), (gx0, 2.4), (gx1, -2.4), (gx1, 2.4)):
+        P.append(cyl('rpost', 0.28, 4.6, (px, py, H + 2.3), M['vermil'], verts=12))
+    P += hip_roof('rkoshi', (gx0 + gx1) / 2, 0, gx1 - gx0 + 0.6, 2 * gw + 0.6, H + 4.5, 0.9, 1.1, hiwada, upturn=0.35, fascia=M['darkwood'])
+    P += wall_block('rupper', gx0 + 0.6, -gw + 0.6, gx1 - 0.6, gw - 0.6, H + 5.2, 2.6, M['vermil'], None, 0, win_mat=M['white'], win_h=1.2, win_w=1.4, gap=2.0)
+    P += hip_roof('rroof', (gx0 + gx1) / 2, 0, gx1 - gx0 + 0.4, 2 * gw + 0.4, H + 7.9, 2.6, 1.5, hiwada, upturn=0.65, fascia=M['darkwood'], gables=M['white'])
+    for sy in (-1, 1):   # 釣り灯籠（夜に灯る）
+        P.append(box('tourou', (0.45, 0.45, 0.6), (gx0 - 0.5, sy * 1.6, H + 3.7), M['glow']))
+    # 回廊（外側は白壁＋朱の柱、内側は柱だけ）。西辺は楼門の所が切れる
+    cx0, cx1, cy0, cy1, cw, ch = -15.0, 15.0, -13.0, 13.0, 3.0, 3.2
+    segs = [('x', cx0, cx1, cy0, -1), ('x', cx0, cx1, cy1, 1), ('y', cy0 + cw, cy1 - cw, cx1, 1),
+            ('y', cy0 + cw, -gw, cx0, -1), ('y', gw, cy1 - cw, cx0, -1)]
+    for (ax, a0, a1, fixed, sg) in segs:
+        L3 = a1 - a0
+        mid = (a0 + a1) / 2
+        inner = fixed - sg * cw
+        if ax == 'x':
+            P.append(box('kwall', (L3, 0.3, ch), (mid, fixed - sg * 0.15, H + ch / 2), M['white']))
+            P.append(box('kfloor', (L3, cw, 0.3), (mid, fixed - sg * cw / 2, H + 0.15), M['darkwood']))
+            k = max(2, int(L3 / 2.6))
+            for i in range(k + 1):
+                xx = a0 + L3 * i / k
+                P.append(box('kpo', (0.26, 0.26, ch), (xx, fixed - sg * 0.3, H + ch / 2), M['vermil']))
+                P.append(cyl('kpi', 0.14, ch, (xx, inner + sg * 0.2, H + ch / 2), M['vermil'], verts=8))
+            P += hip_roof('kroof', mid, fixed - sg * cw / 2, L3 + 0.6, cw + 0.4, H + ch, 1.3, 0.7, hiwada, upturn=0.15, thick=0.2, ridge_ratio=0.98)
+        else:
+            P.append(box('kwall', (0.3, L3, ch), (fixed - sg * 0.15, mid, H + ch / 2), M['white']))
+            P.append(box('kfloor', (cw, L3, 0.3), (fixed - sg * cw / 2, mid, H + 0.15), M['darkwood']))
+            k = max(2, int(L3 / 2.6))
+            for i in range(k + 1):
+                yy = a0 + L3 * i / k
+                P.append(box('kpo', (0.26, 0.26, ch), (fixed - sg * 0.3, yy, H + ch / 2), M['vermil']))
+                P.append(cyl('kpi', 0.14, ch, (inner + sg * 0.2, yy, H + ch / 2), M['vermil'], verts=8))
+            P += hip_roof('kroof', fixed - sg * cw / 2, mid, cw + 0.4, L3 + 0.6, H + ch, 1.3, 0.7, hiwada, upturn=0.15, thick=0.2, ridge_ratio=0.98)
+    # 申殿（拝殿）と八幡造の本殿（前後二棟の切妻を並べる）
+    P.append(box('haiplat', (7, 9, 0.6), (-3, 0, H + 0.3), granite))
+    P += wall_block('haiden', -6, -4, 0, 4, H + 0.6, 3.2, M['vermil'], None, 0, win_mat=M['gold'], win_h=0.5, win_w=1.6, gap=2.2, win_z=0.85)
+    P += hip_roof('haidenr', -3, 0, 7.4, 9.4, H + 3.8, 2.2, 1.2, hiwada, upturn=0.5, fascia=M['darkwood'], gables=M['white'])
+    P.append(box('honplat', (10, 12, 0.9), (8, 0, H + 0.45), granite))
+    P += wall_block('honden', 3.5, -5, 12.5, 5, H + 0.9, 3.8, M['vermil'], None, 0, win_mat=M['gold'], win_h=0.6, win_w=1.8, gap=2.4, win_z=0.8)
+    for xc in (5.8, 10.2):
+        P += hip_roof('hondenr', xc, 0, 4.8, 11.0, H + 4.7, 2.4, 0.9, hiwada, upturn=0.45, fascia=M['darkwood'], gables=M['gold'])
+    # 石灯籠（楼門の前）
+    for sy in (-1, 1):
+        for xx in (-18.6,):
+            P.append(box('lbase', (0.8, 0.8, 0.5), (xx, sy * 4.2, H + 0.25), granite))
+            P.append(cyl('lpole', 0.18, 1.2, (xx, sy * 4.2, H + 1.1), granite, verts=8))
+            P.append(box('lfire', (0.6, 0.6, 0.5), (xx, sy * 4.2, H + 1.95), M['glow']))
+            P.append(box('lroof', (1.0, 1.0, 0.25), (xx, sy * 4.2, H + 2.3), granite))
+    P.append(text3d('sign', '伊佐爾波神社', 0.5, (gx0 - 0.35, 0, H + 6.0), '-X', M['gold'], font=MINCHO))
+    return finish_lm('isaniwa', P)
+
+
+def tsubaki():
+    """椿神社（伊豫豆比古命神社）。北の大鳥居から石灯籠の並ぶ参道、楼門、銅板葺きの大きな拝殿、本殿。
+    敷地中心が原点（±22m × ±18m）、参道は北(+Y)へ 44m まで。"""
+    M = L()
+    P = []
+    granite = mat('LM_Granite', '#8d897f', rough=0.85)
+    paving = mat('LM_Paving', '#bdb7aa', rough=0.9)
+    gravel = mat('LM_Gravel', '#cbc5b6', rough=0.95)
+    P.append(box('ground', (44, 36, 0.06), (0, 0, 0.03), gravel))
+    P.append(box('sando', (6, 30, 0.08), (0, 30, 0.04), paving))
+    P.append(box('sando2', (5, 16, 0.08), (0, 9, 0.05), paving))
+    # 大鳥居（朱・両部鳥居風）
+    ty = 42.5
+    for sx in (-1, 1):
+        P.append(cyl('ohashira', 0.6, 10.0, (sx * 4.6, ty, 5.0), M['vermil'], verts=18))
+        P.append(cyl('ohakama', 0.85, 1.0, (sx * 4.6, ty, 0.5), M['dark'], verts=18))
+        for sy in (-1, 1):   # 稚児柱
+            P.append(cyl('chigo', 0.25, 3.2, (sx * 4.6, ty + sy * 1.1, 1.6), M['vermil'], verts=10))
+    P.append(box('okasagi', (14.5, 1.3, 0.9), (0, ty, 10.3), M['dark']))
+    P.append(box('oshimaki', (13.2, 1.1, 0.6), (0, ty, 9.6), M['vermil']))
+    P.append(box('onuki', (12.0, 0.7, 0.7), (0, ty, 8.0), M['vermil']))
+    P.append(box('ogaku', (1.4, 0.4, 1.9), (0, ty - 0.2, 8.85), M['dark']))
+    # 参道の石灯籠（夜に灯る）
+    for yy in (22, 28, 34):
+        for sx in (-1, 1):
+            x = sx * 4.6
+            P.append(box('lbase', (1.0, 1.0, 0.6), (x, yy, 0.3), granite))
+            P.append(cyl('lpole', 0.22, 1.5, (x, yy, 1.35), granite, verts=8))
+            P.append(box('lfire', (0.75, 0.75, 0.6), (x, yy, 2.4), M['glow']))
+            P.append(box('lroof', (1.3, 1.3, 0.3), (x, yy, 2.85), granite))
+            P.append(cyl('lhoju', 0.18, 0.4, (x, yy, 3.2), granite, verts=8))
+    # 玉垣（石の低い垣）: 北面の楼門の所は開ける
+    for (a0, a1, fixed, ax) in ((-22, -6, 18, 'x'), (6, 22, 18, 'x'), (-22, 22, -18, 'x'), (-18, 18, -22, 'y'), (-18, 18, 22, 'y')):
+        Lg = a1 - a0
+        if ax == 'x':
+            P.append(box('tamarail', (Lg, 0.3, 0.25), ((a0 + a1) / 2, fixed, 1.05), granite))
+            P.append(box('tamabase', (Lg, 0.4, 0.3), ((a0 + a1) / 2, fixed, 0.15), granite))
+            for i in range(int(Lg / 1.6) + 1):
+                P.append(box('tamapost', (0.28, 0.28, 1.2), (a0 + i * Lg / int(Lg / 1.6), fixed, 0.6), granite))
+        else:
+            P.append(box('tamarail', (0.3, Lg, 0.25), (fixed, (a0 + a1) / 2, 1.05), granite))
+            P.append(box('tamabase', (0.4, Lg, 0.3), (fixed, (a0 + a1) / 2, 0.15), granite))
+            for i in range(int(Lg / 1.6) + 1):
+                P.append(box('tamapost', (0.28, 0.28, 1.2), (fixed, a0 + i * Lg / int(Lg / 1.6), 0.6), granite))
+    # 楼門（柱だけ＋二重の屋根）
+    for (px, py) in ((-6, 16), (6, 16), (-6, 20), (6, 20), (-2.6, 16), (2.6, 16), (-2.6, 20), (2.6, 20)):
+        P.append(cyl('rpost', 0.32, 5.0, (px, py, 2.5), M['vermil'], verts=12))
+    P += hip_roof('rkoshi', 0, 18, 12.8, 4.8, 5.0, 1.0, 1.2, M['copper'], upturn=0.35, fascia=M['darkwood'])
+    P += wall_block('rupper', -5.4, 16.6, 5.4, 19.4, 5.7, 2.8, M['vermil'], None, 0, win_mat=M['white'], win_h=1.3, win_w=1.5, gap=2.2)
+    P += hip_roof('rroof', 0, 18, 12.4, 4.6, 8.5, 2.8, 1.7, M['copper'], upturn=0.7, fascia=M['darkwood'], gables=M['white'])
+    P.append(text3d('sign', '伊豫豆比古命神社', 0.42, (0, 20.45, 7.2), '+Y', M['gold'], font=MINCHO))
+    for sx in (-1, 1):
+        P.append(box('tourou', (0.5, 0.5, 0.7), (sx * 1.6, 20.6, 4.1), M['glow']))
+    # 拝殿（大きな入母屋・銅板葺き）
+    P.append(box('haiplat', (24, 16, 0.8), (0, 1, 0.4), granite))
+    P += wall_block('haiden', -11, -6, 11, 8, 0.8, 5.2, M['white'], None, 0, win_mat=M['darkwood'], win_h=3.4, win_w=2.6, gap=3.2, win_z=0.5)
+    for (px, py) in [(x, y) for x in (-11, -5.5, 0, 5.5, 11) for y in (-6, 8)]:
+        P.append(box('hpost', (0.5, 0.5, 5.2), (px, py + (0.15 if py > 0 else -0.15), 3.4), M['vermil']))
+    P.append(box('hbeam', (22.4, 0.5, 0.5), (0, 8.2, 5.8), M['vermil']))
+    P.append(box('saisen', (4.0, 1.2, 1.0), (0, 9.2, 1.3), M['darkwood']))
+    P += hip_roof('haidenr', 0, 1, 24, 16, 6.2, 5.8, 2.8, M['copper'], upturn=0.75, fascia=M['darkwood'], gables=M['white'])
+    P += hip_roof('kohai', 0, 10.4, 6.5, 3.6, 5.2, 1.6, 1.0, M['copper'], upturn=0.5, fascia=M['darkwood'])   # 向拝
+    for sx in (-1, 1):
+        P.append(box('kohaipost', (0.4, 0.4, 4.6), (sx * 3.0, 11.6, 3.1), M['vermil']))
+    # 本殿（奥）
+    P.append(box('honplat', (14, 9, 1.0), (0, -12.5, 0.5), granite))
+    P += wall_block('honden', -6, -16, 6, -9, 1.0, 4.2, M['vermil'], None, 0, win_mat=M['gold'], win_h=0.6, win_w=1.8, gap=2.4, win_z=0.85)
+    P += hip_roof('hondenr', 0, -12.5, 13, 8, 5.2, 3.6, 1.6, M['copper'], upturn=0.6, fascia=M['darkwood'], gables=M['gold'])
+    # 授与所（東の脇）
+    P += wall_block('juyo', 13, 4, 20, 11, 0, 3.4, M['white'], None, 0, win_mat=M['glow'], win_h=1.2, win_w=1.6, gap=2.2)
+    P += hip_roof('juyor', 16.5, 7.5, 8, 8, 3.4, 2.2, 1.0, M['kawara'], upturn=0.3, fascia=M['darkwood'])
+    return finish_lm('tsubaki', P)
+
 def stadium():
     """坊っちゃんスタジアム（すり鉢状のスタンド＋照明塔＋スコアボード）。"""
     M = L()
@@ -840,7 +995,7 @@ def build():
              cityhall(), prefoffice(), shiki(), ishiteji(), campus('campus_a', 110, 70), campus('campus_b', 98, 56),
              hospital(), police(), shrine(), stadium(), parktower(), airport(), port('port', 28, 34, '三津浜港'),
              port('ferryterminal', 52, 34, '松山観光港'), ropeway(), mitsukoshi(), sakakumo(), artmuseum(), iyogin(),
-             fujigran(), radiotower(), school('school_a', 62, 26), school('school_b', 62, 22)]
+             fujigran(), radiotower(), school('school_a', 62, 26), school('school_b', 62, 22), isaniwa(), tsubaki()]
     return roots
 
 
@@ -851,7 +1006,8 @@ if __name__ == '__main__':
     export_glb(path, roots, images='NONE')
     # プレビュー：代表的なものを並べて撮る
     show = {'castle': (0, 0), 'dogo_honkan': (75, 0), 'dogo_station': (130, 0), 'bansuiso': (165, 0), 'takashimaya': (0, -90),
-            'prefoffice': (85, -80), 'ishiteji': (150, -75), 'shrine': (205, -70), 'radiotower': (240, 0)}
+            'prefoffice': (85, -80), 'ishiteji': (150, -75), 'shrine': (205, -70), 'radiotower': (240, 0),
+            'isaniwa': (40, 70), 'tsubaki': (130, 70)}
     for r in roots:
         r.location = (*show[r.name], 0) if r.name in show else (0, 4000, 0)
     preview(os.path.join(PREV, 'landmarks.png'), target=(115, -40, 8), dist=230, elev=24, azim=-62, lens=45, res=(1600, 900), samples=64)

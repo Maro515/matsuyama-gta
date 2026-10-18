@@ -751,6 +751,26 @@ const GREENH=[];
   GREENH.push({x:f.x+f.w/2,y:f.y+f.h/2,a:f.w>=f.h?0:Math.PI/2});
  }}
 
+/* ---------- 追加ランドマーク（伊佐爾波神社・椿神社） ----------
+   建物・みかん等の生成の後に足すので既存の位置は変わらない。敷地と参道・石段に掛かる建物は撤去し、
+   この後に作る路地・沿道の建物・用水路は EXCLUDE と敷地で避ける */
+const LMS_ADD=[
+ {n:'伊佐爾波神社',x:7672,y:2240,t:'isaniwa',s:1,solid:[7622,2198,7722,2282],ex:[7588,2229,7622,2251]},  // 石段は西
+ {n:'椿神社',x:6550,y:4400,t:'tsubaki',s:1,solid:[6495,4355,6605,4445],ex:[6530,4283,6570,4355]},       // 参道は北
+];
+for(const l of LMS_ADD){
+  LMS.push(l);
+  for(const q of [l.solid,l.ex]){
+    EXCLUDE.push(q);
+    for(const b of buildings){
+      if(b.noDraw||!(b.x1>q[0]-4&&b.x0<q[2]+4&&b.y1>q[1]-4&&b.y0<q[3]+4))continue;
+      b.noDraw=true;
+      for(const [k,a] of bldGrid){const i=a.indexOf(b);if(i>=0)a.splice(i,1);}
+    }
+  }
+  addSolid(l.solid[0],l.solid[1],l.solid[2],l.solid[3],true);
+}
+
 /* ---------- 生活道路・路地（既存の建物のすき間を通し、既存の道路につなぐ） ----------
    ほかの配置が全部決まった後に追加するので、建物・みかん等の位置は変わらない。歩道なし・幅6.4m */
 const LANE_W=16;
@@ -1430,6 +1450,8 @@ function addCollider(c){ // 円 {x,y,r} / 回転箱 {x,y,hx,hy,a}、m: 1=歩行�
   const x0=Math.floor((c.x-R)/PCELL),x1=Math.floor((c.x+R)/PCELL),y0=Math.floor((c.y-R)/PCELL),y1=Math.floor((c.y+R)/PCELL);
   for(let gy=y0;gy<=y1;gy++)for(let gx=x0;gx<=x1;gx++){const k=gy*4096+gx;let a=propGrid.get(k);if(!a){a=[];propGrid.set(k,a);}a.push(c);}
 }
+// 伊佐爾波神社の石段の下: 車止め（歩行者は上れる）
+addCollider({x:7594,y:2240,hx:1.5,hy:11,a:0,m:2});
 // 用水路: 水のある区間は縁ごと進入不可（板橋・暗渠の所は通れる）
 for(const cn of CANALS)for(const p of cn.parts){
   if(p[0]!=='w')continue;
@@ -2661,6 +2683,26 @@ function drawLandmark(c,l,tsec,mini){
       c.lineWidth=7;
       c.beginPath();c.moveTo(kA[0],kA[1]);c.lineTo(kB[0],kB[1]);c.stroke();
       break;}
+    case 'isaniwa':{   // 石垣の上の回廊と本殿、西に石段
+      box(c,x-76,y-10,x-50,y+10,0,7,'#a9a59b');
+      box(c,x-50,y-42,x+50,y+42,0,15,'#9a968c','#8a867c');
+      box(c,x-37,y-32,x+37,y+32,15,23,'#c8402a');
+      slab(c,x-40,y-35,x+40,y+35,24,'#5a3a28');
+      box(c,x+8,y-12,x+31,y+12,24,31,'#c8402a');
+      slab(c,x+5,y-15,x+34,y+15,32,'#5a3a28');
+      break;}
+    case 'tsubaki':{   // 銅板葺きの拝殿、北に楼門と大鳥居
+      box(c,x-28,y-20,x+28,y+15,0,15,'#ece6d8','#d6d0c2');
+      slab(c,x-35,y-27,x+35,y+22,16,'#4f8a74');
+      box(c,x-15,y-50,x+15,y-40,0,12,'#c8402a');
+      slab(c,x-19,y-54,x+19,y-36,13,'#4f8a74');
+      const gy=y-106;
+      const qA0=P(x-11.5,gy,0),qB0=P(x+11.5,gy,0),qA1=P(x-11.5,gy,24),qB1=P(x+11.5,gy,24);
+      c.strokeStyle='#c43c3c';c.lineWidth=6;
+      c.beginPath();c.moveTo(qA0[0],qA0[1]);c.lineTo(qA1[0],qA1[1]);c.moveTo(qB0[0],qB0[1]);c.lineTo(qB1[0],qB1[1]);c.stroke();
+      const kA=P(x-18,gy,25),kB=P(x+18,gy,25);
+      c.strokeStyle='#2a2a2a';c.lineWidth=8;c.beginPath();c.moveTo(kA[0],kA[1]);c.lineTo(kB[0],kB[1]);c.stroke();
+      break;}
     case 'campus':{
       const s=l.solid;
       if(!P3D){c.fillStyle='#adbf96';c.fillRect(s[0],s[1],s[2]-s[0],s[3]-s[1]);}
@@ -3028,7 +3070,7 @@ function drawLabels(c,zoom,x0,y0,x1,y1){
   }
 }
 /* ---------- メイン描画 ---------- */
-const LMH={depart:44,pref:26,office:30,hospital:36,police:28,onsen:20,retro:13,temple:14,campus:18,station:20,villa:13,rope:11,port:12,bigport:16,mitsukoshi:30,sakakumo:16,artmuseum:14,iyogin:34,fujigran:16,radiotower:10,school:14};
+const LMH={isaniwa:24,tsubaki:16,depart:44,pref:26,office:30,hospital:36,police:28,onsen:20,retro:13,temple:14,campus:18,station:20,villa:13,rope:11,port:12,bigport:16,mitsukoshi:30,sakakumo:16,artmuseum:14,iyogin:34,fujigran:16,radiotower:10,school:14};
 let tSec=0;
 function render(){
   if(cw<2||ch<2){resize();if(cw<2||ch<2)return;}

@@ -521,7 +521,19 @@ function hillProfile(h, x, y) {
   }
   return h.H * Math.pow(0.5 + 0.5 * Math.cos(r * Math.PI), 1.15);
 }
+// 石垣の上の境内（伊佐爾波神社）: 上面 top の矩形と、そこへ上がる石段の坂（x 方向に 0→top）
+const DECKS = (() => {
+  const l = LMS.find(q => q.t === 'isaniwa');
+  if (!l) return [];
+  return [{ x0: l.x - 48.5, x1: l.x + 48.5, y0: l.y - 40.5, y1: l.y + 40.5, top: 6 * 2.5,
+    ramp: { x0: l.x - 76, x1: l.x - 48.5, y0: l.y - 10.3, y1: l.y + 10.3 } }];
+})();
 function heightAt(x, y) {
+  for (const d of DECKS) {
+    if (x > d.x0 && x < d.x1 && y > d.y0 && y < d.y1) return d.top;
+    const r = d.ramp;
+    if (x > r.x0 && x <= r.x1 && y > r.y0 && y < r.y1) return d.top * (x - r.x0) / (r.x1 - r.x0);
+  }
   let m = 0;
   for (const h of HILLS3) {
     if (Math.abs(x - h.x) > h.rx || Math.abs(y - h.y) > h.ry) continue;

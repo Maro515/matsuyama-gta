@@ -1909,6 +1909,42 @@ G3.world = (function () {
   }
   G3.M4 = M4;
 
+  /* ---------- 風で揺れる樹冠・葉 ----------
+     インスタンスの変換の後（ワールド座標）で、木の根元からの高さの2乗に比例してずらす（どの木も同じ風向き）。
+     突風は木ごとに位相をずらした正弦波の重ね合わせ。葉は細かくそよぐ。影も同じだけ揺れるよう影用の材質にも入れる */
+  const SWAY = { uSwayT: { value: 0 }, uWind: { value: new THREE.Vector3(0.83, 0.56, 0.4) } };
+  const SWAY_GLSL = `
+    #ifdef USE_INSTANCING
+    {
+      float hgt = max(mvPosition.y - instanceMatrix[3].y - 3.0, 0.0) / 20.0;
+      float ph = dot(instanceMatrix[3].xz, vec2(0.0131, 0.0173));
+      float g = 0.55 + 0.3 * sin(uSwayT * 1.1 + ph) + 0.15 * sin(uSwayT * 2.6 + ph * 1.7) + 0.25 * sin(uSwayT * 0.31 + ph * 0.4);
+      mvPosition.xz += uWind.xy * (uWind.z * hgt * hgt * g);
+      mvPosition.xyz += (0.06 * uWind.z * hgt) * sin(uSwayT * vec3(4.7, 5.3, 4.1) + mvPosition.zxy * 0.9 + ph * 3.0);
+    }
+    #endif
+    mvPosition = modelViewMatrix * mvPosition;`;
+  const swayVS = vs => vs.replace('#include <common>', '#include <common>\nuniform float uSwayT;\nuniform vec3 uWind;')
+    .replace('#include <project_vertex>', THREE.ShaderChunk.project_vertex.replace('mvPosition = modelViewMatrix * mvPosition;', SWAY_GLSL));
+  const swayDone = new Set(), swayDepth = new Map();
+  function swayMaterial(m) {
+    if (swayDone.has(m)) return;
+    swayDone.add(m);
+    const prev = m.onBeforeCompile, prevKey = m.customProgramCacheKey ? m.customProgramCacheKey.bind(m) : () => '';
+    m.onBeforeCompile = (sh, r) => { if (prev) prev(sh, r); sh.uniforms.uSwayT = SWAY.uSwayT; sh.uniforms.uWind = SWAY.uWind; sh.vertexShader = swayVS(sh.vertexShader); };
+    m.customProgramCacheKey = () => prevKey() + 'sway1';
+  }
+  function swayDepthOf(m) {
+    const key = m.map ? m.map.uuid + ':' + m.alphaTest : 'solid';
+    if (swayDepth.has(key)) return swayDepth.get(key);
+    const d = new THREE.MeshDepthMaterial({ depthPacking: THREE.RGBADepthPacking, map: m.map || null, alphaTest: m.alphaTest || 0, side: m.side });
+    d.onBeforeCompile = sh => { sh.uniforms.uSwayT = SWAY.uSwayT; sh.uniforms.uWind = SWAY.uWind; sh.vertexShader = swayVS(sh.vertexShader); };
+    d.customProgramCacheKey = () => 'swaydepth1';
+    swayDepth.set(key, d);
+    return d;
+  }
+  G3.sway = SWAY;
+
   /* ---------- 樹木 ---------- */
   const treeChunks = [];
   let treeT = 0;
@@ -1979,7 +2015,12 @@ G3.world = (function () {
       }
       for (const mats of ch.values()) {
         const g = instanceNode(node, mats, { shadow: k !== 'far' });
-        g.traverse(o => { if (o.isInstancedMesh) { o.computeBoundingSphere(); o.frustumCulled = true; } });
+        g.traverse(o => {
+          if (!o.isInstancedMesh) return;
+          o.computeBoundingSphere(); o.frustumCulled = true;
+          if (o.boundingSphere) o.boundingSphere.radius += 3;   // 揺れの分
+          if (k !== 'far' && /^(Crown_|Leaf_|MikanFruit)/.test(o.material.name || '')) { swayMaterial(o.material); o.customDepthMaterial = swayDepthOf(o.material); }
+        });
         let cx = 0, cz = 0;
         for (const M of mats) { cx += M.elements[12]; cz += M.elements[14]; }
         treeChunks.push({ g, x: cx / mats.length, z: cz / mats.length, far: TFAR[k] + 450 });
@@ -2350,6 +2391,10 @@ G3.world = (function () {
   function update(dt) {
     if (G3.street) G3.street.update(dt);
     G3.refl.update(dt);
+    G3.birds.update(dt);
+    // 風: ふだんはそよ風、雨や曇りの日は強く
+    SWAY.uSwayT.value = (SWAY.uSwayT.value + dt) % 1000;
+    SWAY.uWind.value.z += ((0.35 + 0.25 * S.cloudI + 0.9 * S.rainI) - SWAY.uWind.value.z) * Math.min(1, dt * 0.3);
     if ((treeT -= dt) <= 0) {
       treeT = 0.3;
       const c = G3.camera.position;
@@ -2421,6 +2466,7 @@ G3.world = (function () {
     buildProps(scene); lapw('buildProps');
     if (G3.street) G3.street.build(scene); lapw('street');
     G3.refl.build(scene); lapw('refl');
+    G3.birds.build(scene); lapw('birds');
   }
   return { build, update, updEnv, WM, anim, canvasTex };
 })();

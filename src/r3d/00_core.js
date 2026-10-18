@@ -221,7 +221,7 @@ const R3 = { ok: false, state: 'idle' };
 
   /* ---------- 環境（時刻・天候） ---------- */
   const COL = (h) => new THREE.Color(h);
-  const C_DAY_SKY = COL(0xbcd6f0), C_NIGHT_SKY = COL(0x2a3a66), C_DAY_GND = COL(0x6b5e4b), C_NIGHT_GND = COL(0x15181f);
+  const C_DAY_SKY = COL(0xbcd6f0), C_NIGHT_SKY = COL(0x52628e), C_DAY_GND = COL(0x6b5e4b), C_NIGHT_GND = COL(0x2c2824);
   const C_FOG_DAY = COL(0xc6d6e4), C_FOG_DUSK = COL(0xe2b58f), C_FOG_NIGHT = COL(0x162036), C_FOG_RAIN = COL(0x7c8590);
   const C_SUN_HI = COL(0xfff4e2), C_SUN_LO = COL(0xffa060), C_MOON = COL(0x9db4ff);
   const tmpC = new THREE.Color();
@@ -263,7 +263,7 @@ const R3 = { ok: false, state: 'idle' };
       const md = new THREE.Vector3(sd.x * -0.6, Math.max(0.45, -sd.y), sd.z * -0.6).normalize();
       sun.position.copy(target).addScaledVector(md, 1600);
       sun.color.copy(C_MOON);
-      sun.intensity = 0.2 * (1 - 0.8 * cloud);
+      sun.intensity = 0.32 * (1 - 0.8 * cloud);
     }
     // シャドウマップのテクセルにスナップ（揺らぎ防止）
     const tx = 2 * Q.shadowR / Q.shadow;
@@ -271,7 +271,7 @@ const R3 = { ok: false, state: 'idle' };
     sun.position.z = Math.round(sun.position.z / tx) * tx; sun.target.position.z = Math.round(target.z / tx) * tx;
     hemi.color.copy(C_NIGHT_SKY).lerp(C_DAY_SKY, day);
     hemi.groundColor.copy(C_NIGHT_GND).lerp(C_DAY_GND, day);
-    hemi.intensity = (0.2 + 1.0 * day) * (1 + 0.35 * cloud * day) + S.flash * 6;
+    hemi.intensity = (0.42 + 0.8 * day) * (1 + 0.35 * cloud * day) + S.flash * 6;   // 夜も月明かりと街明かりで真っ暗にしない
     // 霧
     const fog = scene.fog;
     fog.color.copy(C_FOG_NIGHT).lerp(C_FOG_DAY, day);
@@ -280,7 +280,7 @@ const R3 = { ok: false, state: 'idle' };
     fog.near = lerp(900, 160, wet);
     fog.far = lerp(5400, 1700, wet) * (day > 0.05 ? 1 : 0.85);
     // 露出・ブルーム
-    renderer.toneMappingExposure = 0.9 + 0.25 * (1 - day);
+    renderer.toneMappingExposure = 0.9 + 0.5 * (1 - day);
     // 昼は空全体が閾値を超えるのでブルームを切り、夕方〜夜だけ発光体を滲ませる
     bloomPass.enabled = day < 0.9;
     if (gradePass) {
@@ -289,7 +289,7 @@ const R3 = { ok: false, state: 'idle' };
       u2.uSat.value = lerp(1.04, 1.12, day) * (1 - 0.18 * wet);
       u2.uWarm.value = (0.4 + 0.8 * dusk + 0.4 * day) * (1 - 0.6 * wet);
     }
-    if (aoPass) aoPass.configuration.intensity = lerp(1.2, 2.4, day) * (1 - 0.3 * cloud);
+    if (aoPass) { const ai = +(lerp(0.7, 2.4, day) * (1 - 0.3 * cloud)).toFixed(2); if (ai !== aoPass.configuration.intensity) aoPass.configuration.intensity = ai; }
     bloomPass.strength = 0.32 * (1 - day);
     bloomPass.threshold = lerp(1.15, 3.0, day);
     bloomPass.radius = 0.22;

@@ -1577,7 +1577,7 @@ G3.world = (function () {
   function updEnv(dt, day) {
     const night = clamp(1 - day * 1.6, 0, 1);
     for (const m of anim.winMats) m.userData.uni.uNight.value = night;
-    for (const m of anim.neon) m.emissiveIntensity = night * 1.6;
+    for (const m of anim.neon) m.emissiveIntensity = night * 0.9;
     for (const m of anim.glow) m.emissiveIntensity = night * m.userData.glowK;
     for (const m of nightMats.keys()) m.emissiveIntensity = 0.05 + night * (m.name.startsWith('Lamp') ? 6 : 1.4);
     WM.lampGlow.opacity = night * 0.85;

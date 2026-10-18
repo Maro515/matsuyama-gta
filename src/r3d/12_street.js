@@ -36,7 +36,7 @@ G3.street = (function () {
     phone_booth: [[0, 0, 0.46, 0.46, 3]], bicycle_a: [[0.05, 0, 0.88, 0.2, 3]], bicycle_b: [[0.05, 0, 0.88, 0.2, 3]], bicycle_c: [[0.05, 0, 0.88, 0.2, 3]],
     bike_rack: [[1.5, 0, 1.8, 0.4, 3]], recycle_box: [[0, 0, 0.21, 0.46, 3]], utility_box: [[0, 0, 0.3, 0.62, 3]], bench: [[-0.08, 0, 0.3, 0.85, 3]],
     map_board: [[0, 0, 0.12, 1.0, 3]], planter_box: [[0, 0, 0.6, 0.25, 3]], parking_sign: [[0, 0, 0.08, 3], [0.9, 0, 0.2, 0.23, 3]],
-    car_stop: [[0, 0, 0.08, 0.6, 2]], clock_pole: [[0, 0, 0.22, 3]], stand_sign: [[0, 0, 0.25, 3]], iron_fence: [[1.0, 0, 1.0, 0.05, 3]],
+    car_stop: [[0, 0, 0.08, 0.6, 2]], xlamp: [[0, 0, 0.16, 3]], clock_pole: [[0, 0, 0.22, 3]], stand_sign: [[0, 0, 0.25, 3]], iron_fence: [[1.0, 0, 1.0, 0.05, 3]],
     stone_lantern: [[0, 0, 0.42, 3]], karakuri_clock: [[0, 0, 1.7, 3]], block_wall: [[1.0, 0, 1.0, 0.1, 3]], propane: [[0, 0, 0.2, 0.42, 3]],
     ac_unit: [[0, 0, 0.17, 0.42, 3]], gomi_station: [[0, 0, 0.5, 0.9, 3]], mooring_bollard: [[0, 0, 0.3, 3]], potted_plant: [[0, 0, 0.22, 3]],
     container_a: [[0, 0, 3.03, 1.22, 3]], container_b: [[0, 0, 3.03, 1.22, 3]], container_c: [[0, 0, 3.03, 1.22, 3]], container_d: [[0, 0, 3.03, 1.22, 3]],
@@ -50,7 +50,7 @@ G3.street = (function () {
     nobori_a: [[0, 0, 0.16, 3]], nobori_b: [[0, 0, 0.16, 3]], nobori_c: [[0, 0, 0.16, 3]], nobori_d: [[0, 0, 0.16, 3]], nobori_e: [[0, 0, 0.16, 3]],
   };
   // 車でぶつかると倒れる物（値 = 壊れるのに必要な車速）
-  const BREAK = { sign_stop: 40, sign_speed: 40, sign_noparking: 40, sign_pedonly: 40, sign_crosswalk: 40, curve_mirror: 40, hydrant_sign: 40,
+  const BREAK = { xlamp: 95, sign_stop: 40, sign_speed: 40, sign_noparking: 40, sign_pedonly: 40, sign_crosswalk: 40, curve_mirror: 40, hydrant_sign: 40,
     guard_pipe: 55, end_marker: 30, traffic_cone: 10, barricade: 20, koji_sign: 20, stand_sign: 15, nobori_a: 15, nobori_b: 15, nobori_c: 15,
     nobori_d: 15, nobori_e: 15, bicycle_a: 20, bicycle_b: 20, bicycle_c: 20, bench: 70, recycle_box: 40, post_square: 90, post_round: 90,
     planter_box: 70, potted_plant: 20, park_lamp: 80, taxi_sign: 40, iron_fence: 70, car_stop: 60, hydrant: 70, map_board: 90, parking_sign: 120 };
@@ -1838,8 +1838,77 @@ G3.street = (function () {
     }
   }
 
+
+  /* ---------- 夜の街明かり（追加の街灯と光だまり・店先の明かり） ---------- */
+  const pools = [], shopGlow = [];
+  let poolMesh = null, shopMat = null;
+  function nightLights(scene) {
+    const rr = mulberry32(5801);
+    for (const r of ROADS) {
+      if (r.kind === 'arcade') continue;
+      const cuts = G3.roadCuts(r);
+      for (const [sg, cl] of [[1, cuts.cutsL], [-1, cuts.cutsR]]) {
+        for (const [a, b] of G3.minusIntervals(r.pl.len, cl)) {
+          for (let d = a + 18 + (sg > 0 ? 0 : 38); d < b - 10; d += 76) {
+            const c0 = at(r, d, 0), z = zoneOf(c0.x, c0.y);
+            if (z === 'suburb' && r.kind === 'minor') continue;
+            const p = walkAt(r, sg, d, 0.9);
+            if (!free(p.x, p.y, 4)) continue;
+            put('xlamp', p.x, p.y, roadFace(r, sg, d, p), G3.CURB);
+            take(p.x, p.y, 2);
+            const q = at(r, d, sg * (r.w / 2 - 4));
+            pools.push([q.x, q.y, 17]);
+          }
+        }
+      }
+    }
+    for (const l of LAMPS) { const ri = roadInfo(l[0], l[1]); if (ri) pools.push([lerp(l[0], ri.x, 0.35), lerp(l[1], ri.y, 0.35), 18]); }
+    // 商店街はアーケードの照明で明るい
+    for (const r of ROADS) {
+      if (r.kind !== 'arcade') continue;
+      for (let d = 6; d < r.pl.len - 4; d += 15) for (const o of [-r.w / 4, r.w / 4]) { const q = at(r, d, o); pools.push([q.x, q.y, 12]); }
+    }
+    const gb = new G3.GB(false);
+    for (const [x, y, s2] of pools) {
+      const yy = heightAt(x, y) + 0.14;
+      gb.quad([[x - s2, yy, y + s2], [x + s2, yy, y + s2], [x + s2, yy, y - s2], [x - s2, yy, y - s2]], [[0, 0], [1, 0], [1, 1], [0, 1]]);
+    }
+    poolMesh = gb.mesh(G3.world.WM.lampGlow, false);
+    poolMesh.renderOrder = 2;
+    scene.add(poolMesh);
+  }
+  // 店先から歩道へこぼれる明かり（夜だけ）
+  function shopLights(scene) {
+    const gb = new G3.GB(false);
+    for (const b of buildings) {
+      if (b.noDraw || !(b.kind === 'shop' || (b.kind === 'office' && b.seed % 2 && b.hgt <= 4))) continue;
+      const f = frontOf(b), len = faceLen(b, f);
+      const A = wallPt(b, f, 0, 0.2), B = wallPt(b, f, 1, 0.2), A2 = wallPt(b, f, 0, 9), B2 = wallPt(b, f, 1, 9);
+      const y = heightAt((A.x + B.x) / 2, (A.y + B.y) / 2) + 0.42;
+      const P = [[A.x, y, A.y], [B.x, y, B.y], [B2.x, y, B2.y], [A2.x, y, A2.y]];
+      const nyv = (P[1][2] - P[0][2]) * (P[3][0] - P[0][0]) - (P[1][0] - P[0][0]) * (P[3][2] - P[0][2]);
+      const uv = [[0, 1], [1, 1], [1, 0], [0, 0]];
+      if (nyv > 0) gb.quad(P, uv); else gb.quad([P[0], P[3], P[2], P[1]], [uv[0], uv[3], uv[2], uv[1]]);
+    }
+    const tex = G3.world.canvasTex(64, 64, g => {
+      const gr = g.createLinearGradient(0, 0, 0, 64);
+      gr.addColorStop(0, 'rgba(255,255,255,0)'); gr.addColorStop(0.15, 'rgba(255,255,255,0.15)'); gr.addColorStop(1, 'rgba(255,255,255,1)');
+      g.fillStyle = gr; g.fillRect(0, 0, 64, 64);
+      const g2 = g.createLinearGradient(0, 0, 64, 0);
+      g.globalCompositeOperation = 'destination-in';
+      g2.addColorStop(0, 'rgba(0,0,0,0)'); g2.addColorStop(0.12, 'rgba(0,0,0,1)'); g2.addColorStop(0.88, 'rgba(0,0,0,1)'); g2.addColorStop(1, 'rgba(0,0,0,0)');
+      g.fillStyle = g2; g.fillRect(0, 0, 64, 64);
+    });
+    shopMat = new THREE.MeshBasicMaterial({ map: tex, color: 0xffe2b0, transparent: true, opacity: 0, blending: THREE.AdditiveBlending, depthWrite: false,
+      polygonOffset: true, polygonOffsetFactor: -4, polygonOffsetUnits: -90 });
+    const m = gb.mesh(shopMat, false);
+    m.renderOrder = 2;
+    scene.add(m);
+  }
+
   /* ---------- インスタンス化 ---------- */
   const cnodes = {}, brkMap = new Map();
+  const NODE_ALIAS = { xlamp: ['props', 'lamp'] };
   let blockMat = null;
   function streetMat(m) {
     if (m && m.name === 'SP_BlockTex') {
@@ -1916,7 +1985,7 @@ G3.street = (function () {
   function flush(scene) {
     const tmpV = new THREE.Vector3();
     for (const name in lists) {
-      const node = G3.glbNode('street', name);
+      const node = NODE_ALIAS[name] ? G3.glbNode(...NODE_ALIAS[name]) : G3.glbNode('street', name);
       stats[name] = lists[name].length;
       if (!node) continue;
       node.traverse(c => { if (c.isMesh) c.material = Array.isArray(c.material) ? c.material.map(streetMat) : streetMat(c.material); });
@@ -1950,6 +2019,7 @@ G3.street = (function () {
   function update(dt) {
     updCrossings(dt);
     updDebris(dt);
+    if (shopMat) shopMat.opacity = clamp(1 - G3.day * 1.6, 0, 1) * 0.55;
     upT -= dt;
     if (upT > 0) return;
     upT = 0.25;
@@ -2058,6 +2128,8 @@ G3.street = (function () {
     gomiStations();
     roadEdges();
     buildingDetails();
+    nightLights(scene);
+    shopLights(scene);
     roofs();
     boats();
     cranes();

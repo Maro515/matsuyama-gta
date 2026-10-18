@@ -132,6 +132,21 @@ G3.dyn = (function () {
     const brake = !!car.brakeL;
     for (const m of ud.tail) m.emissiveIntensity = brake ? 6 : night * 1.6 + 0.05;
     for (const m of ud.head) m.emissiveIntensity = ud.headBroken ? 0 : night * 6 + 0.2;
+    // 夜は路面にヘッドライトの光を落とす（プレイヤー車はスポットライトがあるので除く）
+    if (!isPlayer && night > 0.15 && !ud.headBroken) {
+      if (!ud.beam) {
+        if (!G3._beamMat) G3._beamMat = new THREE.MeshBasicMaterial({ map: G3.radialTex(), color: 0xfff0d0, transparent: true, opacity: 0, blending: THREE.AdditiveBlending, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -4, polygonOffsetUnits: -85 });
+        const t = CARTYPES[ud.type] || CARTYPES.sedan;
+        const g = new THREE.PlaneGeometry(9 / U * 1.6, t.w / U * 1.9);
+        g.rotateX(-Math.PI / 2);
+        ud.beam = new THREE.Mesh(g, G3._beamMat);
+        ud.beam.position.set(t.l / U * 0.5 + 9 / U * 0.8, 0.05, 0);
+        ud.beam.renderOrder = 2;
+        o.add(ud.beam);
+      }
+      ud.beam.visible = true;
+      G3._beamMat.opacity = night * 0.5;
+    } else if (ud.beam) ud.beam.visible = false;
     for (const m of ud.andon) m.emissiveIntensity = night * 2.5 + 0.3;
     if (ud.siren.length) {
       const fl = Math.floor(tSec * 6) % 2;

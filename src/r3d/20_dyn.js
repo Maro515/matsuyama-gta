@@ -30,9 +30,17 @@ G3.dyn = (function () {
     g.add(body, cab);
     return g;
   }
-  function makeCar(type) {
+  // 車種ごとに一度だけ部品をまとめた「ひな形」を作り、以後は複製する（形状は共有。走行中に結合処理をしない）
+  const carTemplates = {};
+  function carTemplate(type) {
+    if (carTemplates[type]) return carTemplates[type];
     const node = G3.glbNode('vehicles', type);
-    const o = node ? node.clone(true) : fallbackCar(type);
+    const t = node ? node.clone(true) : fallbackCar(type);
+    compactCar(t);
+    return (carTemplates[type] = t);
+  }
+  function makeCar(type) {
+    const o = carTemplate(type).clone(true);
     o.scale.setScalar(U);
     const ud = o.userData = { type, wheels: [], paint: [], tail: [], head: [], siren: [], andon: [], rider: null, pitch: 0, roll: 0, prevV: 0, prevA: 0, spin: 0 };
     o.traverse(c => {
@@ -56,7 +64,6 @@ G3.dyn = (function () {
       }
       if (/^wheel_/.test(c.name)) ud.wheels.push({ o: c, front: /F/.test(c.name.slice(6)) });
     });
-    compactCar(o);
     // 車体下の接地影
     {
       const t = CARTYPES[type];
@@ -587,12 +594,11 @@ G3.dyn = (function () {
     // 夜のヘッドライト（スポットライト）
     if (inCar && G3.day < 0.6) {
       const c = S.pcar;
-      headSpot.visible = true;
       const y = heightAt(c.x, c.y) + 2.2;
       headSpot.position.set(c.x + Math.cos(c.a) * 5, y, c.y + Math.sin(c.a) * 5);
       headSpot.target.position.set(c.x + Math.cos(c.a) * 60, y - 3, c.y + Math.sin(c.a) * 60);
       headSpot.intensity = (1 - G3.day) * 1400;
-    } else headSpot.visible = false;
+    } else headSpot.intensity = 0;   // 消す時も visible は変えない（ライト数が変わると全マテリアルのシェーダーが作り直しになる）
   }
   function dressRiderAsPlayer(r) {
     const m = r.userData.mats;
@@ -606,9 +612,21 @@ G3.dyn = (function () {
     player = makeHuman(false, true);
     dressHuman(player, { c: '#2e6e46', pc: '#33404e', hc: '#2c2620', sk: '#e8c8a0' });
     for (let i = 0; i < 36; i++) { const o = makeHuman(false); o.visible = false; pedPool.push(o); }
+    // 車も先に作って置いておく（走行中に初めて出てくる車種で引っかからないように）
+    const need = {};
+    for (const c of parked) need[c.type] = (need[c.type] || 0) + 1;
+    for (const t of Object.keys(CARTYPES)) {
+      const n = (need[t] || 0) + (t === 'police' ? 6 : t === 'bus' ? 2 : 5);
+      const pool = carPool[t] || (carPool[t] = []);
+      for (let i = 0; i < n; i++) { const o = makeCar(t); o.visible = false; pool.push(o); }
+    }
     headSpot = new THREE.SpotLight(0xfff1d0, 0, 190, 0.5, 0.6, 1.2);
     headSpot.castShadow = false;
     scene.add(headSpot, headSpot.target);
+    // 後から初めて使うマテリアル（夜の路面のヘッドライト光・割れたガラス）も先に作り、起動時の下準備でシェーダーを作っておく
+    if (!G3._beamMat) G3._beamMat = new THREE.MeshBasicMaterial({ map: G3.radialTex(), color: 0xfff0d0, transparent: true, opacity: 0, blending: THREE.AdditiveBlending, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -4, polygonOffsetUnits: -85 });
+    if (!crackMat) crackMat = new THREE.MeshStandardMaterial({ color: 0xaab6bc, roughness: 0.55, metalness: 0.2, transparent: true, opacity: 0.85 });
+    for (const m of [G3._beamMat, crackMat]) { const d = new THREE.Mesh(new THREE.PlaneGeometry(1, 1), m); d.visible = false; d.position.set(0, -50, 0); scene.add(d); }
     buildTrains();
     buildMikans();
     buildMarker();
@@ -639,5 +657,5 @@ G3.dyn = (function () {
     updSkids();
     updFerryPlane();
   }
-  return { build, update, dent };
+  return { build, update, dent, pools: () => Object.fromEntries(Object.entries(carPool).map(([k, v]) => [k, v.length])) };
 })();

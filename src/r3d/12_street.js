@@ -1958,6 +1958,11 @@ G3.street = (function () {
     if (name === 'hydrant') startFountain(entry.M.elements[12], entry.M.elements[14]);
   }
   function startFountain(x, z) {
+    ensureWater();
+    fountains.push({ x, z, y: heightAt(x, z) + G3.CURB + 1.5, t: 25 });
+    if (fountains.length > 3) fountains.shift();
+  }
+  function ensureWater() {
     if (!waterPts) {
       const n = 360, g = new THREE.BufferGeometry();
       g.setAttribute('position', new THREE.BufferAttribute(new Float32Array(n * 3), 3));
@@ -1965,9 +1970,8 @@ G3.street = (function () {
       waterPts.frustumCulled = false;
       waterPts.userData.p = Array.from({ length: n }, () => ({ x: 0, y: -999, z: 0, vx: 0, vy: 0, vz: 0 }));
       G3.scene.add(waterPts);
+      waterPts.visible = false;
     }
-    fountains.push({ x, z, y: heightAt(x, z) + G3.CURB + 1.5, t: 25 });
-    if (fountains.length > 3) fountains.shift();
   }
   const _q = new THREE.Quaternion(), _ax = new THREE.Vector3();
   function updDebris(dt) {
@@ -2409,6 +2413,7 @@ G3.street = (function () {
     flush(scene);
     freeKeyPoints();
     extraAmb();
+    ensureWater();   // 消火栓の放水用（起動時の下準備でシェーダーを作っておく）
     G3.street.stats = stats;
     G3.street.amb = amb;
   }

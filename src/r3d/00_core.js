@@ -122,6 +122,10 @@ const R3 = { ok: false, state: 'idle' };
     G3.skyEnvSky.scale.setScalar(1000);
     skyScene.add(G3.skyEnvSky);
     pmrem = new THREE.PMREMGenerator(renderer);
+    // 反射用の空: 毎回新しいテクスチャを作るとシーン中の全マテリアルが作り直しになり、そのたびに引っかかる。
+    // 固定のキューブに空を描き直し、PMREM は three が同じターゲットの中で更新する
+    G3.envRT = new THREE.WebGLCubeRenderTarget(128, { type: THREE.HalfFloatType });
+    G3.envCam = new THREE.CubeCamera(1, 4000, G3.envRT);
 
     // 光
     hemi = new THREE.HemisphereLight(0xbcd6f0, 0x6b5e4b, 1.0);
@@ -168,8 +172,10 @@ const R3 = { ok: false, state: 'idle' };
 
     // ポストプロセス
     // ポストエフェクト経由でもMSAAが効くよう、マルチサンプルのレンダーターゲットを使う
+    const msaa = pr => (isTouch || pr >= 1.75) ? 2 : 4;   // 画素密度が高い時は 4x MSAA が重い（帯域）。2x で十分
+    G3.msaa = msaa;
     const rt = new THREE.WebGLRenderTarget(innerWidth * renderer.getPixelRatio(), innerHeight * renderer.getPixelRatio(),
-      { type: THREE.HalfFloatType, samples: isTouch ? 2 : 4 });
+      { type: THREE.HalfFloatType, samples: msaa(renderer.getPixelRatio()) });
     composer = new T.EffectComposer(renderer, rt);
     // 環境遮蔽（建物の足元・隅・軒下の陰影）。デスクトップのみ。シーンの描画も兼ねる
     if (!isTouch && T.N8AOPass) {
@@ -177,7 +183,7 @@ const R3 = { ok: false, state: 'idle' };
       aoPass = new T.N8AOPass(scene, camera, pw, ph);
       aoPass.autoDetectTransparency = false;
       aoPass.configuration.transparencyAware = false;
-      aoPass.beautyRenderTarget.samples = 4;     // MSAA を維持
+      aoPass.beautyRenderTarget.samples = msaa(renderer.getPixelRatio());     // MSAA を維持
       Object.assign(aoPass.configuration, { aoRadius: 7, distanceFalloff: 2.0, intensity: 2.4, halfRes: true, depthAwareUpsampling: true,
         gammaCorrection: false, aoSamples: 12, denoiseSamples: 6, denoiseRadius: 10 });
       aoPass.configuration.color = new THREE.Color(0x0a0c12);
@@ -302,9 +308,9 @@ const R3 = { ok: false, state: 'idle' };
       for (const k of ['sunPosition', 'turbidity', 'rayleigh', 'mieCoefficient', 'mieDirectionalG', 'cloudCoverage', 'cloudDensity'])
         eu[k].value = u[k].value.clone ? u[k].value.clone() : u[k].value;
       eu.showSunDisc.value = 0;
-      if (skyEnv) skyEnv.dispose();
-      skyEnv = pmrem.fromScene(skyScene, 0, 1, 4000);
-      scene.environment = skyEnv.texture;
+      G3.envCam.update(renderer, skyScene);
+      G3.envRT.texture.needsPMREMUpdate = true;
+      if (!skyEnv) { skyEnv = G3.envRT; scene.environment = G3.envRT.texture; }
       scene.environmentIntensity = 0.08 + 0.72 * day;
     }
     // 雨
@@ -449,10 +455,69 @@ const R3 = { ok: false, state: 'idle' };
     if (vigCv.width > 0) c.drawImage(vigCv, 0, 0, cw, ch);
   }
 
+  /* ---------- 解像度の自動調整 ----------
+     重い場面が続く時は内部解像度（pixel ratio）を 0.25 ずつ下げてフレームを保ち、
+     余裕が続けば戻す。単発の引っかかりでは動かさない（2秒ごとの中央値で判断） */
+  const DR = { max: 0, min: 1, win: [], t: 0, cool: 4, fast: 0, upAt: -1e9, upBlock: 0, clock: 0 };
+  function applyPR(pr) {
+    pr = Math.round(pr * 100) / 100;
+    if (Math.abs(pr - renderer.getPixelRatio()) < 0.01) return;
+    renderer.setPixelRatio(pr);
+    renderer.setSize(innerWidth, innerHeight, false);
+    const smp = G3.msaa(pr);
+    for (const t of [composer.renderTarget1, composer.renderTarget2, aoPass && aoPass.beautyRenderTarget]) if (t && t.samples !== smp) { t.samples = smp; t.dispose(); }
+    composer.setPixelRatio(pr);
+    composer.setSize(innerWidth, innerHeight);
+    G3.pr = pr;
+  }
+  function adaptRes(dtr) {
+    if (!(dtr > 0) || dtr > 0.3) return;            // ポーズ明け等は数えない
+    DR.clock += dtr; DR.cool -= dtr; DR.upBlock -= dtr;
+    DR.win.push(dtr);
+    if ((DR.t += dtr) < 2) return;
+    DR.t = 0;
+    const w = DR.win.sort((a, b) => a - b), med = w[Math.floor(w.length / 2)];
+    DR.win = [];
+    if (DR.cool > 0) return;
+    const pr = renderer.getPixelRatio();
+    if (med > 1 / 42 && pr > DR.min) {              // 42fps を下回る状態が続いている
+      applyPR(Math.max(DR.min, pr - (med > 1 / 28 ? 0.5 : 0.25)));
+      DR.cool = 3; DR.fast = 0;
+      if (DR.clock - DR.upAt < 12) DR.upBlock = Math.min(240, Math.max(60, DR.upBlock * 2 + 60));   // 上げてすぐ重くなった→しばらく上げない
+    } else if (med < 1 / 55) {
+      DR.fast += 2;
+      if (DR.fast >= 16 && pr < DR.max && DR.upBlock <= 0) { applyPR(Math.min(DR.max, pr + 0.25)); DR.cool = 3; DR.fast = 0; DR.upAt = DR.clock; }
+    } else DR.fast = 0;
+  }
+  G3.res = DR; G3.adaptRes = adaptRes;
+  // 起動時の下準備: 隠れている物も含めて一度描き、シェーダーの生成と形状・テクスチャの転送を済ませる
+  // （初めて画面に入った時の引っかかりを無くす）
+  function prewarm() {
+    const vis = [], cul = [];
+    scene.traverse(o => {
+      if (!o.visible) { vis.push(o); o.visible = true; }
+      if (o.frustumCulled) { cul.push(o); o.frustumCulled = false; }
+      // 視錐台判定用の境界球も先に作る（初めて画面に入った時に計算させない）
+      if (o.isInstancedMesh && !o.boundingSphere) o.computeBoundingSphere();
+      else if (o.isMesh && o.geometry && !o.geometry.boundingSphere) o.geometry.computeBoundingSphere();
+    });
+    const bloomOn = bloomPass.enabled;
+    bloomPass.enabled = true;
+    try {
+      // 実際の描画と同じ経路（ポストエフェクトのレンダーターゲット）で一度描く。影用のシェーダーもここで作られる
+      renderer.shadowMap.needsUpdate = true;
+      composer.render();
+    } catch (e) { console.warn('prewarm', e); }
+    bloomPass.enabled = bloomOn;
+    for (const o of vis) o.visible = false;
+    for (const o of cul) o.frustumCulled = true;
+  }
+
   /* ---------- メイン ---------- */
   let lastFrame = 0;
   R3.render = function (dt, dtr) {
     if (!R3.ok) return;
+    adaptRes(dtr);
     updEnv(dt);
     if (G3.dyn) G3.dyn.update(dt);
     updCamera(dtr || dt);
@@ -477,7 +542,10 @@ const R3 = { ok: false, state: 'idle' };
       G3.dyn.build();
       updEnv(0.016);
       updCamera(1);
-      renderer.compile(scene, camera);
+      setLoad(0.97, '描画の下準備中…');
+      await new Promise(r => setTimeout(r, 30));
+      prewarm();
+      DR.max = renderer.getPixelRatio();
       R3.ok = true; R3.state = 'ready';
       document.body.classList.add('webgl');
       setLoad(1, '準備完了');

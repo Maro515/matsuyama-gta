@@ -1262,7 +1262,7 @@ function propHit(x,y,r,isCar){
   for(let gy=y0;gy<=y1;gy++)for(let gx=x0;gx<=x1;gx++){
     const a=propGrid.get(gy*4096+gx);if(!a)continue;
     for(const c of a){
-      if(c.st===pStamp||!(c.m&bit))continue;c.st=pStamp;
+      if(c.st===pStamp||!(c.m&bit)||c.broken)continue;c.st=pStamp;
       if(c.r!=null){if(hyp(x-c.x,y-c.y)<rr+c.r)return c;continue;}
       const dx=x-c.x,dy=y-c.y,ca=Math.cos(c.a),sa=Math.sin(c.a);
       const lx=dx*ca+dy*sa,ly=-dx*sa+dy*ca;
@@ -1270,6 +1270,25 @@ function propHit(x,y,r,isCar){
     }
   }
   return null;
+}
+// 車が壊せる街具に突っ込んだら倒して進む（GTAの看板・柵なぎ倒し）
+function smashAhead(c,nx,ny){
+  if(typeof G3==='undefined'||!G3.street||!G3.street.breakAt)return;
+  const spd=Math.abs(c.v);
+  for(let k=0;k<4;k++){
+    const h=propHit(nx,ny,6,true);
+    if(!h||!h.brk||spd<h.brk)return;
+    const vx=Math.cos(c.a)*c.v*VK,vy=Math.sin(c.a)*c.v*VK;
+    G3.street.breakAt(h,vx,vy,spd);
+    const heavy=h.brk>=70;
+    c.v*=heavy?0.78:0.94;
+    if(c===S.pcar){
+      c.hp-=heavy?2.5:0.6;
+      S.shake=Math.max(S.shake,heavy?4:1.5);
+      thud(heavy?.28:.12);
+      if(heavy)addPart(h.x,h.y,'spark',4);
+    }
+  }
 }
 function moveEnt(o,nx,ny,r,isCar){
   let hit=false;
@@ -1338,7 +1357,10 @@ function updPlayer(dt){
     c.a+=steer*wet*dt;
     const nx=c.x+Math.cos(c.a)*c.v*dt*VK,ny=c.y+Math.sin(c.a)*c.v*dt*VK;
     const spd=Math.abs(c.v);
+    smashAhead(c,nx,ny);
     const hit=moveEnt(c,nx,ny,6,true);
+    if(hit&&spd>60&&typeof G3!=='undefined'&&G3.dyn&&G3.dyn.dent)
+      G3.dyn.dent(c,c.x+Math.cos(c.a)*(c.v>=0?7:-7),c.y+Math.sin(c.a)*(c.v>=0?7:-7),spd);
     if(hit){
       if(spd>130){
         c.hp-=spd*0.05;addPart(c.x+Math.cos(c.a)*7,c.y+Math.sin(c.a)*7,'spark',5);
@@ -1735,6 +1757,7 @@ function updPolice(dt){
       c.v=lerp(c.v,Math.abs(diff)>2?60:target,dt*2.2);
     }
     const nx=c.x+Math.cos(c.a)*c.v*dt*VK,ny=c.y+Math.sin(c.a)*c.v*dt*VK;
+    smashAhead(c,nx,ny);
     const hit=moveEnt(c,nx,ny,6,true);
     if(hit){c.stuck+=dt;c.v*=0.3;}else c.stuck=Math.max(0,c.stuck-dt);
     if(c.stuck>6||(c.stuck>3&&dist>300)){ // スタック解除：同じ道路上へ復帰
@@ -4001,6 +4024,10 @@ function frame(ts){
         const d=hyp(o.x-S.pcar.x,o.y-S.pcar.y);
         if(d<14){
           const rel=Math.abs(S.pcar.v);
+          if(rel>60&&typeof G3!=='undefined'&&G3.dyn&&G3.dyn.dent){
+            const mx=(o.x+S.pcar.x)/2,my=(o.y+S.pcar.y)/2;
+            G3.dyn.dent(S.pcar,mx,my,rel);G3.dyn.dent(o,mx,my,rel*0.8);
+          }
           if(rel>110){
             o.stun=2.5;S.pcar.hp-=rel*.02;S.pcar.v*=.6;
             addPart((o.x+S.pcar.x)/2,(o.y+S.pcar.y)/2,'spark',4);thud(.2);

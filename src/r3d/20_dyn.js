@@ -90,6 +90,7 @@ G3.dyn = (function () {
   }
   function releaseCar(car, o) {
     o.visible = false;
+    restoreCar(o);
     carObjs.delete(car);
     (carPool[o.userData.type] || (carPool[o.userData.type] = [])).push(o);
   }
@@ -130,7 +131,7 @@ G3.dyn = (function () {
     const night = 1 - G3.day;
     const brake = !!car.brakeL;
     for (const m of ud.tail) m.emissiveIntensity = brake ? 6 : night * 1.6 + 0.05;
-    for (const m of ud.head) m.emissiveIntensity = night * 6 + 0.2;
+    for (const m of ud.head) m.emissiveIntensity = ud.headBroken ? 0 : night * 6 + 0.2;
     for (const m of ud.andon) m.emissiveIntensity = night * 2.5 + 0.3;
     if (ud.siren.length) {
       const fl = Math.floor(tSec * 6) % 2;
@@ -141,6 +142,66 @@ G3.dyn = (function () {
       tickHuman(ud.rider, 'sit', 1, dt);
     }
     return o;
+  }
+
+  /* ---------- 車のへこみ・ガラスのひび（その車だけ形状を複製して変形） ---------- */
+  const _inv = new THREE.Matrix4(), _rel = new THREE.Matrix4(), _relInv = new THREE.Matrix4(), _v3 = new THREE.Vector3();
+  let crackMat = null;
+  function dent(car, wx, wy, power) {
+    const o = carObjs.get(car);
+    if (!o) return;
+    const ud = o.userData;
+    if (ud.lastDent && tSec - ud.lastDent < 0.35) return;
+    ud.lastDent = tSec;
+    const dx = wx - car.x, dy = wy - car.y;
+    const lx = (dx * Math.cos(car.a) + dy * Math.sin(car.a)) / U;
+    const lz = (-dx * Math.sin(car.a) + dy * Math.cos(car.a)) / U;
+    const depth = Math.min(0.24, power / 1300), R = 0.85 + Math.min(0.6, power / 450);
+    o.updateMatrixWorld(true);
+    _inv.copy(o.matrixWorld).invert();
+    if (!ud.dentOrig) ud.dentOrig = new Map();
+    o.traverse(m => {
+      if (!m.isMesh || m.isSkinnedMesh) return;
+      for (let p = m; p && p !== o; p = p.parent) if (/^wheel_/.test(p.name)) return;
+      if (m.material && m.material.transparent) return;
+      if (!ud.dentOrig.has(m)) { ud.dentOrig.set(m, m.geometry); m.geometry = m.geometry.clone(); }
+      const pos = m.geometry.attributes.position;
+      _rel.multiplyMatrices(_inv, m.matrixWorld);
+      _relInv.copy(_rel).invert();
+      let changed = false;
+      for (let i = 0; i < pos.count; i++) {
+        _v3.fromBufferAttribute(pos, i).applyMatrix4(_rel);
+        const ex = _v3.x - lx, ez = _v3.z - lz, ey = _v3.y - 0.65;
+        const dist = Math.sqrt(ex * ex + ez * ez + ey * ey * 0.6);
+        if (dist > R) continue;
+        const f = 1 - dist / R, k = depth * f * f;
+        const cl = Math.hypot(_v3.x, _v3.z) || 1;
+        _v3.x -= _v3.x / cl * k; _v3.z -= _v3.z / cl * k; _v3.y -= k * 0.3;
+        _v3.applyMatrix4(_relInv);
+        pos.setXYZ(i, _v3.x, _v3.y, _v3.z);
+        changed = true;
+      }
+      if (changed) { pos.needsUpdate = true; m.geometry.computeVertexNormals(); m.geometry.computeBoundingSphere(); }
+    });
+    // 強い衝突: ガラスにひび、前からならヘッドライトが割れる
+    if (power > 170) {
+      if (!crackMat) crackMat = new THREE.MeshStandardMaterial({ color: 0xaab6bc, roughness: 0.55, metalness: 0.2, transparent: true, opacity: 0.85 });
+      if (!ud.crackOrig) ud.crackOrig = new Map();
+      o.traverse(m => {
+        if (!m.isMesh) return;
+        const mats = Array.isArray(m.material) ? m.material : [m.material];
+        if (!mats.some(x => x && /^Glass/.test(x.name))) return;
+        if (!ud.crackOrig.has(m)) ud.crackOrig.set(m, m.material);
+        m.material = Array.isArray(m.material) ? mats.map(x => /^Glass/.test(x.name) ? crackMat : x) : crackMat;
+      });
+      if (lx > 0.8) ud.headBroken = true;
+    }
+  }
+  function restoreCar(o) {
+    const ud = o.userData;
+    if (ud.dentOrig) { for (const [m, g] of ud.dentOrig) { m.geometry.dispose(); m.geometry = g; } ud.dentOrig = null; }
+    if (ud.crackOrig) { for (const [m, mt] of ud.crackOrig) m.material = mt; ud.crackOrig = null; }
+    ud.headBroken = false;
   }
 
   /* ---------- 人物 ---------- */
@@ -505,5 +566,5 @@ G3.dyn = (function () {
     updSkids();
     updFerryPlane();
   }
-  return { build, update };
+  return { build, update, dent };
 })();

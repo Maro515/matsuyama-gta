@@ -32,7 +32,7 @@ G3.street = (function () {
   const COLL = {
     guard_pipe: [[1.0, 0, 1.0, 0.06, 3]], guardrail: [[2.0, -0.08, 2.0, 0.12, 3]], bollard: [[0, 0, 0.08, 2]], end_marker: [[0, 0, 0.07, 2]],
     hedge_planter: [[1.5, 0, 1.5, 0.5, 3]], sign_stop: POLE, sign_speed: POLE, sign_noparking: POLE, sign_pedonly: POLE, sign_crosswalk: POLE,
-    curve_mirror: POLE, hydrant_sign: POLE, tram_stop: [[0, 0, 6.0, 0.8, 2]], post_round: [[0, 0, 0.25, 3]], post_square: [[0, 0, 0.21, 0.28, 3]],
+    curve_mirror: POLE, hydrant_sign: POLE, hydrant: [[0, 0, 0.16, 3]], tram_stop: [[0, 0, 6.0, 0.8, 2]], post_round: [[0, 0, 0.25, 3]], post_square: [[0, 0, 0.21, 0.28, 3]],
     phone_booth: [[0, 0, 0.46, 0.46, 3]], bicycle_a: [[0.05, 0, 0.88, 0.2, 3]], bicycle_b: [[0.05, 0, 0.88, 0.2, 3]], bicycle_c: [[0.05, 0, 0.88, 0.2, 3]],
     bike_rack: [[1.5, 0, 1.8, 0.4, 3]], recycle_box: [[0, 0, 0.21, 0.46, 3]], utility_box: [[0, 0, 0.3, 0.62, 3]], bench: [[-0.08, 0, 0.3, 0.85, 3]],
     map_board: [[0, 0, 0.12, 1.0, 3]], planter_box: [[0, 0, 0.6, 0.25, 3]], parking_sign: [[0, 0, 0.08, 3], [0.9, 0, 0.2, 0.23, 3]],
@@ -49,15 +49,21 @@ G3.street = (function () {
     soccer_goal: [[0, -3.66, 0.08, 3], [0, 3.66, 0.08, 3]],
     nobori_a: [[0, 0, 0.16, 3]], nobori_b: [[0, 0, 0.16, 3]], nobori_c: [[0, 0, 0.16, 3]], nobori_d: [[0, 0, 0.16, 3]], nobori_e: [[0, 0, 0.16, 3]],
   };
+  // 車でぶつかると倒れる物（値 = 壊れるのに必要な車速）
+  const BREAK = { sign_stop: 40, sign_speed: 40, sign_noparking: 40, sign_pedonly: 40, sign_crosswalk: 40, curve_mirror: 40, hydrant_sign: 40,
+    guard_pipe: 55, end_marker: 30, traffic_cone: 10, barricade: 20, koji_sign: 20, stand_sign: 15, nobori_a: 15, nobori_b: 15, nobori_c: 15,
+    nobori_d: 15, nobori_e: 15, bicycle_a: 20, bicycle_b: 20, bicycle_c: 20, bench: 70, recycle_box: 40, post_square: 90, post_round: 90,
+    planter_box: 70, potted_plant: 20, park_lamp: 80, taxi_sign: 40, iron_fence: 70, car_stop: 60, hydrant: 70, map_board: 90, parking_sign: 120 };
   function collide(name, x, y, rot, lift) {
     const cs = COLL[name];
     if (!cs || lift > 1.5 || typeof addCollider !== 'function') return;
+    const brk = BREAK[name], bid = name + '#' + (lists[name].length - 1);
     const al = -rot, ca = Math.cos(al), sa = Math.sin(al);
     for (const c of cs) {
       // Blender +X → (cos, sin)、+Y → (sin, -cos)
       const wx = x + U * (c[0] * ca + c[1] * sa), wy = y + U * (c[0] * sa - c[1] * ca);
-      if (c.length === 4) addCollider({ x: wx, y: wy, r: c[2] * U, m: c[3] });
-      else addCollider({ x: wx, y: wy, hx: c[2] * U, hy: Math.max(0.3, c[3] * U), a: al, m: c[4] });
+      if (c.length === 4) addCollider({ x: wx, y: wy, r: c[2] * U, m: c[3], brk, bid });
+      else addCollider({ x: wx, y: wy, hx: c[2] * U, hy: Math.max(0.3, c[3] * U), a: al, m: c[4], brk, bid });
     }
   }
   const putM = (name, M) => { (lists[name] || (lists[name] = [])).push(M); };
@@ -85,7 +91,9 @@ G3.street = (function () {
     }
   }
   const put = (name, x, y, rot, lift = 0, s = 1) => {
-    (lists[name] || (lists[name] = [])).push(G3.M4(x, heightAt(x, y) + lift, y, rot, U * s));
+    const L = lists[name] || (lists[name] = []), M = G3.M4(x, heightAt(x, y) + lift, y, rot, U * s);
+    M.__i = L.length;
+    L.push(M);
     collide(name, x, y, rot, lift);
     ambSpots(name, x, y, rot, lift);
   };
@@ -473,6 +481,10 @@ G3.street = (function () {
         if (!free(p.x, p.y, 3)) return;
         onWalk('hydrant_sign', p.x, p.y, -p.a);
         take(p.x, p.y, 1.5);
+        if (rr() < 0.4) {
+          const h = walkAt(r, sg, d + 3.2, 0.9);
+          if (free(h.x, h.y, 1.5)) { onWalk('hydrant', h.x, h.y, -h.a); take(h.x, h.y, 1.2); }
+        }
       });
       // 地上機器（中心部・郊外の幹線）
       if (r.kind === 'main' || zoneOf(at(r, r.pl.len / 2, 0).x, at(r, r.pl.len / 2, 0).y) === 'center') {
@@ -1656,7 +1668,130 @@ G3.street = (function () {
     }
   }
 
+  /* ---------- 壊れる街具（破片の物理・消火栓の放水・時間が経つと元通り） ---------- */
+  const ZERO = new THREE.Matrix4().makeScale(0, 0, 0), _m = new THREE.Matrix4(), _I = new THREE.Matrix4();
+  const debris = [], broken = [], fountains = [];
+  let waterPts = null;
+  function setInst(entry, M) {
+    for (const im of entry.g.children) {
+      if (!im.isInstancedMesh) continue;
+      if (M) _m.multiplyMatrices(M, im.userData.local || _I);
+      im.setMatrixAt(entry.li, M ? _m : ZERO);
+      im.instanceMatrix.needsUpdate = true;
+    }
+  }
+  function breakAt(c, vx, vy, spd) {
+    const [name, idx] = c.bid.split('#');
+    let entry, node;
+    if (name === 'lamp' && G3.brkExtra && G3.brkExtra.lamp) {
+      const L = G3.brkExtra.lamp;
+      entry = { g: L.group, li: +idx, M: L.mats[+idx] };
+      node = L.node;
+    } else {
+      entry = brkMap.get(c.bid);
+      node = cnodes[name];
+    }
+    // 同じ物の当たり判定（複数あれば全部）を外す
+    const sib = [];
+    const R = 12, x0 = Math.floor((c.x - R) / PCELL), x1 = Math.floor((c.x + R) / PCELL), y0 = Math.floor((c.y - R) / PCELL), y1 = Math.floor((c.y + R) / PCELL);
+    for (let gy = y0; gy <= y1; gy++) for (let gx = x0; gx <= x1; gx++) {
+      const a = propGrid.get(gy * 4096 + gx);
+      if (a) for (const k of a) if (k.bid === c.bid && !k.broken) { k.broken = true; sib.push(k); }
+    }
+    c.broken = true; if (!sib.includes(c)) sib.push(c);
+    if (!entry || !node) return;
+    setInst(entry, null);
+    // 破片（同じ形の複製を物理で飛ばす）
+    const o = node.clone(true);
+    entry.M.decompose(o.position, o.quaternion, o.scale);
+    o.traverse(k => {
+      if (!k.isMesh) return;
+      k.castShadow = true;
+      // 壊れた照明は消える
+      const off = m => (m && /^(LampLight|VendLight|NightGlow)/.test(m.name)) ? Object.assign(m.clone(), { emissiveIntensity: 0 }) : m;
+      k.material = Array.isArray(k.material) ? k.material.map(off) : off(k.material);
+    });
+    G3.scene.add(o);
+    const sp = Math.min(1.4, spd / 160);
+    const heavy = (BREAK[name] || 95) >= 70;
+    const v = new THREE.Vector3(vx * (heavy ? 0.35 : 0.7) + (Math.random() - 0.5) * 10, (heavy ? 6 : 10) + Math.random() * 10 * sp,
+      vy * (heavy ? 0.35 : 0.7) + (Math.random() - 0.5) * 10);
+    const w = new THREE.Vector3(vy, 0, -vx);   // 進行方向に倒れる
+    if (w.lengthSq() < 1e-6) w.set(1, 0, 0);
+    w.normalize().multiplyScalar((heavy ? 2.5 : 4) + Math.random() * 5 * sp);
+    w.y += (Math.random() - 0.5) * 3;
+    debris.push({ o, v, w, rest: false, t: 0 });
+    broken.push({ entry, sib, o, t: 0 });
+    if (debris.length > 40) debris.shift();
+    if (name === 'hydrant') startFountain(entry.M.elements[12], entry.M.elements[14]);
+  }
+  function startFountain(x, z) {
+    if (!waterPts) {
+      const n = 360, g = new THREE.BufferGeometry();
+      g.setAttribute('position', new THREE.BufferAttribute(new Float32Array(n * 3), 3));
+      waterPts = new THREE.Points(g, new THREE.PointsMaterial({ color: 0xd8ecff, size: 0.75, map: G3.radialTex ? G3.radialTex() : null, transparent: true, opacity: 0.7, depthWrite: false, alphaTest: 0.02 }));
+      waterPts.frustumCulled = false;
+      waterPts.userData.p = Array.from({ length: n }, () => ({ x: 0, y: -999, z: 0, vx: 0, vy: 0, vz: 0 }));
+      G3.scene.add(waterPts);
+    }
+    fountains.push({ x, z, y: heightAt(x, z) + G3.CURB + 1.5, t: 25 });
+    if (fountains.length > 3) fountains.shift();
+  }
+  const _q = new THREE.Quaternion(), _ax = new THREE.Vector3();
+  function updDebris(dt) {
+    for (const d of debris) {
+      d.t += dt;
+      if (d.rest) continue;
+      d.v.y -= 30 * dt;
+      d.o.position.addScaledVector(d.v, dt);
+      const wl = d.w.length();
+      if (wl > 1e-3) { _ax.copy(d.w).divideScalar(wl); _q.setFromAxisAngle(_ax, wl * dt); d.o.quaternion.premultiply(_q); }
+      const g = G3.onSidewalkY ? G3.onSidewalkY(d.o.position.x, d.o.position.z) : heightAt(d.o.position.x, d.o.position.z);
+      if (d.o.position.y < g) {
+        d.o.position.y = g;
+        d.v.y = Math.abs(d.v.y) * 0.25;
+        d.v.x *= 0.55; d.v.z *= 0.55; d.w.multiplyScalar(0.55);
+        if (d.v.lengthSq() < 4 && d.t > 0.4) d.rest = true;
+      }
+      if (d.t > 6) d.rest = true;
+    }
+    // 時間が経って離れたら元に戻す
+    for (let i = broken.length - 1; i >= 0; i--) {
+      const b = broken[i];
+      b.t += dt;
+      if (b.t < 80) continue;
+      const dx = b.entry.M.elements[12] - S.px, dz = b.entry.M.elements[14] - S.py;
+      if (dx * dx + dz * dz < 520 * 520) continue;
+      setInst(b.entry, b.entry.M);
+      for (const k of b.sib) k.broken = false;
+      G3.scene.remove(b.o);
+      const di = debris.findIndex(d => d.o === b.o); if (di >= 0) debris.splice(di, 1);
+      broken.splice(i, 1);
+    }
+    // 消火栓の放水
+    if (waterPts) {
+      const P = waterPts.userData.p, arr = waterPts.geometry.attributes.position.array;
+      for (let i = fountains.length - 1; i >= 0; i--) { fountains[i].t -= dt; if (fountains[i].t <= 0) fountains.splice(i, 1); }
+      let k = 0, any = false;
+      for (const p of P) {
+        if (p.y < -900 || p.y < heightAt(p.x, p.z)) {
+          const f = fountains.length ? fountains[(Math.random() * fountains.length) | 0] : null;
+          if (f && Math.random() < 0.6) {
+            p.x = f.x; p.z = f.z; p.y = f.y;
+            const a = Math.random() * TAU, r = Math.random() * 3;
+            p.vx = Math.cos(a) * r; p.vz = Math.sin(a) * r; p.vy = 34 + Math.random() * 10;
+          } else p.y = -999;
+        } else { p.vy -= 30 * dt; p.x += p.vx * dt; p.y += p.vy * dt; p.z += p.vz * dt; }
+        if (p.y > -900) any = true;
+        arr[k++] = p.x; arr[k++] = p.y; arr[k++] = p.z;
+      }
+      waterPts.geometry.attributes.position.needsUpdate = true;
+      waterPts.visible = any;
+    }
+  }
+
   /* ---------- インスタンス化 ---------- */
+  const cnodes = {}, brkMap = new Map();
   let blockMat = null;
   function streetMat(m) {
     if (m && m.name === 'SP_BlockTex') {
@@ -1738,6 +1873,7 @@ G3.street = (function () {
       if (!node) continue;
       node.traverse(c => { if (c.isMesh) c.material = Array.isArray(c.material) ? c.material.map(streetMat) : streetMat(c.material); });
       const cnode = collapse(node);
+      cnodes[name] = cnode;
       const groups = new Map();
       for (const M of lists[name]) {
         const k = Math.floor(M.elements[12] / CH) + ',' + Math.floor(M.elements[14] / CH);
@@ -1747,6 +1883,7 @@ G3.street = (function () {
       const all = [];
       for (const [k, mats] of groups) {
         const g = G3.instanceNode(cnode, mats, { shadow: SHADOW.test(name) });
+        if (BREAK[name]) mats.forEach((M, li) => brkMap.set(name + '#' + M.__i, { g, li, M }));
         g.traverse(o => { if (o.isInstancedMesh) { o.computeBoundingSphere(); o.frustumCulled = true; } });
         let cx = 0, cz = 0;
         for (const M of mats) { cx += M.elements[12]; cz += M.elements[14]; }
@@ -1764,6 +1901,7 @@ G3.street = (function () {
   let upT = 0;
   function update(dt) {
     updCrossings(dt);
+    updDebris(dt);
     upT -= dt;
     if (upT > 0) return;
     upT = 0.25;
@@ -1891,5 +2029,5 @@ G3.street = (function () {
     }
     return best;
   }
-  return { build, update, zoneOf, activeCrossing };
+  return { build, update, zoneOf, activeCrossing, breakAt };
 })();

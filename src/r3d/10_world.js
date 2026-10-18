@@ -1123,6 +1123,7 @@ G3.world = (function () {
       if (!o.isMesh) return;
       const local = new THREE.Matrix4().multiplyMatrices(inv, o.matrixWorld);
       const im = new THREE.InstancedMesh(o.geometry, Array.isArray(o.material) ? o.material.map(nightify) : nightify(o.material), mats4.length);
+      im.userData.local = local;
       const m = new THREE.Matrix4();
       mats4.forEach((M, i) => { m.multiplyMatrices(M, local); im.setMatrixAt(i, m); });
       im.castShadow = opts.shadow !== false; im.receiveShadow = true;
@@ -1234,7 +1235,7 @@ G3.world = (function () {
     // 街灯: アームを道路側へ
     const lamps = LAMPS.map(l => { const r = roadAngleAt(l[0], l[1]); return M4(l[0], heightAt(l[0], l[1]) + CURB, l[1], -r.toRoad, U); });
     // 当たり判定（見た目どおりに止まる）
-    for (const l of LAMPS) addCollider({ x: l[0], y: l[1], r: 0.5 });
+    LAMPS.forEach((l, i) => addCollider({ x: l[0], y: l[1], r: 0.5, brk: 95, bid: 'lamp#' + i }));
     for (const p of POLES) addCollider({ x: p.x, y: p.y, r: 0.55 });
     for (const sg of SIGNALS) addCollider({ x: sg.x, y: sg.y, r: 0.4 });
     for (const v of VENDING) { const r = roadAngleAt(v.x, v.y); addCollider({ x: v.x, y: v.y, hx: 1.05, hy: 1.35, a: r.toRoad }); }
@@ -1244,6 +1245,7 @@ G3.world = (function () {
       addCollider({ x: b[0] - c * 1.5, y: b[1] - sn * 1.5, hx: 0.5, hy: 1.8, a: r.toRoad });
     }
     add('lamp', lamps, () => simpleProp(0x7a7e84, 0.15, 15));
+    G3.brkExtra = { lamp: { node: glbNode('props', 'lamp'), mats: lamps, group: scene.children[scene.children.length - 1] } };
     // 電柱
     const poles = POLES.map(p => { const r = roadAngleAt(p.x, p.y); return M4(p.x, heightAt(p.x, p.y) + CURB, p.y, -r.a, U); });
     add('pole', poles, () => simpleProp(0x8a8478, 0.25, 24));

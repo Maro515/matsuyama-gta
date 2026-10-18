@@ -1506,6 +1506,27 @@ def build_stage6():
             small_shrine(), farm_hut(), taxi_sign()]
 
 
+
+# ======================================================================
+# 第7段: 壊せる物の追加（地上式消火栓）
+# ======================================================================
+def hydrant():
+    """地上式消火栓（赤、高さ約0.9m）。放水口は ±Y。"""
+    m = M()
+    red = mat('SP_HydRed', '#c8241c', rough=0.4, coat=0.3)
+    p = [cyl('base', 0.2, 0.08, (0, 0, 0.04), m['dark'], verts=14), cyl('body', 0.13, 0.62, (0, 0, 0.39), red, verts=16),
+         cyl('ring', 0.16, 0.06, (0, 0, 0.66), red, verts=16), sphere('dome', 0.14, (0, 0, 0.7), red, seg=14, rings=6, scale=(1, 1, 0.8)),
+         cyl('nut', 0.04, 0.08, (0, 0, 0.83), m['steel'], verts=6)]
+    for s in (-1, 1):
+        p.append(cyl('outlet', 0.06, 0.16, (0, s * 0.17, 0.48), red, verts=10, axis='Y'))
+        p.append(cyl('cap', 0.07, 0.04, (0, s * 0.26, 0.48), m['steel'], verts=10, axis='Y'))
+    return join(p, 'hydrant', smooth_angle=50)
+
+
+def build_stage7():
+    return [hydrant()]
+
+
 def layout_preview(roots, path, cols=7, gap=2.2, big=()):
     small = [o for o in roots if o.name not in big]
     for i, o in enumerate(small):
@@ -1526,7 +1547,8 @@ if __name__ == '__main__':
     roots3 = build_stage3()
     roots5 = build_stage5()
     roots6 = build_stage6()
-    roots = roots1 + roots2 + roots3 + roots5 + roots6
+    roots7 = build_stage7()
+    roots = roots1 + roots2 + roots3 + roots5 + roots6 + roots7
     export_glb(os.path.join(ASSETS, 'glb', 'street.glb'), roots)
     only = argv_after()
     def away():

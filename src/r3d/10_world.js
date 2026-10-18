@@ -747,6 +747,52 @@ G3.world = (function () {
     buildTramRails(scene);
     buildArcadeRoofs(scene);
   }
+  // 中心市街地: 歩道の外側（街灯・自販機の帯〜沿道の建物の正面）まで舗装して広い歩道にする
+  function buildFrontage(scene) {
+    if (typeof INFILL_AREA !== 'function') return;
+    const gb = new GB(false), gbC = new GB(false);
+    const yC = (x, z) => heightAt(x, z) + CURB;
+    for (const r of ROADS) {
+      if (r.kind === 'arcade' || !INFILL_BLVD.has(r.n)) continue;   // 歩道の外まで舗装するのは並木の大通りだけ
+      const o0 = r.w / 2 + SW, o1 = r.w / 2 + INFILL_FRONT + 0.3;
+      const cuts = [];
+      for (const j of r.junc) {
+        const ta = plAt(r.pl, j.d).a, tb = plAt(j.road.pl, j.od).a;
+        const sn = Math.max(0.35, Math.abs(Math.sin(tb - ta)));
+        const half = (j.road.w / 2 + (j.road.kind === 'arcade' ? 0.5 : INFILL_FRONT + 0.5)) / sn;
+        cuts.push([j.d - half, j.d + half]);
+      }
+      for (const [a, b] of minusIntervals(r.pl.len, cuts)) {
+        // 区間を INFILL_AREA の中だけ・水面でない所だけに分ける
+        let s0 = null;
+        const flush = (e) => {
+          if (s0 !== null && e - s0 > 6) {
+            const pts = subPts(r.pl, s0, e);
+            if (pts.length >= 2) for (const sg of [1, -1]) {
+              const lo = sg > 0 ? o0 : -o1, hi = sg > 0 ? o1 : -o0;
+              ribbon(gb, pts, lo, hi, yC, 4);
+              curbWall(gbC, pts, sg * o1, (x, z) => heightAt(x, z), yC, sg > 0 ? 1 : -1);
+            }
+          }
+          s0 = null;
+        };
+        for (let d = a; d <= b; d += 4) {
+          const p = plAt(r.pl, d);
+          let ok = INFILL_AREA(p.x, p.y);
+          if (ok) for (const sg of [1, -1]) {
+            const q = [p.x - Math.sin(p.a) * sg * (o0 + o1) / 2, p.y + Math.cos(p.a) * sg * (o0 + o1) / 2];
+            if (inWaterRaw(q[0], q[1])) ok = false;
+          }
+          if (ok && s0 === null) s0 = d;
+          if (!ok) flush(d);
+        }
+        flush(b);
+      }
+    }
+    const m = gb.mesh(WM.sidewalk, false);
+    m.renderOrder = 0;
+    scene.add(m, gbC.mesh(WM.curb, false));
+  }
   function dashes(gb, pl, a, b, off, hw, dl, gap, yfn) {
     for (let d = a + 2; d + dl < b - 2; d += dl + gap) {
       const pts = subPts(pl, d, d + dl);
@@ -1498,6 +1544,7 @@ G3.world = (function () {
     buildBackdrop(scene);
     buildFields(scene);
     buildRoads(scene);
+    buildFrontage(scene);
     buildRailways(scene);
     buildBuildings(scene);
     buildLandmarks(scene);

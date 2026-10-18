@@ -19,6 +19,7 @@ G3.birds = (function () {
   const flocks = [];   // ハトの群れの居場所 {x, y, pts:[[x,y]...], n, live}
   const wires = [];    // 電線 [x0,y0,z0,x1,y1,z1]
   const GULL_SPOTS = [[1000, 1790, 260], [1330, 648, 300], [1195, 965, 240], [1100, 1300, 220]];
+  const events = [];   // 音のきっかけ（飛び立ち）。game.html の環境音が拾う
 
   /* ---------- 形（m、+X が前） ---------- */
   function birdGeometry() {
@@ -131,7 +132,12 @@ G3.birds = (function () {
       if (b.tx != null) { const dx = b.tx - b.x, dy = b.ty - b.y, d = hyp(dx, dy); if (d < 0.1) b.tx = null; else { const s = Math.min(d, 1.4 * dt); b.x += dx / d * s; b.y += dy / d * s; } }
       b.peck = Math.max(0, b.peck - dt);
       const th = threatNear(b.x, b.y, 16);
-      if (th) { takeOff(b, th); for (const o of birds) if (o !== b && o.f === b.f && o.st === 'ground' && hyp(o.x - b.x, o.y - b.y) < 14) takeOff(o, th); }   // 群れごと飛び立つ
+      if (th) {
+        let n = 1;
+        takeOff(b, th);
+        for (const o of birds) if (o !== b && o.f === b.f && o.st === 'ground' && hyp(o.x - b.x, o.y - b.y) < 14) { takeOff(o, th); n++; }   // 群れごと飛び立つ
+        if (events.length < 8) events.push({ k: 'flutter', x: b.x, y: b.y, n });
+      }
       return;
     }
     // 飛行: 上昇しながら輪を描き、脅威が去ったら群れの居場所へ降りる
@@ -246,5 +252,7 @@ G3.birds = (function () {
     if (mesh.instanceColor) mesh.instanceColor.needsUpdate = true;
     aBird.needsUpdate = true;
   }
-  return { build, update, stats: () => ({ birds: birds.length, flocks: flocks.length, wires: wires.length }) };
+  // 近くの鳥の数（鳴き声用）
+  function near(kind, r) { let n = 0; for (const b of birds) if (b.k === kind && hyp(b.x - S.px, b.y - S.py) < r) n++; return n; }
+  return { build, update, near, events, stats: () => ({ birds: birds.length, flocks: flocks.length, wires: wires.length }) };
 })();

@@ -779,29 +779,23 @@ const GREENH=[];
 const LMS_ADD=[
  {n:'伊佐爾波神社',x:7672,y:2240,t:'isaniwa',s:1,solid:[7622,2198,7722,2282],ex:[7588,2229,7622,2251]},  // 石段は西
  {n:'椿神社',x:6550,y:4400,t:'tsubaki',s:1,solid:[6495,4355,6605,4445],ex:[6530,4283,6570,4355]},       // 参道は北
- {n:'飛鳥乃湯泉',x:7292,y:2197,t:'asuka',s:1,solid:[7228,2163,7356,2231]},   // 道後温泉別館（2017年）。東隣に椿の湯、間に椿の中庭
 ];
-for(const l of LMS_ADD){
-  LMS.push(l);
-  for(const q of [l.solid,l.ex]){
-    if(!q)continue;
-    EXCLUDE.push(q);
-    for(const b of buildings){
-      if(b.noDraw||!(b.x1>q[0]-4&&b.x0<q[2]+4&&b.y1>q[1]-4&&b.y0<q[3]+4))continue;
-      b.noDraw=true;
-      for(const [k,a] of bldGrid){const i=a.indexOf(b);if(i>=0)a.splice(i,1);}
+function addLandmarks(list){ // 敷地に掛かる建物は撤去し、以後の生成は EXCLUDE と敷地で避ける
+  for(const l of list){
+    LMS.push(l);
+    for(const q of [l.solid,l.ex]){
+      if(!q)continue;
+      EXCLUDE.push(q);
+      for(const b of buildings){
+        if(b.noDraw||!(b.x1>q[0]-4&&b.x0<q[2]+4&&b.y1>q[1]-4&&b.y0<q[3]+4))continue;
+        b.noDraw=true;
+        for(const [k,a] of bldGrid){const i=a.indexOf(b);if(i>=0)a.splice(i,1);}
+      }
     }
+    addSolid(l.solid[0],l.solid[1],l.solid[2],l.solid[3],true);
   }
-  addSolid(l.solid[0],l.solid[1],l.solid[2],l.solid[3],true);
 }
-LMS.push({n:'椿の湯',x:7331,y:2215,t:'label'});   // 飛鳥乃湯泉の敷地内（3Dは asuka に含む）
-// 道後温泉駅の駅舎は放生園の西。ハイカラ通り（アーケード）の入口に掛かっていたので西へ寄せる（建物の生成後に動かすので他の配置は変わらない）
-{
-  const l=LMS.find(q=>q.n==='道後温泉駅'),s0=l.solid,DX=-28;
-  for(const [k,a] of bldGrid)for(let i=a.length-1;i>=0;i--){const b=a[i];if(b.noDraw&&b.x0===s0[0]&&b.y0===s0[1]&&b.x1===s0[2]&&b.y1===s0[3])a.splice(i,1);}
-  l.x+=DX;l.solid=[s0[0]+DX,s0[1],s0[2]+DX,s0[3]];
-  addSolid(l.solid[0],l.solid[1],l.solid[2],l.solid[3],true);
-}
+addLandmarks(LMS_ADD);
 
 /* ---------- 生活道路・路地（既存の建物のすき間を通し、既存の道路につなぐ） ----------
    ほかの配置が全部決まった後に追加するので、建物・みかん等の位置は変わらない。歩道なし・幅6.4m */
@@ -1000,7 +994,7 @@ const TRAM_STOPS=[
  ['勝山町','かつやまちょう','Katsuyama-cho','一番町通り(R11)',895],
  ['警察署前','けいさつしょまえ','Keisatsusho-mae','一番町通り(R11)',1068],
  ['上一万','かみいちまん','Kami-ichiman','一番町通り(R11)',1241],
- ['南町','みなみまち','Minami-machi','道後通り',300],
+ ['南町','みなみまち（県民文化会館前）','Minami-machi (Kenmin Bunka Kaikan-mae)','道後通り',300],
  ['道後公園','どうごこうえん','Dogo-koen','道後通り',700],
  ['道後温泉','どうごおんせん','Dogo-onsen','道後通り',958],
  ['西堀端','にしほりばた','Nishi-horibata','南堀端',0],
@@ -1426,6 +1420,25 @@ function yuzukiMound(x,y){
   const a=Math.atan2(dy,dx);
   let f=1;for(const g of Y.gaps){const d=Math.abs(angDiff(g,a));f=Math.min(f,clamp((d-Y.gw)/0.12,0,1));}
   return Y.h*Math.sin(Math.PI*(r-Y.r0)/(Y.r1-Y.r0))*f*f*(3-2*f);
+}
+
+/* ---------- 実物どおりに足したランドマーク（2026-10-18） ----------
+   路地・沿道の建物・用水路・河川敷・段々畑の生成がすべて済んでから足す（それらの乱数列に触れないので街の他の部分は変わらない）。
+   敷地は路地・用水路・道路に掛からない空き地を選んである */
+const LMS_LATE=[
+ {n:'飛鳥乃湯泉',x:7292,y:2197,t:'asuka',s:1,solid:[7228,2163,7356,2231]},   // 道後温泉別館（2017年）。東隣に椿の湯、間に椿の中庭
+ {n:'子規堂',x:5935,y:3840,t:'shikido',s:1,solid:[5895,3812,5975,3868]},       // 正宗寺の境内（松山市駅の南）。山門は北の路地
+ {n:'宝厳寺',x:7528,y:2040,t:'hogonji',s:1,solid:[7498,2008,7558,2072],ex:[7518,2072,7538,2096]},  // 上人坂の上、一遍上人の生誕地。山門は南
+ {n:'ひめぎんホール',x:7090,y:2880,t:'himegin',s:1,solid:[7045,2840,7135,2920]},  // 愛媛県県民文化会館（電停 南町の脇）。入口は西
+];
+addLandmarks(LMS_LATE);
+LMS.push({n:'椿の湯',x:7331,y:2215,t:'label'});   // 飛鳥乃湯泉の敷地内（3Dは asuka に含む）
+// 道後温泉駅の駅舎は放生園の西。ハイカラ通り（アーケード）の入口に掛かっていたので西へ寄せる
+{
+  const l=LMS.find(q=>q.n==='道後温泉駅'),s0=l.solid,DX=-28;
+  for(const [k,a] of bldGrid)for(let i=a.length-1;i>=0;i--){const b=a[i];if(b.noDraw&&b.x0===s0[0]&&b.y0===s0[1]&&b.x1===s0[2]&&b.y1===s0[3])a.splice(i,1);}
+  l.x+=DX;l.solid=[s0[0]+DX,s0[1],s0[2]+DX,s0[3]];
+  addSolid(l.solid[0],l.solid[1],l.solid[2],l.solid[3],true);
 }
 
 /* ---------- セーブ ---------- */
@@ -3168,6 +3181,21 @@ function drawLandmark(c,l,tsec,mini){
       box(c,x+23,y+5,x+55,y+31,0,12,'#f1eee6','#4a3424');
       slab(c,x+19,y+1,x+59,y+35,14,'#4a525c');
       break;}
+    case 'shikido':{   // 正宗寺の本堂と子規堂
+      box(c,x-35,y-5,x-7,y+20,0,10,'#6a4a32');
+      slab(c,x-39,y-9,x-3,y+24,11,'#4a525c');
+      box(c,x+5,y+4,x+30,y+21,0,8,'#4a3424');
+      slab(c,x+2,y+1,x+33,y+24,9,'#4a525c');
+      break;}
+    case 'hogonji':{   // 宝厳寺の本堂（南向き）
+      box(c,x-17,y-24,x+17,y,0,11,'#8a6542');
+      slab(c,x-22,y-28,x+22,y+4,12,'#4a525c');
+      break;}
+    case 'himegin':{   // ひめぎんホール（石張りの箱と舞台の塔、西にガラスのホール）
+      box(c,x-30,y-32,x+40,y+32,0,30,'#cfc8ba','#b8b0a2');
+      box(c,x-42,y-25,x-30,y+25,0,25,'#5a7486','#b8b0a2');
+      box(c,x+1,y-19,x+34,y+19,30,58,'#cfc8ba','#b8b0a2');
+      break;}
     case 'tsubaki':{   // 銅板葺きの拝殿、北に楼門と大鳥居
       box(c,x-28,y-20,x+28,y+15,0,15,'#ece6d8','#d6d0c2');
       slab(c,x-35,y-27,x+35,y+22,16,'#4f8a74');
@@ -3547,7 +3575,7 @@ function drawLabels(c,zoom,x0,y0,x1,y1){
   }
 }
 /* ---------- メイン描画 ---------- */
-const LMH={isaniwa:24,tsubaki:16,asuka:30,depart:44,pref:26,office:30,hospital:36,police:28,onsen:20,retro:13,temple:14,campus:18,station:20,villa:13,rope:11,port:12,bigport:16,mitsukoshi:30,sakakumo:16,artmuseum:14,iyogin:34,fujigran:16,radiotower:10,school:14};
+const LMH={isaniwa:24,tsubaki:16,asuka:30,shikido:12,hogonji:14,himegin:58,depart:44,pref:26,office:30,hospital:36,police:28,onsen:20,retro:13,temple:14,campus:18,station:20,villa:13,rope:11,port:12,bigport:16,mitsukoshi:30,sakakumo:16,artmuseum:14,iyogin:34,fujigran:16,radiotower:10,school:14};
 let tSec=0;
 function render(){
   if(cw<2||ch<2){resize();if(cw<2||ch<2)return;}

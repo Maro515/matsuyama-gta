@@ -1004,6 +1004,139 @@ def asuka():
             P.append(box('tsuijir', (1.0, Lw + 0.2, 0.25), (fixed, (a0 + a1) / 2, 2.0), M['kawara']))
     return finish_lm('asuka', P)
 
+
+def tsuiji(P, M, segs, h=1.9):
+    """築地塀（白壁＋瓦の笠）。segs: (a0, a1, fixed, 'x'|'y')"""
+    for (a0, a1, fixed, ax) in segs:
+        Lw = a1 - a0
+        if Lw <= 0.1:
+            continue
+        if ax == 'x':
+            P.append(box('tsuiji', (Lw, 0.6, h), ((a0 + a1) / 2, fixed, h / 2), M['white']))
+            P.append(box('tsuijir', (Lw + 0.2, 1.0, 0.25), ((a0 + a1) / 2, fixed, h + 0.1), M['kawara']))
+        else:
+            P.append(box('tsuiji', (0.6, Lw, h), (fixed, (a0 + a1) / 2, h / 2), M['white']))
+            P.append(box('tsuijir', (1.0, Lw + 0.2, 0.25), (fixed, (a0 + a1) / 2, h + 0.1), M['kawara']))
+
+
+def sanmon(P, M, x, y, w, facing_y=True, name=None):
+    """寺の山門（4本柱の薬医門風＋切妻の瓦屋根）。facing_y: 門の通り抜けがY方向。"""
+    for sx in (-1, 1):
+        for sy in (-1, 1):
+            px, py = (x + sx * w / 2, y + sy * 0.9) if facing_y else (x + sx * 0.9, y + sy * w / 2)
+            P.append(box('mpost', (0.32, 0.32, 3.6), (px, py, 1.8), M['darkwood']))
+    sx_, sy_ = (w + 2.0, 3.6) if facing_y else (3.6, w + 2.0)
+    P.extend(hip_roof('mroof', x, y, sx_, sy_, 3.6, 1.6, 0.8, M['kawara'], upturn=0.35, thick=0.25, fascia=M['darkwood'], gables=M['white'], ridge_ratio=0.9))
+    P.append(box('mbeam', (w + 0.6, 0.3, 0.35) if facing_y else (0.3, w + 0.6, 0.35), (x, y, 3.4), M['darkwood']))
+
+
+def shikido():
+    """子規堂（正宗寺の境内、松山市駅の南・末広町）。子規が17歳まで暮らした家の復元と、
+    境内に展示されている坊っちゃん列車の客車。原点＝敷地中心、北(+Y)の路地に山門。敷地 ±16m × ±11.2m。"""
+    M = L()
+    P = []
+    paving = mat('LM_Paving', '#bdb7aa', rough=0.9)
+    gravel = mat('LM_Gravel', '#cbc5b6', rough=0.95)
+    granite = mat('LM_Granite', '#8d897f', rough=0.85)
+    coach = mat('LM_CoachBrown', '#5a2e1c', rough=0.5, coat=0.3)
+    leaf = mat('LM_PineLeaf', '#2f5434', rough=0.8)
+    P.append(box('ground', (32, 22.4, 0.06), (0, 0, 0.03), gravel))
+    P.append(box('sando', (3.0, 9.0, 0.1), (0, 6.6, 0.05), paving))
+    sanmon(P, M, 0, 10.6, 3.6)
+    tsuiji(P, M, [(-16, -2.6, 10.9, 'x'), (2.6, 16, 10.9, 'x'), (-16, 16, -10.9, 'x'), (-10.9, 10.9, -15.7, 'y'), (-10.9, 10.9, 15.7, 'y')])
+    # 正宗寺 本堂
+    P.append(box('hplat', (12.6, 10.6, 0.6), (-8.5, -3.0, 0.3), granite))
+    P += wall_block('hondo', -14.2, -7.8, -2.8, 1.8, 0.6, 3.8, M['darkwood'], None, 0, win_mat=M['glow'], win_h=1.6, win_w=1.6, gap=2.4, win_z=0.5)
+    P += hip_roof('hondor', -8.5, -3.0, 12.0, 10.2, 4.4, 3.2, 1.4, M['kawara'], upturn=0.45, fascia=M['darkwood'], gables=M['white'], ridge_ratio=0.5)
+    # 子規堂（平屋の木造、焦げ茶の板壁と障子）
+    P += wall_block('shiki', 2.0, -8.6, 12.0, -1.6, 0.4, 3.0, M['darkwood'], M['white'], 0.0, win_mat=M['glow'], win_h=1.5, win_w=1.4, gap=2.0, win_z=0.55)
+    P += hip_roof('shikir', 7.0, -5.1, 10.8, 7.8, 3.4, 2.2, 1.0, M['kawara'], upturn=0.25, fascia=M['darkwood'], ridge_ratio=0.55)
+    P.append(box('shiki_gaku', (2.6, 0.1, 0.6), (7.0, -1.45, 2.95), M['darkwood']))
+    P.append(text3d('shiki_t', '子規堂', 0.42, (7.0, -1.38, 2.95), '+Y', M['white'], font=MINCHO))
+    # 坊っちゃん列車の客車（マッチ箱のような小さな木造客車）
+    for sx in (-1, 1):
+        P.append(box('rail', (9.0, 0.08, 0.12), (8.0, 4.4 + sx * 0.53, 0.18), M['steel']))
+    P.append(box('ballast', (9.4, 2.2, 0.12), (8.0, 4.4, 0.06), granite))
+    P.append(box('cbody', (6.6, 2.0, 1.9), (8.0, 4.4, 1.45), coach))
+    P.append(box('croof', (7.0, 2.3, 0.18), (8.0, 4.4, 2.5), M['dark']))
+    for k in range(6):
+        for sy in (-1, 1):
+            P.append(box('cwin', (0.62, 0.05, 0.6), (5.3 + k * 1.08, 4.4 + sy * 1.02, 1.75), M['glass']))
+    for sx in (-1, 1):
+        for xx in (6.0, 10.0):
+            P.append(cyl('cwheel', 0.38, 0.1, (xx, 4.4 + sx * 0.6, 0.45), M['black'] if 'black' in M else M['dark'], verts=14, axis='Y'))
+    # 松
+    for (x, y) in ((-13.5, 8.4), (13.5, 8.4), (-1.0, -9.4)):
+        P.append(cyl('ptrunk', 0.22, 3.2, (x, y, 1.6), M['darkwood'], verts=8))
+        P.append(ico('pine', 1.6, (x, y, 3.6), leaf, sub=2, scale=(1.3, 1.3, 0.7)))
+    P.append(box('stone', (0.6, 0.4, 1.4), (-2.2, 7.6, 0.7), granite))
+    return finish_lm('shikido', P)
+
+
+def hogonji():
+    """宝厳寺（道後湯月町、上人坂を上りきった所。時宗の開祖・一遍上人の生誕地）。
+    原点＝敷地中心、南(-Y)に山門と上人坂。敷地 ±12m × ±12.8m。"""
+    M = L()
+    P = []
+    paving = mat('LM_Paving', '#bdb7aa', rough=0.9)
+    gravel = mat('LM_Gravel', '#cbc5b6', rough=0.95)
+    granite = mat('LM_Granite', '#8d897f', rough=0.85)
+    leaf = mat('LM_PineLeaf', '#2f5434', rough=0.8)
+    P.append(box('ground', (24, 25.6, 0.06), (0, 0, 0.03), gravel))
+    P.append(box('sando', (3.0, 14.0, 0.1), (0, -5.6, 0.05), paving))
+    sanmon(P, M, 0, -12.0, 3.4)
+    tsuiji(P, M, [(-12, -2.5, -12.5, 'x'), (2.5, 12, -12.5, 'x'), (-12, 12, 12.5, 'x'), (-12.5, 12.5, -11.7, 'y'), (-12.5, 12.5, 11.7, 'y')])
+    # 本堂（入母屋・瓦、正面に向拝）
+    P.append(box('hplat', (15.0, 11.0, 0.8), (0, 4.5, 0.4), granite))
+    P += wall_block('hondo', -6.8, 0.0, 6.8, 9.6, 0.8, 4.2, M['wood'], None, 0, win_mat=M['glow'], win_h=2.0, win_w=1.8, gap=2.6, win_z=0.45)
+    P += hip_roof('hondor', 0, 4.8, 13.6, 9.6, 5.0, 4.0, 1.8, M['kawara'], upturn=0.5, fascia=M['darkwood'], gables=M['white'], ridge_ratio=0.5)
+    for sx in (-1, 1):
+        P.append(box('kohai_p', (0.3, 0.3, 3.6), (sx * 2.2, -1.6, 2.6), M['darkwood']))
+    P += hip_roof('kohai', 0, -0.9, 5.4, 3.6, 4.2, 1.4, 0.6, M['kawara'], upturn=0.35, thick=0.22, fascia=M['darkwood'])
+    P.append(box('gaku', (2.4, 0.1, 0.7), (0, -0.05, 4.4), M['darkwood']))
+    P.append(text3d('gaku_t', '宝厳寺', 0.42, (0, -0.12, 4.4), '-Y', M['gold'], font=MINCHO))
+    # 一遍上人御誕生之地の石碑（縦書き）
+    P.append(box('hibase', (1.4, 0.9, 0.4), (-4.2, -7.0, 0.2), granite))
+    P.append(box('hi', (0.9, 0.45, 3.4), (-4.2, -7.0, 2.1), granite))
+    P += vtext3d('hi_t', '一遍上人御誕生之地', 0.3, (-4.2, -7.24, 3.55), '-Y', M['dark'], depth=0.03, font=MINCHO)
+    for (x, y) in ((-9.5, -9.5), (9.5, -9.5), (9.0, 10.0)):
+        P.append(cyl('ptrunk', 0.24, 3.4, (x, y, 1.7), M['darkwood'], verts=8))
+        P.append(ico('pine', 1.7, (x, y, 3.8), leaf, sub=2, scale=(1.3, 1.3, 0.7)))
+    return finish_lm('hogonji', P)
+
+
+def himegin():
+    """ひめぎんホール（愛媛県県民文化会館、道後町。電停「南町（県民文化会館前）」の脇）。
+    石張りの大きな箱と舞台の塔、西の道後線側にガラスの大きなエントランスホール。原点＝敷地中心、敷地 ±18m × ±16m。"""
+    M = L()
+    P = []
+    paving = mat('LM_Paving', '#bdb7aa', rough=0.9)
+    stone = mat('LM_StoneClad', '#cfc8ba', rough=0.7)
+    stone2 = mat('LM_StoneClad2', '#b8b0a2', rough=0.75)
+    P.append(box('plaza', (36, 32, 0.08), (0, 0, 0.04), paving))
+    # 本体（低層部＋大ホールの舞台塔）
+    P.append(box('body', (28, 26, 12.0), (2.0, 0, 6.0), stone))
+    for z in (4.0, 8.0):
+        P.append(box('band', (28.2, 26.2, 0.25), (2.0, 0, z), stone2))
+    P.append(box('fly', (13, 15, 11.0), (7.0, 0, 17.5), stone))
+    P.append(box('flycap', (13.4, 15.4, 0.5), (7.0, 0, 23.2), stone2))
+    P.append(box('roof', (27.6, 25.6, 0.3), (2.0, 0, 12.15), stone2))
+    # ガラスのエントランスホール（西）＋大庇
+    P.append(box('atrium', (5.0, 20.0, 10.0), (-14.5, 0, 5.0), M['glass']))
+    for y in [-10 + 2.5 * i for i in range(9)]:
+        P.append(box('mullion', (0.2, 0.2, 10.0), (-17.05, y, 5.0), M['steel']))
+    for z in (3.4, 6.8):
+        P.append(box('transom', (0.2, 20.0, 0.15), (-17.05, 0, z), M['steel']))
+    P.append(box('atrium_roof', (5.6, 20.6, 0.4), (-14.5, 0, 10.2), stone2))
+    P.append(box('canopy', (3.0, 12.0, 0.3), (-18.4, 0, 4.2), stone2))
+    P.append(box('glowlobby', (0.1, 19.0, 9.0), (-12.05, 0, 5.0), M['glow']))
+    # 館名
+    P.append(text3d('name', 'ひめぎんホール', 1.3, (-12.12, 0, 11.2), '-X', M['dark'], font=GOTHIC))
+    # 館銘板（前庭の石の台）
+    P.append(box('meiban', (0.5, 4.2, 1.2), (-17.2, -13.0, 0.6), stone2))
+    P.append(text3d('name2', '愛媛県県民文化会館', 0.4, (-17.5, -13.0, 0.75), '-X', M['dark'], font=GOTHIC))
+    return finish_lm('himegin', P)
+
 def stadium():
     """坊っちゃんスタジアム（すり鉢状のスタンド＋照明塔＋スコアボード）。"""
     M = L()
@@ -1118,7 +1251,7 @@ def build():
              cityhall(), prefoffice(), shiki(), ishiteji(), campus('campus_a', 110, 70), campus('campus_b', 98, 56),
              hospital(), police(), shrine(), stadium(), parktower(), airport(), port('port', 28, 34, '三津浜港'),
              port('ferryterminal', 52, 34, '松山観光港'), ropeway(), mitsukoshi(), sakakumo(), artmuseum(), iyogin(),
-             fujigran(), radiotower(), school('school_a', 62, 26), school('school_b', 62, 22), isaniwa(), tsubaki(), asuka()]
+             fujigran(), radiotower(), school('school_a', 62, 26), school('school_b', 62, 22), isaniwa(), tsubaki(), asuka(), shikido(), hogonji(), himegin()]
     return roots
 
 
@@ -1153,3 +1286,8 @@ if __name__ == '__main__':
             if r.name == 'asuka':
                 r.location = (0, 0, 0)
         preview(os.path.join(PREV, 'asuka.png'), target=(0, 0, 4), dist=58, elev=24, azim=-35, lens=45, res=(1400, 800), samples=48)
+    if not only or 'new3' in only:
+        pos = {'shikido': (0, 0), 'hogonji': (45, 0), 'himegin': (100, 0)}
+        for r in roots:
+            r.location = (*pos[r.name], 0) if r.name in pos else (0, 4000, 0)
+        preview(os.path.join(PREV, 'new3.png'), target=(50, 0, 4), dist=120, elev=26, azim=-115, lens=45, res=(1600, 800), samples=48)

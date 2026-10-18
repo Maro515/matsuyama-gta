@@ -2623,6 +2623,7 @@ G3.street = (function () {
       const all = [];
       for (const [k, mats] of groups) {
         const g = G3.instanceNode(cnode, mats, { shadow: SHADOW.test(name) });
+        g.name = 'st_' + name;
         if (BREAK[name]) mats.forEach((M, li) => brkMap.set(name + '#' + M.__i, { g, li, M }));
         g.traverse(o => { if (o.isInstancedMesh) { o.computeBoundingSphere(); o.frustumCulled = true; } });
         let cx = 0, cz = 0, rad = 0;
@@ -2640,9 +2641,68 @@ G3.street = (function () {
     lists = {};
   }
   let upT = 0;
+  /* のぼり旗は風にはためき（竿から離れるほど大きく）、港の漁船は波でゆっくり揺れる（上下・横揺れ・縦揺れ） */
+  const FLT = { value: 0 }, FLW = { value: 0.4 };
+  function flutterAndBob(scene) {
+    const flagMats = new Set(), flagClone = new Map(), boatMats = new Map();
+    scene.traverse(o => {
+      if (!o.isInstancedMesh || !o.parent || !o.parent.name) return;
+      const nm = o.parent.name;
+      if (/^st_nobori_/.test(nm)) {   // 街具はまとめられて頂点カラーの1材質になっているので複製して使う
+        if (!flagClone.has(o.material)) { const c = o.material.clone(); flagClone.set(o.material, c); flagMats.add(c); }
+        o.material = flagClone.get(o.material);
+      }
+      if (nm === 'st_fishing_boat') {
+        if (!boatMats.has(o.material)) boatMats.set(o.material, o.material.clone());
+        o.material = boatMats.get(o.material);
+      }
+    });
+    for (const m of flagMats) {
+      m.onBeforeCompile = sh => {
+        sh.uniforms.uFlT = FLT; sh.uniforms.uFlW = FLW;
+        sh.vertexShader = sh.vertexShader.replace('#include <common>', '#include <common>\nuniform float uFlT, uFlW;')
+          .replace('#include <begin_vertex>', `#include <begin_vertex>
+            #ifdef USE_INSTANCING
+            {
+              // 布だけ（竿から外へ張った面、上端は横棒に留まる）
+              float ph = dot(instanceMatrix[3].xz, vec2(0.013, 0.017));
+              float dist = clamp(-transformed.z / 0.48, 0.0, 1.0) * step(0.6, transformed.y) * (1.0 - smoothstep(2.38, 2.52, transformed.y)) * step(abs(transformed.x), 0.03);
+              float wv = sin(uFlT * 5.5 + transformed.z * 9.0 + transformed.y * 1.3 + ph * 4.0) + 0.4 * sin(uFlT * 9.1 + transformed.y * 3.1 + ph);
+              transformed.x += dist * (0.035 + 0.07 * uFlW) * wv;
+            }
+            #endif`);
+      };
+      m.customProgramCacheKey = () => 'nobori-flutter1';
+      m.needsUpdate = true;
+    }
+    for (const m of boatMats.values()) {
+      m.onBeforeCompile = sh => {
+        sh.uniforms.uFlT = FLT;
+        sh.vertexShader = sh.vertexShader.replace('#include <common>', '#include <common>\nuniform float uFlT;')
+          .replace('#include <project_vertex>', THREE.ShaderChunk.project_vertex.replace('mvPosition = modelViewMatrix * mvPosition;', `
+            #ifdef USE_INSTANCING
+            {
+              vec3 org = instanceMatrix[3].xyz;
+              float ph = dot(org.xz, vec2(0.031, 0.027));
+              float roll = 0.035 * sin(uFlT * 1.1 + ph), pitch = 0.02 * sin(uFlT * 0.8 + ph * 1.3), heave = 0.3 * sin(uFlT * 0.9 + ph * 0.7);
+              vec3 d = mvPosition.xyz - org;
+              d.xy = mat2(cos(roll), sin(roll), -sin(roll), cos(roll)) * d.xy;
+              d.zy = mat2(cos(pitch), sin(pitch), -sin(pitch), cos(pitch)) * d.zy;
+              mvPosition.xyz = org + d + vec3(0.0, heave, 0.0);
+            }
+            #endif
+            mvPosition = modelViewMatrix * mvPosition;`));
+      };
+      m.customProgramCacheKey = () => 'boat-bob1:' + m.name;
+      m.needsUpdate = true;
+    }
+    stats.flutter = flagMats.size; stats.boatMats = boatMats.size;
+  }
   function update(dt) {
     updCrossings(dt);
     updDebris(dt);
+    FLT.value = (FLT.value + dt) % 1000;
+    if (G3.sway) FLW.value = G3.sway.uWind.value.z;
     if (shopMat) shopMat.opacity = clamp(1 - G3.day * 1.6, 0, 1) * 0.55;
     upT -= dt;
     if (upT > 0) return;
@@ -3270,6 +3330,7 @@ G3.street = (function () {
       G3.refl.add(e[12] + fx * 6.2 * U, e[14] + fz * 6.2 * U, e[13] + 1.4 * U, 7 * U, 1.1 * U, 0xf2f8ff, 0.45, fx, fz);
     }
     flush(scene);
+    flutterAndBob(scene);
     freeKeyPoints();
     extraAmb();
     ensureWater();   // 消火栓の放水用（起動時の下準備でシェーダーを作っておく）

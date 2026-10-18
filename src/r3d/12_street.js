@@ -40,6 +40,7 @@ G3.street = (function () {
     stone_lantern: [[0, 0, 0.42, 3]], karakuri_clock: [[0, 0, 1.7, 3]], block_wall: [[1.0, 0, 1.0, 0.1, 3]], propane: [[0, 0, 0.2, 0.42, 3]],
     ac_unit: [[0, 0, 0.17, 0.42, 3]], gomi_station: [[0, 0, 0.5, 0.9, 3]], mooring_bollard: [[0, 0, 0.3, 3]], potted_plant: [[0, 0, 0.22, 3]],
     container_a: [[0, 0, 3.03, 1.22, 3]], container_b: [[0, 0, 3.03, 1.22, 3]], container_c: [[0, 0, 3.03, 1.22, 3]], container_d: [[0, 0, 3.03, 1.22, 3]],
+    wcont_a: [[0, 0, 3.03, 1.22, 3]], wcont_b: [[0, 0, 3.03, 1.22, 3]], wcont_c: [[0, 0, 3.03, 1.22, 3]],
     crossing_post: [[0, 0, 0.12, 3], [0, -0.5, 0.2, 0.2, 3]], catenary_pole: [[0, 0, 0.18, 3]], slide: [[-0.4, 0, 1.4, 0.45, 3]],
     swing: [[0, -1.3, 0.45, 0.06, 3], [0, 1.3, 0.45, 0.06, 3]], jungle_gym: [[0, 0, 0.92, 0.92, 3]], park_toilet: [[0, 0, 1.55, 2.05, 3]],
     park_lamp: [[0, 0, 0.08, 3]], fountain: [[0, 0, 0.3, 3]], gs_pump: [[0, 0, 1.8, 0.5, 3]], gs_sign: [[0, 0, 0.25, 0.25, 3]],
@@ -698,9 +699,10 @@ G3.street = (function () {
       const f = frontOf(b), len = faceLen(b, f);
       const cx = (b.x0 + b.x1) / 2, cy = (b.y0 + b.y1) / 2;
       const z = zoneOf(cx, cy);
+      if (b.sty === 'warehouse') { warehouseYard(b, f, rr); continue; }
       const shopFront = b.kind === 'shop' || (b.kind === 'office' && b.seed % 2 && b.hgt <= 4);
       if (shopFront) {
-        if (z === 'dogo') {
+        if (z === 'dogo' || b.sty === 'machiya') {
           // 暖簾と提灯
           const w = wallPt(b, f, 0.5, 0.2);
           put('noren', w.x, w.y, w.rot, 0);
@@ -732,8 +734,8 @@ G3.street = (function () {
         }
       }
       if (b.kind === 'house') {
-        // 前庭のブロック塀（門の切れ目あり）
-        if (z !== 'center' && rr() < 0.8) {
+        // 前庭のブロック塀（門の切れ目あり。町家は道に面して建つので塀なし）
+        if (z !== 'center' && b.sty !== 'machiya' && rr() < 0.8) {
           const off = 4.2, ext = 2.5;
           const L = len + ext * 2, sec = 5;
           const gate = 0.3 + rr() * 0.4;
@@ -779,6 +781,27 @@ G3.street = (function () {
     }
   }
   const FLOORH = 7;
+  // 倉庫・工場のまわり: 横のコンテナ、シャッター前のカラーコーン、室外機
+  function warehouseYard(b, f, rr) {
+    const sf = (f + (b.seed % 2 ? 1 : 3)) % 4;
+    if (b.seed % 3 !== 1 && faceLen(b, sf) > 19) {
+      const q = wallPt(b, sf, 0.5, 4.6);
+      if (clearOfRoad(q.x, q.y, 3.6) && !overlapsOther(b, q.x, q.y, 4) && !inWaterRaw(q.x, q.y) && !nearLM(q.x, q.y, 10) && free(q.x, q.y, 3)) {
+        put(['wcont_a', 'wcont_b', 'wcont_c'][(b.seed >> 1) % 3], q.x, q.y, q.along, 0);
+        take(q.x, q.y, 7);
+        stats.wh_container = (stats.wh_container || 0) + 1;
+      }
+    }
+    if (rr() < 0.6) {
+      for (const t of [0.18, 0.3]) {
+        const q = wallPt(b, f, t, 2.2);
+        if (clearOfRoad(q.x, q.y, 0.5)) put('traffic_cone', q.x, q.y, 0, 0);
+      }
+    }
+    const q2 = wallPt(b, (f + 2) % 4, 0.3 + rr() * 0.4, 1.0);
+    put('ac_unit', q2.x, q2.y, q2.rot, 0);
+    stats.warehouse = (stats.warehouse || 0) + 1;
+  }
 
   /* ---------- 第3段: 住宅地のごみステーション ---------- */
   function gomiStations() {
@@ -1266,7 +1289,7 @@ G3.street = (function () {
     const rr = mulberry32(5509);
     const q = new THREE.Quaternion(), q2 = new THREE.Quaternion(), e = new THREE.Euler(), v = new THREE.Vector3(), sc = new THREE.Vector3(U * 1.5, U, U * 1.5);
     for (const b of buildings) {
-      if (b.noDraw || b.kind !== 'house') continue;
+      if (b.noDraw || b.kind !== 'house' || b.sty === 'warehouse') continue;
       const x0 = b.x0, z0 = b.y0, x1 = b.x1, z1 = b.y1, o = 1.2, top = b.hW;
       const longX = (x1 - x0) >= (z1 - z0), span = longX ? (z1 - z0) : (x1 - x0), rh = span * 0.32;
       const th = Math.atan2(rh + 0.6, span / 2 + o);
@@ -1969,13 +1992,14 @@ G3.street = (function () {
     const rr = mulberry32(8301);
     const cols = [[0.42, 0.55, 0.30], [0.47, 0.58, 0.34], [0.62, 0.60, 0.55], [0.58, 0.55, 0.50]];
     for (const b of buildings) {
-      if (b.noDraw || b.kind !== 'house') continue;
-      const m = 4.6;
+      const wh = b.sty === 'warehouse';
+      if (b.noDraw || (b.kind !== 'house' && !wh)) continue;
+      const m = wh ? 7 : 4.6;
       const x0 = b.x0 - m, x1 = b.x1 + m, y0 = b.y0 - m, y1 = b.y1 + m;
       let ok = true;
       for (const [x, y] of [[x0, y0], [x1, y0], [x0, y1], [x1, y1]]) if (!clearOfRoad(x, y, 0.3) || inWaterRaw(x, y)) { ok = false; break; }
       if (!ok) continue;
-      const c = cols[(rr() * cols.length) | 0];
+      const c = wh ? [0.7, 0.7, 0.68] : cols[(rr() * cols.length) | 0];   // 倉庫は土間コンクリート
       const yy = heightAt((x0 + x1) / 2, (y0 + y1) / 2) + 0.04;
       gbG.quad([[x0, yy, y1], [x1, yy, y1], [x1, yy, y0], [x0, yy, y0]], [[x0 / 8, y1 / 8], [x1 / 8, y1 / 8], [x1 / 8, y0 / 8], [x0 / 8, y0 / 8]], c);
     }
@@ -1990,7 +2014,8 @@ G3.street = (function () {
 
   /* ---------- インスタンス化 ---------- */
   const cnodes = {}, brkMap = new Map();
-  const NODE_ALIAS = { xlamp: ['props', 'lamp'], xpole: ['props', 'pole'] };
+  // 倉庫横のコンテナは港のもの（遠くから見える）と分けて、近くだけ描く
+  const NODE_ALIAS = { xlamp: ['props', 'lamp'], xpole: ['props', 'pole'], wcont_a: ['street', 'container_b'], wcont_b: ['street', 'container_a'], wcont_c: ['street', 'container_c'] };
   let blockMat = null;
   function streetMat(m) {
     if (m && m.name === 'SP_BlockTex') {
@@ -2008,7 +2033,7 @@ G3.street = (function () {
     return G3.lmMat(m);
   }
   // 種類ごとの描画距離（これより遠いチャンクは描かない）。大物は常に描く。
-  const FAR = { guide_gantry: 1e9, tram_stop: 2200, karakuri_clock: 1e9, container_a: 2400, container_b: 2400, container_c: 2400, container_d: 2400, gs_canopy: 1600, gs_sign: 1600, fishing_boat: 1800,
+  const FAR = { guide_gantry: 1e9, tram_stop: 2200, karakuri_clock: 1e9, container_a: 2400, container_b: 2400, container_c: 2400, container_d: 2400, wcont_a: 700, wcont_b: 700, wcont_c: 700, gs_canopy: 1600, gs_sign: 1600, fishing_boat: 1800,
     catenary_pole: 1100, park_toilet: 1000, solar_panel: 900, tv_antenna: 700, bus_shelter: 1000,
     guardrail: 1300, guard_pipe: 1000, hedge_planter: 1200, block_wall: 1000, awning_red: 1100, awning_green: 1100, awning_blue: 1100, awning_orange: 1100,
     sign_speed: 900, sign_stop: 900, curve_mirror: 900, parking_sign: 1200, clock_pole: 1400, map_board: 900 };
@@ -2016,7 +2041,7 @@ G3.street = (function () {
   Object.assign(FAR, { konbini: 1500, konbini_sign: 1500, pylon: 1e9, ob_stair: 1400, platform: 1400, billboard: 1800, backstop: 1200,
     soccer_goal: 900, jib_crane: 2400, small_shrine: 1000, farm_hut: 1000 });
   // 影を落とすのは大きな物だけ（小物は影のパスの描画回数を増やすだけ）
-  const SHADOW = /konbini|pylon|ob_stair|platform|billboard|crane|shrine|farm_hut|backstop|wall|fence|awning|booth|container|canopy|gs_|tram_stop|guide|karakuri|toilet|shelter|hedge|guardrail|gantry|catenary|boat|lantern|jungle|slide|swing|vending|map_board/;
+  const SHADOW = /konbini|pylon|ob_stair|platform|billboard|crane|shrine|farm_hut|backstop|wall|fence|awning|booth|container|wcont|canopy|gs_|tram_stop|guide|karakuri|toilet|shelter|hedge|guardrail|gantry|catenary|boat|lantern|jungle|slide|swing|vending|map_board/;
   Object.assign(FAR, { bicycle_a: 330, bicycle_b: 330, bicycle_c: 330, ac_unit: 380, potted_plant: 300, propane: 380, tv_antenna: 500,
     block_wall: 700, guard_pipe: 650, guardrail: 900, hedge_planter: 800, awning_red: 800, awning_green: 800, awning_blue: 800, awning_orange: 800,
     xlamp: 900, hydrant: 300, hydrant_sign: 380, stand_sign: 330, nobori_a: 450, nobori_b: 450, nobori_c: 450, nobori_d: 450, nobori_e: 450 });

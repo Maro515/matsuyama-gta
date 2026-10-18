@@ -40,7 +40,7 @@ const R3 = { ok: false, state: 'idle' };
     stonewall: ['tex/stonewall.jpg', 1], plaster: ['tex/plaster.jpg', 1], water_n: ['tex/water_n.jpg', 0],
     detail: ['tex/detail.jpg', 0],
   };
-  for (const f of ['office', 'glass', 'mansion', 'shop', 'house', 'hotel', 'gshop', 'goffice', 'ghouse']) {
+  for (const f of ['office', 'glass', 'mansion', 'shop', 'house', 'hotel', 'gshop', 'goffice', 'ghouse', 'machiya', 'gmachiya', 'warehouse', 'gwarehouse', 'danchi']) {
     TEX_LIST['fac_' + f] = ['tex/fac_' + f + '.jpg', 1];
     TEX_LIST['facm_' + f] = ['tex/fac_' + f + '_m.png', 0];
   }

@@ -129,7 +129,7 @@ G3.world = (function () {
     WM.greenhouse = new THREE.MeshStandardMaterial({ color: 0xe9eff1, roughness: 0.35, transparent: true, opacity: 0.72, side: THREE.DoubleSide, depthWrite: false });
     WM.ghFrame = new THREE.MeshStandardMaterial({ color: 0xb8bcbf, roughness: 0.4, metalness: 0.7 });
     // 外壁（夜間は窓が個別に点灯）
-    for (const f of ['office', 'glass', 'mansion', 'shop', 'house', 'hotel', 'gshop', 'goffice', 'ghouse']) {
+    for (const f of ['office', 'glass', 'mansion', 'shop', 'house', 'hotel', 'gshop', 'goffice', 'ghouse', 'machiya', 'gmachiya', 'warehouse', 'gwarehouse', 'danchi']) {
       const m = new THREE.MeshStandardMaterial({ map: G3.tex['fac_' + f], vertexColors: true, roughness: 0.8, metalness: 0.0, envMapIntensity: 0.9 });
       const mask = G3.tex['facm_' + f];
       const ground = f[0] === 'g';
@@ -930,8 +930,28 @@ G3.world = (function () {
   }
 
   /* ---------- 建物 ---------- */
-  const FLOOR = 7, BAY = { office: 9, glass: 9, mansion: 9, shop: 7.5, house: 9, hotel: 9, gshop: 9, goffice: 9, ghouse: 9 };
+  const FLOOR = 7, BAY = { office: 9, glass: 9, mansion: 9, shop: 7.5, house: 9, hotel: 9, gshop: 9, goffice: 9, ghouse: 9,
+    machiya: 9, gmachiya: 9, warehouse: 9, gwarehouse: 18, danchi: 9 };
+  // 地区ごとの建物の様式（乱数は使わず位置と seed で決める）
+  //  町家: 三津浜の古い町並み・道後の湯の町・古町／倉庫: 空港南の南吉田・余戸の工業地・堀江港／団地: 郊外のマンション
+  function styleOf(b) {
+    const cx = (b.x0 + b.x1) / 2, cy = (b.y0 + b.y1) / 2, area = (b.x1 - b.x0) * (b.y1 - b.y0), s = b.seed;
+    if (b.hgt <= 3 && b.kind !== 'mansion' && b.kind !== 'hotel') {
+      if (hyp(cx - 1300, cy - 1720) < 560 && s % 6 !== 0) return 'machiya';
+      if (b.kind === 'shop' && hyp(cx - 7400, cy - 2300) < 480 && s % 2 === 0) return 'machiya';
+      if (b.kind === 'house' && hyp(cx - 4800, cy - 2500) < 380 && s % 3 === 0) return 'machiya';
+    }
+    if (b.hgt <= 2 && b.kind !== 'mansion' && b.kind !== 'shop') {
+      if (cx > 1100 && cx < 3300 && cy > 4100 && cy < 5080 && (area > 1500 || s % 2 === 0)) return 'warehouse';
+      if (hyp(cx - 4482, cy - 380) < 320) return 'warehouse';
+      if (cx > 3000 && cx < 4900 && cy > 3700 && cy < 5050 && area > 1900 && s % 3 === 0) return 'warehouse';
+    }
+    if (b.kind === 'house' && s % 13 === 0) return 'machiya';
+    if (b.kind === 'mansion' && !(cx > 5450 && cx < 6900 && cy > 2260 && cy < 3560) && s % 3 !== 2) return 'danchi';
+    return null;
+  }
   function upperTex(b) {
+    if (b.sty) return b.sty;
     if (b.kind === 'house') return 'house';
     if (b.kind === 'mansion') return 'mansion';
     if (b.kind === 'hotel') return 'hotel';
@@ -939,6 +959,7 @@ G3.world = (function () {
     return (b.hgt >= 5 && b.seed % 3 === 0) ? 'glass' : 'office';
   }
   function groundTex(b) {
+    if (b.sty) return b.sty === 'danchi' ? 'danchi' : 'g' + b.sty;
     if (b.kind === 'house') return 'ghouse';
     if (b.kind === 'shop') return 'gshop';
     if (b.kind === 'office') return b.seed % 2 ? 'gshop' : 'goffice';
@@ -964,8 +985,14 @@ G3.world = (function () {
     const signs = [];
     for (const b of buildings) {
       if (b.noDraw) continue;
+      b.sty = styleOf(b);
+      if (b.sty === 'machiya') b.hW = Math.min(b.hW, 15 + b.seed % 2);   // 町家は総二階まで（低い軒）
+    }
+    for (const b of buildings) {
+      if (b.noDraw) continue;
       const x0 = b.x0, z0 = b.y0, x1 = b.x1, z1 = b.y1;
-      const top = b.hW, gH = Math.max(6, top - FLOOR * b.hgt);
+      const top = b.hW, gH = Math.max(6, top - FLOOR * (b.sty === 'machiya' ? 1 : b.hgt));
+      const pitched = b.kind === 'house' || b.sty === 'machiya' || b.sty === 'warehouse';
       const tint = tintOf(b);
       const ut = upperTex(b), gt = groundTex(b);
       const faces = [
@@ -982,12 +1009,13 @@ G3.world = (function () {
         if ((mx + nx - cxB) * nx + (mz + nz - czB) * nz < (mx - cxB) * nx + (mz - czB) * nz) { nx = -nx; nz = -nz; }
         const dark = tint.map(v => v * 0.55);
         ledge(gbPar, A, B, nx, nz, 0, 1.4, 0.25, dark);
+        const isFront = fi === [0, 1, 2, 3][fsB];
+        if (b.sty === 'machiya' && isFront) ledge(gbPar, A, B, nx, nz, gH - 0.25, gH + 0.3, 2.4, C('#55585c'));   // 一階の庇
         if (b.kind === 'house') return;
         const floors = Math.round((top - gH) / FLOOR);
         const lc = tint.map(v => v * 0.86);
         ledge(gbPar, A, B, nx, nz, gH - 0.6, gH, 0.9, lc);
-        const isFront = fi === [0, 1, 2, 3][fsB];
-        if (b.kind === 'mansion' && isFront) {
+        if (b.kind === 'mansion' && isFront && b.sty !== 'danchi') {
           for (let k = 1; k < floors; k++) {
             const z = gH + k * FLOOR;
             ledge(gbPar, A, B, nx, nz, z - 0.45, z, 3.0, lc);                    // 床スラブ
@@ -1012,7 +1040,9 @@ G3.world = (function () {
         gbOf(ut).quad([[A[0], gH, A[1]], [B[0], gH, B[1]], [B[0], top, B[1]], [A[0], top, A[1]]],
           [[0, 0], [nb, 0], [nb, fl], [0, fl]], tint, sd);
       });
-      if (b.kind === 'house') {
+      if (b.sty === 'warehouse') {
+        houseRoof(gbEq, gbPar, b, top, tint, 0.13, [C('#c4d2dc'), C('#d2b8a8'), C('#bcd4c6'), C('#dcdcd6')][b.seed % 4]);   // 鋼板の緩い切妻
+      } else if (pitched) {
         houseRoof(gbKaw, gbPar, b, top, tint);
       } else {
         // 陸屋根＋パラペット
@@ -1034,7 +1064,7 @@ G3.world = (function () {
         signs.push({ b, fs, si, sh0, sh1 });
       }
       // 屋上広告塔
-      if (b.kind === 'office' && b.hgt >= 5 && b.seed % 4 === 0) adBoard(gbAd, gbEq, b, top);
+      if (b.kind === 'office' && !pitched && b.hgt >= 5 && b.seed % 4 === 0) adBoard(gbAd, gbEq, b, top);
       if (b.kind === 'hotel') yuSign(gbAd, gbEq, b, top);
     }
     for (const k in GBs) {
@@ -1083,12 +1113,12 @@ G3.world = (function () {
     add([P(a0, o0, z0), P(a0, o1, z0), P(a0, o1, z1), P(a0, o0, z1)], [-tdx, 0, -tdz]);
     add([P(b0, o0, z0), P(b0, o1, z0), P(b0, o1, z1), P(b0, o0, z1)], [tdx, 0, tdz]);
   }
-  function houseRoof(gbK, gbP, b, top, tint) {
-    const x0 = b.x0, z0 = b.y0, x1 = b.x1, z1 = b.y1, o = 1.2;
+  function houseRoof(gbK, gbP, b, top, tint, pitch, rcol) {
+    const x0 = b.x0, z0 = b.y0, x1 = b.x1, z1 = b.y1, o = pitch ? 0.8 : 1.2;
     const longX = (x1 - x0) >= (z1 - z0);
     const span = longX ? (z1 - z0) : (x1 - x0);
-    const rh = span * 0.32;
-    const rc = [C('#5a626e'), C('#71584e'), C('#4e5a66'), C('#6a6a66')][b.seed % 4].map(v => v * 1.6);
+    const rh = span * (pitch || 0.32);
+    const rc = rcol || [C('#5a626e'), C('#71584e'), C('#4e5a66'), C('#6a6a66')][b.seed % 4].map(v => v * 1.6);
     if (longX) {
       const zm = (z0 + z1) / 2;
       const A = [x0 - o, top - 0.6, z0 - o], B = [x1 + o, top - 0.6, z0 - o], Cc = [x1 + o, top + rh, zm], D = [x0 - o, top + rh, zm];

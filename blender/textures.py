@@ -522,6 +522,133 @@ def ground_house(W=3.6, H=2.8):
     return o
 
 
+
+def facade_machiya(W=3.6, H=2.8):
+    """町家の2階（下半分は焼杉の板張り、上は生成りの漆喰。木の出格子窓＋障子）。"""
+    wood = M('machiya_wood', '#3a2c22', rough=0.75)
+    pl = M('machiya_plaster', '#ddd2bc', rough=0.9)
+    hole = (0.55, W - 0.55, 0.75, 1.95)
+    o = []
+    # 焼杉板（縦張り・目板）
+    for k in range(int(round(W / 0.24))):
+        x = 0.12 + k * 0.24
+        o.append(box('yakisugi', (0.235, 0.06, 0.75), (x, 0.03, 0.375), M('machiya_sugi', '#2a2420' if k % 3 else '#33291f', rough=0.85)))
+        o.append(box('meita', (0.03, 0.08, 0.75), (x + 0.12, 0.0, 0.375), wood))
+    wl = wall_with_holes(W, H - 0.75, [(hole[0], hole[1], 0, hole[3] - 0.75)], pl, thick=0.1)
+    for ob in wl:   # wall_with_holes は z=0 起点なので板張りの上へ持ち上げる
+        ob.location.z += 0.75
+    o += wl
+    # 障子（夜は灯る）と出格子
+    o.append(box('WINA_shoji', (hole[1] - hole[0], 0.02, hole[3] - hole[2]), ((hole[0] + hole[1]) / 2, 0.35, (hole[2] + hole[3]) / 2), M('machiya_paper', '#e6dcc4', rough=0.95)))
+    lat = M('machiya_lattice', '#6a4c34', rough=0.8)
+    for x in np.arange(hole[0] + 0.06, hole[1], 0.11):
+        o.append(box('koshi', (0.045, 0.06, hole[3] - hole[2]), (x, -0.12, (hole[2] + hole[3]) / 2), lat))
+    o += [box('dgk', (hole[1] - hole[0] + 0.16, 0.24, 0.08), ((hole[0] + hole[1]) / 2, -0.06, hole[2] - 0.04), lat),
+          box('dgk', (hole[1] - hole[0] + 0.16, 0.24, 0.08), ((hole[0] + hole[1]) / 2, -0.06, hole[3] + 0.04), lat),
+          box('dgk', (0.08, 0.24, hole[3] - hole[2]), (hole[0] - 0.04, -0.06, (hole[2] + hole[3]) / 2), lat),
+          box('dgk', (0.08, 0.24, hole[3] - hole[2]), (hole[1] + 0.04, -0.06, (hole[2] + hole[3]) / 2), lat)]
+    # 柱・軒桁
+    o += [box('post', (0.16, 0.12, H), (0.08, -0.04, H / 2), wood), box('post', (0.16, 0.12, H), (W - 0.08, -0.04, H / 2), wood),
+          box('keta', (W, 0.16, 0.22), (W / 2, -0.06, H - 0.11), wood), box('nuki', (W, 0.1, 0.08), (W / 2, -0.03, 0.75), wood)]
+    return o
+
+
+def ground_machiya(W=3.6, H=3.0):
+    """町家の一階（木の格子戸・出格子・のれん掛け）。"""
+    o = []
+    wood = M('machiya_wood', '#3a2c22', rough=0.75)
+    dark = M('machiya_dark', '#1e1814', rough=0.8)
+    o.append(box('back', (W, 0.05, H), (W / 2, 0.5, H / 2), M('machiya_inside', '#6a5440', rough=0.9)))
+    o.append(box('WINA_glow', (W - 0.3, 0.02, H - 0.6), (W / 2, 0.45, H / 2 - 0.1), M('machiya_paper', '#e8dcc0', rough=0.95)))
+    # 格子（細い縦桟）
+    for x in np.arange(0.08, W, 0.07):
+        o.append(box('koshi', (0.035, 0.05, H - 0.35), (x, 0.0, (H - 0.35) / 2 + 0.05), wood))
+    for z in (0.35, 1.2, H - 0.45):
+        o.append(box('yoko', (W, 0.06, 0.06), (W / 2, -0.01, z), wood))
+    o += [box('post', (0.18, 0.18, H), (0.09, -0.03, H / 2), dark), box('post', (0.18, 0.18, H), (W - 0.09, -0.03, H / 2), dark),
+          box('beam', (W, 0.2, 0.3), (W / 2, -0.04, H - 0.15), dark), box('sill', (W, 0.25, 0.1), (W / 2, -0.04, 0.05), M('machiya_stone', '#8a857c'))]
+    return o
+
+
+def wh_ribs(W, H, holes):
+    """波板（縦リブ）。holes=[(x0,x1,z0,z1)] の範囲は抜く。"""
+    o = []
+    sh = M('wh_sheet', '#b8bcbc', metal=0.35, rough=0.55)
+    sh2 = M('wh_sheet2', '#a6aaab', metal=0.35, rough=0.6)
+    for k in range(int(round(W / 0.15))):
+        x = 0.075 + k * 0.15
+        cut = sorted([(h[2], h[3]) for h in holes if h[0] - 0.05 < x < h[1] + 0.05])
+        segs, z = [], 0.0
+        for (c0, c1) in cut:
+            if c0 > z:
+                segs.append((z, c0))
+            z = max(z, c1)
+        if z < H:
+            segs.append((z, H))
+        for (z0, z1) in segs:
+            o.append(box('rib', (0.075, 0.06 if k % 2 else 0.02, z1 - z0), (x, 0.03 if k % 2 else 0.0, (z0 + z1) / 2), sh if k % 2 else sh2))
+    return o
+
+
+def wh_window(x0, x1, z0, z1):
+    o = [box('WINA_glass', (x1 - x0, 0.01, z1 - z0), ((x0 + x1) / 2, 0.06, (z0 + z1) / 2), M('wh_glass', '#4a5866', rough=0.08, spec=0.8)),
+         box('wh_room', (x1 - x0, 0.02, z1 - z0), ((x0 + x1) / 2, 0.9, (z0 + z1) / 2), M('wh_in', '#8a8478', rough=0.9))]
+    fm = M('wh_wframe', '#8a8e90', metal=0.6, rough=0.35)
+    t = 0.06
+    o += [box('fr', (x1 - x0 + 2 * t, 0.1, t), ((x0 + x1) / 2, -0.01, z0 - t / 2), fm),
+          box('fr', (x1 - x0 + 2 * t, 0.1, t), ((x0 + x1) / 2, -0.01, z1 + t / 2), fm),
+          box('fr', (t, 0.1, z1 - z0), (x0 - t / 2, -0.01, (z0 + z1) / 2), fm),
+          box('fr', (t, 0.1, z1 - z0), (x1 + t / 2, -0.01, (z0 + z1) / 2), fm)]
+    n = max(1, int(round((x1 - x0) / 0.8)))
+    for k in range(1, n):
+        o.append(box('mull', (0.04, 0.08, z1 - z0), (x0 + (x1 - x0) * k / n, 0.0, (z0 + z1) / 2), fm))
+    return o
+
+
+def facade_warehouse(W=3.6, H=2.8):
+    """倉庫・工場（波形スレート/鋼板の外壁、高窓）。"""
+    hole = (0.5, W - 0.5, 1.8, 2.45)
+    o = wh_ribs(W, H, [hole]) + wh_window(*hole)
+    o.append(box('rust', (0.4, 0.07, 0.35), (W * 0.3, -0.01, 0.2), M('wh_rust', '#8a6a52', rough=0.9)))
+    return o
+
+
+def ground_warehouse(W=7.2, H=3.2):
+    """倉庫の一階（波板の壁＋巻き上げシャッター＋通用口）。"""
+    sx0, sx1 = 0.5, 4.1
+    sc = (sx0 + sx1) / 2
+    holes = [(sx0 - 0.1, sx1 + 0.1, 0, H - 0.3), (4.85, 5.75, 0, 2.05), (6.2, 6.9, 1.2, 1.9)]
+    o = wh_ribs(W, H, holes)
+    sm = M('wh_shutter', '#9ca2a6', metal=0.5, rough=0.45)
+    o.append(box('frame', (sx1 - sx0 + 0.2, 0.1, H - 0.3), (sc, -0.02, (H - 0.3) / 2), M('wh_frame', '#6a6e70', metal=0.5)))
+    for z in np.arange(0.06, H - 0.5, 0.09):
+        o.append(box('slat', (sx1 - sx0, 0.04, 0.07), (sc, -0.08, z), sm))
+    o.append(box('box', (sx1 - sx0 + 0.2, 0.3, 0.3), (sc, -0.15, H - 0.45), M('wh_box', '#7e8486', metal=0.5)))
+    o.append(box('WINA_lamp', (0.3, 0.06, 0.12), (sc, -0.32, H - 0.2), M('wh_lamp', '#f0e8d0')))
+    # 通用口（鉄扉）と小窓
+    o.append(box('doorframe', (1.0, 0.08, 2.1), (5.3, 0.02, 1.05), M('wh_frame', '#6a6e70', metal=0.5)))
+    o.append(box('door', (0.9, 0.08, 2.0), (5.3, -0.03, 1.0), M('wh_door', '#7a8a96', metal=0.4, rough=0.5)))
+    o.append(box('knob', (0.08, 0.06, 0.08), (5.65, -0.09, 1.0), M('wh_knob', '#d0d0c8', metal=0.8)))
+    o += wh_window(6.2, 6.9, 1.2, 1.9)
+    o.append(box('rust', (0.5, 0.07, 0.4), (4.5, -0.01, 0.25), M('wh_rust', '#8a6a52', rough=0.9)))
+    return o
+
+
+def facade_danchi(W=3.6, H=2.8):
+    """団地（打ち放し風の壁＋鉄の手すりのバルコニー＋アルミサッシ）。"""
+    wm = M('danchi_wall', '#d0cdc4', rough=0.85)
+    holes = [(0.25, W - 0.25, 0.1, 2.15)]
+    o = wall_with_holes(W, H, holes, wm)
+    o += win_unit(*holes[0], depth=0.14, frame='#b0b4b8', glass='#3c4854', tag='WINA', interior='#6e6252', curtain='#d8d0b8', split=2)
+    o.append(box('slab', (W, 1.0, 0.14), (W / 2, -0.5, 0.0), M('danchi_slab', '#c4c0b6', rough=0.85)))
+    st = M('danchi_steel', '#6e8296', metal=0.5, rough=0.45)
+    o.append(box('rtop', (W, 0.06, 0.06), (W / 2, -0.98, 1.05), st))
+    for x in np.arange(0.06, W, 0.12):
+        o.append(box('rb', (0.025, 0.025, 0.95), (x, -0.98, 0.55), st))
+    o.append(box('div', (0.06, 1.0, 2.6), (0.03, -0.5, 1.3), wm))
+    return o
+
+
 FACADES = [
     # name, builder, W, H, px幅
     ('office', facade_office, 3.6, 2.8),
@@ -533,6 +660,11 @@ FACADES = [
     ('gshop', ground_shop, 3.6, 3.2),
     ('goffice', ground_office, 3.6, 3.2),
     ('ghouse', ground_house, 3.6, 2.8),
+    ('machiya', facade_machiya, 3.6, 2.8),
+    ('gmachiya', ground_machiya, 3.6, 3.0),
+    ('warehouse', facade_warehouse, 3.6, 2.8),
+    ('gwarehouse', ground_warehouse, 7.2, 3.2),
+    ('danchi', facade_danchi, 3.6, 2.8),
 ]
 
 
@@ -632,6 +764,12 @@ if __name__ == '__main__':
     if what in ('ground', 'all'):
         reset()
         ground_all()
-    if what in ('facade', 'all'):
+    if what.startswith('fac:'):   # 例: fac:warehouse,gwarehouse
         for (n, b, W, H) in FACADES:
+            if n in what[4:].split(','):
+                render_facade(n, b, W, H, 512 if W >= 3.5 else 448)
+    if what in ('facade', 'all', 'newfac'):
+        for (n, b, W, H) in FACADES:
+            if what == 'newfac' and n not in ('machiya', 'gmachiya', 'warehouse', 'gwarehouse', 'danchi'):
+                continue
             render_facade(n, b, W, H, 512 if W >= 3.5 else 448)

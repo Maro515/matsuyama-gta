@@ -6458,6 +6458,13 @@ const CARTYPES={
  keitruck:{max:230,acc:185,l:8.5,w:3.7,cols:['#f2f3f1','#e6e7e4','#a8b8c4','#d8d0c0']},
  van:{max:255,acc:170,l:11.8,w:4.3,cols:['#f0f2f3','#e4e6e8','#c8ccd0','#2e5c8a']},
 };
+// 実車に近い性能: 最高速km/h・発進加速m/s²・制動m/s²・最小回転半径m・横グリップm/s²・質量t
+// （内部速度 v は km/h = v*0.72、m/s = v/MSU。位置は v*VK*dt 単位＝0.4m）
+const MSU=5;
+const CARPHYS={sedan:[180,3.3,8.5,5.2,8.5,1.4],kei:[140,2.5,8,4.4,8,0.85],taxi:[170,2.9,8,5.3,8,1.45],truck:[100,1.7,6.5,7,6,4],
+  sports:[260,6.5,10,5.4,10.5,1.4],bus:[95,1.3,5.5,9,4.8,11],bike:[130,5,9,2.8,9.5,0.25],police:[200,4,9,5.3,9,1.6],
+  minivan:[170,2.8,8,5.5,7.8,1.7],keitruck:[130,2.1,7.5,3.6,7,0.8],van:[150,2.4,7.5,5.2,7,1.9]};
+for(const k in CARPHYS){const [kmh,a0,br,rmin,grip,mass]=CARPHYS[k];Object.assign(CARTYPES[k],{kmh,a0,br,rmin,grip,mass,max:kmh/0.72,acc:a0*MSU});}
 function mkCar(x,y,a,type){
   const t=CARTYPES[type||'sedan'];
   return{x,y,a,v:0,type:type||'sedan',hp:100,
@@ -6508,7 +6515,7 @@ const MISSIONS=[
  {title:'ようこそ松山！',start:[5880,3555],sn:'松山市駅前',
   desc:'まずは街のシンボル・松山城の天守へ登れ！（丘は歩いて登れる。Mキーで全域マップ）',
   goal:[5834,2748],gn:'松山城 天守',reward:3000,time:0},
- {title:'みかんジュース緊急配達',start:[5940,3115],sn:'県庁前',
+ {title:'みかんジュース緊急配達',start:[5938,3112],sn:'県庁前',
   desc:'県庁の蛇口が故障！代わりのみかんジュースを道後温泉本館へ届けろ！',
   goal:[7434,2228],gn:'道後温泉本館',reward:8000,time:160},
  {title:'坊っちゃん団子エクスプレス',start:[7398,2388],sn:'道後温泉駅前',
@@ -6523,7 +6530,7 @@ const MISSIONS=[
   goal:[7402,2392],gn:'道後温泉駅',reward:12000,time:0},
  {title:'空港へ全力ダッシュ',start:[6252,3142],sn:'大街道口',
   desc:'最終便に間に合わない！松山空港ターミナルまで飛ばせ！',
-  goal:[985,4455],gn:'松山空港ターミナル',reward:20000,time:180},
+  goal:[985,4455],gn:'松山空港ターミナル',reward:20000,time:210},
  {title:'湯けむり大脱走',start:[6382,3428],sn:'松山東警察署前',
   desc:'手配度★3で大追跡が始まる！パトカーを振り切って自由を掴め！',
   evade:3,reward:30000,time:0},
@@ -6996,10 +7003,13 @@ function updateAudio(dt){
   if(!AC)return;
   const drive=S.mode==='car'&&!S.paused;
   const sp=drive?Math.abs(S.pcar.v):0;
-  engGain.gain.value=(S.muted||!drive)?0:clamp(.025+sp/380*.08,.0,.11);
+  engGain.gain.value=(S.muted||!drive)?0:clamp(.03+sp/280*.07,.0,.11);
   if(engOsc){
     const tf=drive?(S.pcar.type==='bike'?1.9:(S.pcar.type==='bus'||S.pcar.type==='truck')?0.6:1):1;
-    engOsc.frequency.value=(55+sp*.55)*tf;
+    // ギア付きの回転数（km/h の区切りで回転が落ちる）
+    const kmh=sp*0.72,G=[0,18,38,62,92,128,175,999];let gi=0;while(kmh>G[gi+1])gi++;
+    const rpm=0.32+0.68*clamp((kmh-G[gi])/(G[gi+1]-G[gi]),0,1)*(gi===6?0.6:1);
+    engOsc.frequency.value=(42+rpm*120)*tf;
   }
   const chase=polices.length>0&&!S.paused;
   if(chase&&!S.muted){
@@ -7122,15 +7132,15 @@ for(const cn of CANALS)for(const p of cn.parts){
   }
 }
 // ランドマークの当たり判定: モデルの「体の高さ」にある面を 1.5 単位のマス目に焼いたもの（3D描画時に作る）
-const OCC=new Set(),OCELL=1.5,OCC_HIT={occ:1};
-function occAdd(x,y){OCC.add(Math.floor(x/OCELL)+Math.floor(y/OCELL)*8192);}
+const OCC=new Set(),OCELL=0.75,OCC_HIT={occ:1};   // 30cm の格子（モデルの形に近い当たり）
+function occAdd(x,y){OCC.add(Math.floor(x/OCELL)+Math.floor(y/OCELL)*16384);}
 function propHit(x,y,r,isCar){
   if(!propGrid.size&&!OCC.size)return null;
   const rr=isCar?r:Math.min(r,1.1),bit=isCar?2:1;
   if(OCC.size){
     const cx0=Math.floor((x-rr)/OCELL),cx1=Math.floor((x+rr)/OCELL),cy0=Math.floor((y-rr)/OCELL),cy1=Math.floor((y+rr)/OCELL);
     for(let gy=cy0;gy<=cy1;gy++)for(let gx=cx0;gx<=cx1;gx++){
-      if(!OCC.has(gx+gy*8192))continue;
+      if(!OCC.has(gx+gy*16384))continue;
       const nx=clamp(x,gx*OCELL,(gx+1)*OCELL),ny=clamp(y,gy*OCELL,(gy+1)*OCELL);
       if(hyp(x-nx,y-ny)<rr)return OCC_HIT;
     }
@@ -7150,11 +7160,11 @@ function propHit(x,y,r,isCar){
   return null;
 }
 // 車が壊せる街具に突っ込んだら倒して進む（GTAの看板・柵なぎ倒し）
-function smashAhead(c,nx,ny){
+function smashAhead(c,nx,ny,r=6){
   if(typeof G3==='undefined'||!G3.street||!G3.street.breakAt)return;
   const spd=Math.abs(c.v);
   for(let k=0;k<4;k++){
-    const h=propHit(nx,ny,6,true);
+    const h=propHit(nx,ny,r,true);
     if(!h||!h.brk||spd<h.brk)return;
     const vx=Math.cos(c.a)*c.v*VK,vy=Math.sin(c.a)*c.v*VK;
     G3.street.breakAt(h,vx,vy,spd);
@@ -7174,6 +7184,140 @@ function moveEnt(o,nx,ny,r,isCar){
   if(!blockedAt(nx,o.y,r,isCar)&&(stuck||!propHit(nx,o.y,r,isCar)))o.x=nx;else hit=true;
   if(!blockedAt(o.x,ny,r,isCar)&&(stuck||!propHit(o.x,ny,r,isCar)))o.y=ny;else hit=true;
   return hit;
+}
+/* ---------- 車の当たり判定（GTA風）: 車体を長手方向の円の列で近似し、壁・街具・建物から押し出して面に沿って滑らせる ---------- */
+function carCircles(c,x,y,a){
+  const T=CARTYPES[c.type]||CARTYPES.sedan,r=T.w/2,span=Math.max(0,T.l/2-r),n=Math.max(2,Math.ceil(2*span/(T.w*0.75))+1);
+  const ca=Math.cos(a),sa=Math.sin(a),out=[];
+  for(let i=0;i<n;i++){const s=-span+2*span*i/(n-1);out.push([x+ca*s,y+sa*s,r,s]);}
+  return out;
+}
+// 水・丘など「面」で塞がる所（車は道路以外の丘に入れない）
+function areaBlocked(x,y,isCar){
+  if(x<1||y<1||x>W-1||y>H-1)return true;
+  const ri=roadInfo(x,y),onRoad=ri&&ri.d<ri.road.w/2+9;
+  if(isCar&&hillAt(x,y)&&!onRoad)return true;
+  return inWaterRaw(x,y)&&!onRoad&&railDist(x,y)>14;
+}
+const _cq=[];
+// 円 (x,y,r) がいちばん深く食い込んでいる相手と、押し出す向き・量
+function contactAt(x,y,r,isCar){
+  let bx=0,by=0,bd=0;
+  const take=(nx,ny,d)=>{if(d>bd){bd=d;bx=nx;by=ny;}};
+  gridNear(bldGrid,x,y,_cq);
+  for(const b of _cq){
+    const qx=clamp(x,b.x0,b.x1),qy=clamp(y,b.y0,b.y1),dx=x-qx,dy=y-qy,dd=hyp(dx,dy);
+    if(dd>1e-6){if(dd<r)take(dx/dd,dy/dd,r-dd);}
+    else{const l=x-b.x0,rt=b.x1-x,t=y-b.y0,bm=b.y1-y,m=Math.min(l,rt,t,bm);
+      if(m===l)take(-1,0,l+r);else if(m===rt)take(1,0,rt+r);else if(m===t)take(0,-1,t+r);else take(0,1,bm+r);}
+  }
+  const rr=isCar?r:Math.min(r,1.1),bit=isCar?2:1;
+  if(OCC.size){
+    const cx0=Math.floor((x-rr)/OCELL),cx1=Math.floor((x+rr)/OCELL),cy0=Math.floor((y-rr)/OCELL),cy1=Math.floor((y+rr)/OCELL);
+    for(let gy=cy0;gy<=cy1;gy++)for(let gx=cx0;gx<=cx1;gx++){
+      if(!OCC.has(gx+gy*16384))continue;
+      const qx=clamp(x,gx*OCELL,(gx+1)*OCELL),qy=clamp(y,gy*OCELL,(gy+1)*OCELL),dx=x-qx,dy=y-qy,dd=hyp(dx,dy);
+      if(dd>1e-6){if(dd<rr)take(dx/dd,dy/dd,rr-dd);}
+      else{const ex=x-(gx+.5)*OCELL,ey=y-(gy+.5)*OCELL,el=hyp(ex,ey)||1;take(ex/el,ey/el,rr+OCELL*.5);}
+    }
+  }
+  pStamp++;
+  const x0=Math.floor((x-rr)/PCELL),x1=Math.floor((x+rr)/PCELL),y0=Math.floor((y-rr)/PCELL),y1=Math.floor((y+rr)/PCELL);
+  for(let gy=y0;gy<=y1;gy++)for(let gx=x0;gx<=x1;gx++){
+    const a=propGrid.get(gy*4096+gx);if(!a)continue;
+    for(const c of a){
+      if(c.st===pStamp||!(c.m&bit)||c.broken)continue;c.st=pStamp;
+      if(c.r!=null){const dx=x-c.x,dy=y-c.y,dd=hyp(dx,dy);if(dd<rr+c.r){if(dd>1e-6)take(dx/dd,dy/dd,rr+c.r-dd);else take(1,0,rr+c.r);}continue;}
+      const dx=x-c.x,dy=y-c.y,ca=Math.cos(c.a),sa=Math.sin(c.a);
+      const lx=dx*ca+dy*sa,ly=-dx*sa+dy*ca,qx=clamp(lx,-c.hx,c.hx),qy=clamp(ly,-c.hy,c.hy),ex=lx-qx,ey=ly-qy,dd=hyp(ex,ey);
+      if(dd>1e-6){if(dd<rr){const nx=ex/dd,ny=ey/dd;take(nx*ca-ny*sa,nx*sa+ny*ca,rr-dd);}}
+      else{const px=c.hx-Math.abs(lx),py=c.hy-Math.abs(ly);
+        if(px<py){const s=lx<0?-1:1;take(s*ca,s*sa,px+rr);}else{const s=ly<0?-1:1;take(-s*sa,s*ca,py+rr);}}
+    }
+  }
+  if(areaBlocked(x,y,isCar)){   // 水・丘: いちばん近い通れる方向へ
+    let found=false;
+    for(const k of [r,r*2,r*4])if(!found)for(let i=0;i<16;i++){const t=i/16*TAU;if(!areaBlocked(x+Math.cos(t)*k,y+Math.sin(t)*k,isCar)){take(Math.cos(t),Math.sin(t),Math.min(k,r)*0.7);found=true;break;}}
+  }
+  return bd>0?{nx:bx,ny:by,d:bd}:null;
+}
+// 車を周りから押し出す。ぶつかった面の法線・当たった位置（車体の前後方向の位置s）を返す
+function resolveCar(c){
+  let hit=null;
+  for(let it=0;it<4;it++){
+    let best=null,bs=0;
+    for(const p of carCircles(c,c.x,c.y,c.a)){const k=contactAt(p[0],p[1],p[2],true);if(k&&(!best||k.d>best.d)){best=k;bs=p[3];}}
+    if(!best)break;
+    const push=Math.min(best.d,3)+0.02;
+    c.x+=best.nx*push;c.y+=best.ny*push;
+    if(!hit||best.d>hit.d)hit={n:[best.nx,best.ny],s:bs,d:best.d};
+  }
+  return hit;
+}
+// 車の速度（m/s、ワールド）。プレイヤー車は前後 v と横すべり vs、AI車は向き×速度、はねられた車は loose
+function carVel(c){
+  if(c.loose)return{x:c.loose.vx,y:c.loose.vy};
+  const ca=Math.cos(c.a),sa=Math.sin(c.a),vf=(c.v||0)/MSU,vs=c.vs||0;
+  return{x:ca*vf-sa*vs,y:sa*vf+ca*vs};
+}
+function setCarVel(c,vx,vy){
+  if(c.loose){c.loose.vx=vx;c.loose.vy=vy;return;}
+  const ca=Math.cos(c.a),sa=Math.sin(c.a);
+  c.v=(vx*ca+vy*sa)*MSU;c.vs=-vx*sa+vy*ca;
+}
+// 壁などに当たった時の速度の変化（反発・面に沿った摩擦・角が当たった時の回転）。衝突の強さ(m/s)を返す
+function wallResponse(c,hit,e=0.15){
+  const V=carVel(c),nx=hit.n[0],ny=hit.n[1],vn=V.x*nx+V.y*ny;
+  if(vn>=-0.05)return 0;
+  const imp=-vn;
+  let vx=V.x-(1+e)*vn*nx,vy=V.y-(1+e)*vn*ny;
+  const tn=vx*nx+vy*ny,tx=vx-tn*nx,ty=vy-tn*ny,tl=hyp(tx,ty);
+  if(tl>1e-6){const f=Math.max(0,1-0.35*imp/tl);vx=tn*nx+tx*f;vy=tn*ny+ty*f;}
+  const T=CARTYPES[c.type]||CARTYPES.sedan,Lm=T.l*0.4,Wm=T.w*0.4,I=(Lm*Lm+Wm*Wm)/12;
+  const rx=Math.cos(c.a)*hit.s*0.4,ry=Math.sin(c.a)*hit.s*0.4,jx=nx*imp*(1+e),jy=ny*imp*(1+e);
+  const dw=(rx*jy-ry*jx)/I*0.5;
+  if(c.loose)c.loose.w+=dw;else c.w=(c.w||0)+dw;
+  setCarVel(c,vx,vy);
+  return imp;
+}
+// 車どうしの衝突（円列どうし）。質量に応じて押し合い、運動量を受け渡す。強さ(m/s)を返す
+function carCarCollide(a,b){
+  if(hyp(a.x-b.x,a.y-b.y)>(CARTYPES[a.type].l+CARTYPES[b.type].l)/2+2)return 0;
+  const A=carCircles(a,a.x,a.y,a.a),B=carCircles(b,b.x,b.y,b.a);
+  let best=null;
+  for(const p of A)for(const q of B){const dx=p[0]-q[0],dy=p[1]-q[1],d=hyp(dx,dy),pen=p[2]+q[2]-d;
+    if(pen>0&&(!best||pen>best.pen))best={pen,nx:d>1e-6?dx/d:Math.cos(a.a+1.57),ny:d>1e-6?dy/d:Math.sin(a.a+1.57),sa:p[3],sb:q[3]};}
+  if(!best)return 0;
+  const ma=CARTYPES[a.type].mass,mb=b.parkedStatic?ma*4+4:CARTYPES[b.type].mass;
+  a.x+=best.nx*best.pen*mb/(ma+mb);a.y+=best.ny*best.pen*mb/(ma+mb);
+  b.x-=best.nx*best.pen*ma/(ma+mb);b.y-=best.ny*best.pen*ma/(ma+mb);
+  const Va=carVel(a),Vb=carVel(b),rel=(Va.x-Vb.x)*best.nx+(Va.y-Vb.y)*best.ny;
+  if(rel>=0)return 0;
+  const e=0.25,j=-(1+e)*rel/(1/ma+1/mb);
+  setCarVel(a,Va.x+j/ma*best.nx,Va.y+j/ma*best.ny);
+  const nvx=Vb.x-j/mb*best.nx,nvy=Vb.y-j/mb*best.ny;
+  // はねられた側: 道路から外れて滑る（強く当たった時）。パトカーは追跡を続ける
+  const T=CARTYPES[b.type],Lm=T.l*0.4,I=(Lm*Lm+(T.w*0.4)**2)/12;
+  const rx=Math.cos(b.a)*best.sb*0.4,ry=Math.sin(b.a)*best.sb*0.4,w=(rx*(-j/mb*best.ny)-ry*(-j/mb*best.nx))/I*0.5;
+  if(b.isCop){setCarVel(b,nvx,nvy);b.vs=0;}
+  else{b.loose=b.loose||{vx:0,vy:0,w:0,t:0};b.loose.vx=nvx;b.loose.vy=nvy;b.loose.w+=w;b.loose.t=0;}
+  return -rel;
+}
+// はねられた車・押された駐車車両: 摩擦で止まるまで滑り、壁にも当たる。止まったら路上駐車（事故車）になる
+function updLooseCar(c,dt){
+  const L=c.loose;
+  const sp=hyp(L.vx,L.vy);
+  if(sp>1e-3){const dec=Math.min(sp,5.5*dt);L.vx-=L.vx/sp*dec;L.vy-=L.vy/sp*dec;}
+  L.w*=Math.exp(-dt*2.5);
+  const n=Math.max(1,Math.ceil(sp*dt/0.4/1.5));
+  for(let i=0;i<n;i++){
+    c.x+=L.vx*dt/n/0.4;c.y+=L.vy*dt/n/0.4;c.a+=L.w*dt/n;
+    const h=resolveCar(c);if(h)wallResponse(c,h,0.2);
+  }
+  c.v=0;
+  L.t+=dt;
+  if(sp<0.25&&Math.abs(L.w)<0.08&&L.t>0.6){c.loose=null;return true;}
+  return false;
 }
 function heatEvent(n){
   S.stars=clamp(S.stars+n,0,5);S.crimeT=0;updStarsUI();
@@ -7214,45 +7358,90 @@ function updPlayer(dt){
       moveEnt(S,S.px+vx*sp*dt*FK,S.py+vy*sp*dt*FK,2.2,false)||0;
       // moveEntはo.x/o.yを使うため一時変換
     }
+    // 車・人はすり抜けない（車体の形に沿って押し返される）
+    for(const list of [parked,traffic,polices])for(const o of list){
+      if(hyp(o.x-S.px,o.y-S.py)>20)continue;
+      for(const q of carCircles(o,o.x,o.y,o.a)){const dx=S.px-q[0],dy=S.py-q[1],d=hyp(dx,dy),m=q[2]+1.1;
+        if(d<m&&d>1e-6&&!blockedAt(S.px+dx/d*(m-d),S.py+dy/d*(m-d),1.1,false)){S.px+=dx/d*(m-d);S.py+=dy/d*(m-d);}}
+    }
+    for(const p of peds){
+      if(p.down>0)continue;
+      const dx=S.px-p.x,dy=S.py-p.y,d=hyp(dx,dy);
+      if(d<2.1&&d>1e-6&&!blockedAt(S.px+dx/d*(2.1-d),S.py+dy/d*(2.1-d),1.1,false)){S.px+=dx/d*(2.1-d);S.py+=dy/d*(2.1-d);if(!p.say&&Math.random()<0.03)p.say={t:1.4,txt:Math.random()<.5?'おっと':'すみません'};}
+    }
     // 近くの乗り物（乗車プロンプト用）
     S.nearVeh=false;
     for(const cc of parked)if(hyp(cc.x-S.px,cc.y-S.py)<30){S.nearVeh=true;break;}
     if(!S.nearVeh)for(const cc of traffic)if(hyp(cc.x-S.px,cc.y-S.py)<30){S.nearVeh=true;break;}
   }else{
-    const c=S.pcar;
+    const c=S.pcar,T=CARTYPES[c.type];
     const wet=1-.28*S.rainI; // 雨でグリップ・制動が低下
-    let acc=0;
-    if(inp.y<-0.15)acc=CARTYPES[c.type].acc*(-inp.y);
-    if(inp.y>0.15)acc=(c.v>25?-460*wet:-170)*inp.y;
-    c.v+=acc*dt;
-    c.v-=c.v*0.55*dt;
-    if(k.brake)c.v-=c.v*2.6*wet*dt;
     const ri=roadInfo(c.x,c.y);
     const onRoad=ri&&ri.d<ri.road.w/2+10;
-    if(!onRoad)c.v-=c.v*1.5*dt;
-    c.v=clamp(c.v,-95,CARTYPES[c.type].max);
-    const steer=inp.x*2.7*clamp(Math.abs(c.v)/70,0,1)*(c.v<0?-1:1);
-    c.a+=steer*wet*dt;
-    const nx=c.x+Math.cos(c.a)*c.v*dt*VK,ny=c.y+Math.sin(c.a)*c.v*dt*VK;
-    const spd=Math.abs(c.v);
-    smashAhead(c,nx,ny);
-    const hit=moveEnt(c,nx,ny,6,true);
-    if(hit&&spd>60&&typeof G3!=='undefined'&&G3.dyn&&G3.dyn.dent)
-      G3.dyn.dent(c,c.x+Math.cos(c.a)*(c.v>=0?7:-7),c.y+Math.sin(c.a)*(c.v>=0?7:-7),spd);
-    if(hit){
-      if(spd>130){
-        c.hp-=spd*0.05;addPart(c.x+Math.cos(c.a)*7,c.y+Math.sin(c.a)*7,'spark',5);
-        thud(clamp(spd/500,.1,.4));c.v*=-0.32;
-        S.shake=Math.min(10,spd*.03);
-      }else c.v*=0.4;
+    c.vs=c.vs||0;c.w=c.w||0;c.steer=c.steer||0;
+    // 前後方向: エンジンの力は速度とともに落ち（最高速で0）、アクセルを離すと転がり抵抗・空気抵抗・エンジンブレーキで減速
+    const vf=c.v/MSU,thr=inp.y<-0.15?-inp.y:0,brk=inp.y>0.15?inp.y:0;
+    const vmax=T.kmh/3.6*(onRoad?1:0.5);
+    let acc=0;
+    if(thr>0){if(vf>=-0.3)acc+=T.a0*thr*Math.max(-0.6,1-(vf/vmax)**2);else acc+=T.br*wet*thr;}
+    if(brk>0){if(vf>0.3)acc-=T.br*wet*brk;else acc-=2.6*brk*Math.max(0,1-(-vf/7)**2);}   // バックは約25km/hまで
+    if(thr===0&&!(brk>0&&vf<=0.3)&&Math.abs(vf)>0.05)acc-=Math.sign(vf)*(0.15+0.00042*vf*vf+(Math.abs(vf)>1?0.5:0)+(onRoad?0:1.8));
+    if(k.brake&&Math.abs(vf)>0.1)acc-=Math.sign(vf)*6*wet;   // サイドブレーキ
+    let nvf=vf+acc*dt;
+    if((vf>0&&nvf<0)||(vf<0&&nvf>0))nvf=0;                   // 止まったら一度止まる（そのまま逆走しない）
+    // 横すべり: タイヤのグリップで消える（サイドブレーキ中は滑る）
+    const g=T.grip*wet*(onRoad?1:0.75);
+    let vs=c.vs;
+    const gl=g*(k.brake?0.3:1)*dt;
+    vs-=Math.sign(vs)*Math.min(Math.abs(vs),gl);
+    // ハンドル: 最小回転半径とタイヤの横グリップで決まる旋回（速いほど大回り）
+    c.steer+=(inp.x-c.steer)*Math.min(1,dt*6);
+    const sp=Math.abs(nvf);
+    let yawMax=sp<0.2?0:Math.min(sp/T.rmin,g/sp);
+    if(k.brake&&sp>5)yawMax*=1.8;
+    const da=(c.steer*yawMax*(nvf<0?-1:1)+c.w)*dt;
+    c.w*=Math.exp(-dt*3.5);
+    const cd=Math.cos(da),sd=Math.sin(da);
+    c.a+=da;
+    c.v=clamp((nvf*cd+vs*sd)*MSU,-40,T.max*1.03);c.vs=-nvf*sd+vs*cd;
+    // 移動（速い時は分割）と押し出し
+    const V=carVel(c),stepU=hyp(V.x,V.y)*dt/0.4,nsub=Math.max(1,Math.ceil(stepU/1.5));
+    const spdI=Math.abs(c.v);
+    {const span=T.l/2;smashAhead(c,c.x+Math.cos(c.a)*span*(c.v>=0?1:-1)+V.x*dt/0.4,c.y+Math.sin(c.a)*span*(c.v>=0?1:-1)+V.y*dt/0.4,T.w/2+1);}
+    let imp=0,hitN=null,hitS=0;
+    for(let i=0;i<nsub;i++){
+      const W=carVel(c);
+      c.x+=W.x*dt/nsub/0.4;c.y+=W.y*dt/nsub/0.4;
+      const h=resolveCar(c);
+      if(h){const im=wallResponse(c,h);if(im>imp){imp=im;hitN=h.n;hitS=h.s;}}
     }
-    // ブレーキランプ・スキッド痕
-    c.brakeL=(inp.y>0.15||k.brake)&&spd>8;
-    const drift=(k.brake&&spd>110)||(Math.abs(inp.x)>.85&&spd>235)||(hit&&spd>130);
+    // 通行車・駐車車両・パトカーとの衝突
+    for(const list of [traffic,parked,polices])for(const o of list){
+      const im=carCarCollide(c,o);
+      if(im>0){
+        if(im>imp)imp=im;
+        if(list===traffic&&im>2.5){o.stun=3;}
+        if(im>4&&typeof G3!=='undefined'&&G3.dyn&&G3.dyn.dent){const mx=(o.x+c.x)/2,my=(o.y+c.y)/2;G3.dyn.dent(c,mx,my,im*MSU*1.6);G3.dyn.dent(o,mx,my,im*MSU*1.3);}
+        if(im>8){S.hitCount++;if(S.hitCount%3===0){heatEvent(1);toast('🚨 危険運転で通報された！');}}
+      }
+    }
+    const hit=imp>0.3;
+    if(imp>2.5&&hitN&&typeof G3!=='undefined'&&G3.dyn&&G3.dyn.dent){
+      const T2=CARTYPES[c.type];
+      G3.dyn.dent(c,c.x+Math.cos(c.a)*hitS-hitN[0]*T2.w/2,c.y+Math.sin(c.a)*hitS-hitN[1]*T2.w/2,imp*MSU*1.6);
+    }
+    if(imp>3){
+      c.hp-=Math.max(0,imp-3)*2.4;
+      if(imp>6){addPart(c.x+Math.cos(c.a)*hitS,c.y+Math.sin(c.a)*hitS,'spark',Math.min(8,2+imp*0.4|0));S.shake=Math.min(10,imp*0.7);}
+      thud(clamp(imp/25,.08,.4));
+    }
+    // ブレーキランプ・スキッド痕（横すべり・急ブレーキの時）
+    c.brakeL=(brk>0&&vf>0.3)||k.brake;
+    const drift=(k.brake&&sp>8)||Math.abs(c.vs)>2.2||(brk>0&&vf>14&&wet<0.9)||imp>8;
     if(drift&&SKIDS.length<240){
       const bx=c.x-Math.cos(c.a)*4.5,by=c.y-Math.sin(c.a)*4.5;
       const px2=Math.sin(c.a)*1.8,py2=-Math.cos(c.a)*1.8;
-      const mv=Math.max(spd*dt*VK*1.25,1.5);
+      const mv=Math.max(hyp(V.x,V.y)*dt/0.4*1.25,1.5);
       for(const sd of[-1,1]){
         SKIDS.push({x1:bx+px2*sd,y1:by+py2*sd,
           x2:bx+px2*sd-Math.cos(c.a)*mv,y2:by+py2*sd-Math.sin(c.a)*mv,ttl:7});
@@ -7329,7 +7518,7 @@ function tryEnterExit(){
     toast('🚗 車を奪った！ドライバーが通報するかも…');
     heatEvent(1);
   }
-  best.v=0;S.pcar=best;S.mode='car';
+  best.v=0;best.vs=0;best.w=0;best.steer=0;best.loose=null;best.wreck=false;S.pcar=best;S.mode='car';
   blip(220,.15,'triangle',.12);
   document.getElementById('btnE').textContent='降りる';
 }
@@ -7347,9 +7536,8 @@ function spawnTraffic(){
       :['sedan','kei','kei','kei','taxi','truck','bike','minivan','keitruck','keitruck','van'];
     const c=mkCar(p.x,p.y,p.a,types[(Math.random()*types.length)|0]);
     c.road=r;c.d=d;c.dir=Math.random()<.5?1:-1;
-    c.cruise=(r.kind==='main'?130:95)+Math.random()*45;
-    if(c.type==='bus')c.cruise*=.72;
-    if(c.type==='bike')c.cruise*=1.08;
+    c.cruise=(r.kind==='main'?50+Math.random()*12:35+Math.random()*10)/0.72;   // km/h → 内部速度
+    if(c.type==='bus'||c.type==='truck')c.cruise*=.9;
     c.v=c.cruise;c.stun=0;
     traffic.push(c);
     return;
@@ -7359,15 +7547,17 @@ function updTraffic(dt){
   for(let i=traffic.length-1;i>=0;i--){
     const c=traffic[i];
     if(hyp(c.x-S.px,c.y-S.py)>1900){traffic.splice(i,1);continue;}
+    if(c.loose)continue;   // はねられて滑っている（frame で処理）
     if(c.stun>0){c.stun-=dt;c.v=0;continue;}
-    // 前方チェック
+    // 前方チェック（見る距離は速度に応じて: 止まれる距離＋余裕）
     const p=plAt(c.road.pl,c.d);
     const hx=Math.cos(c.a),hy=Math.sin(c.a);
     let slow=false;
-    const ax=c.x+hx*30,ay=c.y+hy*30;
-    if(S.mode==='car'&&hyp(S.pcar.x-ax,S.pcar.y-ay)<20)slow=true;
-    if(S.mode==='foot'&&hyp(S.px-ax,S.py-ay)<14)slow=true;
-    for(const o of traffic)if(o!==c&&Math.cos(c.a-o.a)>-0.5&&hyp(o.x-ax,o.y-ay)<16){slow=true;break;}
+    const look=16+c.v*0.42,ax=c.x+hx*look,ay=c.y+hy*look;
+    if(S.mode==='car'&&hyp(S.pcar.x-ax,S.pcar.y-ay)<look*0.55+6)slow=true;
+    if(S.mode==='foot'&&hyp(S.px-ax,S.py-ay)<look*0.5+4)slow=true;
+    for(const o of traffic)if(o!==c&&Math.cos(c.a-o.a)>-0.5&&hyp(o.x-ax,o.y-ay)<look*0.5+5){slow=true;break;}
+    if(!slow)for(const o of parked)if(o.wreck&&hyp(o.x-ax,o.y-ay)<look*0.5+5){slow=true;break;}
     // 横断中の歩行者の前では止まる
     if(!slow)for(const p of peds)if((p.crossing||p.flee>0)&&hyp(p.x-(c.x+hx*16),p.y-(c.y+hy*16))<15){slow=true;break;}
     // 信号: 赤・黄（停止線まで余裕がある時）なら停止線の手前で止まる
@@ -7375,15 +7565,16 @@ function updTraffic(dt){
     const cr=c.road.cross,cg=c.road.crossG;
     for(let i=0;i<cr.length;i++){
       const ds=cr[i]-c.dir*15,ahead=(ds-c.d)*c.dir;
-      if(ahead<-0.5||ahead>70)continue;
+      if(ahead<-0.5||ahead>120)continue;
       const col=sigCol(cg[i]);
       if(col==='#3ee06a'||(col==='#ffd23c'&&ahead<14))continue;
       if(stopAt===null||ahead<(stopAt-c.d)*c.dir)stopAt=ds;
     }
     let tgt=slow?0:c.cruise;
-    if(stopAt!==null){const ah=(stopAt-c.d)*c.dir;tgt=Math.min(tgt,Math.max(0,ah-1.5)*4.2);}
+    // 停止線まで 3m/s² で止まれる速度（v=√(2ad)）
+    if(stopAt!==null){const ah=(stopAt-c.d)*c.dir;tgt=Math.min(tgt,MSU*Math.sqrt(2*3*Math.max(0,ah-1.5)*0.4));}
     c.brakeL=slow||(stopAt!==null&&c.v>tgt+2)||(stopAt!==null&&c.v<3);
-    c.v=lerp(c.v,tgt,dt*(tgt<c.v?3.4:1.6));
+    {const T=CARTYPES[c.type],up=Math.min(T.a0*0.7,2.2)*MSU*dt,dn=(slow?7:3.5)*MSU*dt;c.v+=clamp(tgt-c.v,-dn,up);}
     // プレイヤーに道をふさがれたらクラクション
     if(slow&&S.mode==='car'&&hyp(S.pcar.x-c.x,S.pcar.y-c.y)<45){c.blockT=(c.blockT||0)+dt;if(c.blockT>2.6){c.blockT=-4;if(hyp(c.x-S.px,c.y-S.py)<260)horn();}}else if(c.blockT>0)c.blockT=0;
     const pdd=c.d;
@@ -7400,7 +7591,7 @@ function updTraffic(dt){
         const dirPref=Math.cos(na-c.a)>=0?1:-1;
         c.road=j.road;c.d=clamp(j.od+dirPref*2,0,j.road.pl.len);
         c.dir=Math.random()<0.85?dirPref:-dirPref;
-        if(j.road.kind==='lane')c.cruise=Math.min(c.cruise,70);
+        if(j.road.kind==='lane')c.cruise=Math.min(c.cruise,26/0.72);
       }
       break;
     }
@@ -7502,18 +7693,18 @@ function updPeds(dt){
     p.t+=dt;
     if(!p.say&&p.flee<=0&&Math.random()<dt*.05&&hyp(p.x-S.px,p.y-S.py)<170)
       p.say={t:3,txt:PEDSAY[(Math.random()*PEDSAY.length)|0]};
-    if(S.mode==='car'&&Math.abs(S.pcar.v)>110&&hyp(S.pcar.x-p.x,S.pcar.y-p.y)<55){
+    if(S.mode==='car'&&Math.abs(S.pcar.v)>55&&hyp(S.pcar.x-p.x,S.pcar.y-p.y)<55){
       if(p.flee<=0)p.say={t:1.6,txt:Math.random()<.5?'ひぃっ！':'あぶないぞなもし！'};
       p.flee=1.5;p.fa=Math.atan2(p.y-S.pcar.y,p.x-S.pcar.x);
     }
     // 轢かれ判定
-    if(S.mode==='car'&&Math.abs(S.pcar.v)>60&&hyp(S.pcar.x-p.x,S.pcar.y-p.y)<9){
+    if(S.mode==='car'&&Math.abs(S.pcar.v)>14&&hyp(S.pcar.x-p.x,S.pcar.y-p.y)<16&&carCircles(S.pcar,S.pcar.x,S.pcar.y,S.pcar.a).some(q=>hyp(q[0]-p.x,q[1]-p.y)<q[2]+1.2)){
       p.down=4;p.flee=0;p.wait=null;p.crossing=false;
       if(p.static){p.static=false;p.pose=null;p.y3=null;if(p.spot)p.spot.used=false;p.spot=null;}
       addPart(p.x,p.y,'star',4);thud(.25);
       toast('😵 歩行者をはねた！手配度アップ！');
       heatEvent(1);
-      S.pcar.v*=0.7;
+      S.pcar.v*=Math.max(0.6,1-0.3/CARTYPES[S.pcar.type].mass);
     }
     if(p.down>0)continue;
     if(p.static&&p.flee>0){ // 座っていた人も逃げ出す
@@ -7619,7 +7810,7 @@ function updPolice(dt){
     if(S.copT<=0){
       S.copT=2.6;
       const p=copSpawnPoint(450,900);
-      if(p){const c=mkCar(p.x,p.y,p.a,'police');c.stuck=0;polices.push(c);}
+      if(p){const c=mkCar(p.x,p.y,p.a,'police');c.stuck=0;c.isCop=true;c.v=40/0.72;polices.push(c);}
     }
   }
   let bust=false;
@@ -7630,27 +7821,32 @@ function updPolice(dt){
       c.v=lerp(c.v,0,dt*2);
       if(dist>700||c.v<5){polices.splice(i,1);continue;}
     }else{
-      const want=Math.atan2(dy,dx);
-      const diff=angDiff(c.a,want);
-      c.a+=clamp(diff,-2.4*dt,2.4*dt)*clamp(Math.abs(c.v)/50+.4,0,1.6);
-      const target=dist<45?(S.mode==='foot'?0:130):CARTYPES.police.max;
-      c.v=lerp(c.v,Math.abs(diff)>2?60:target,dt*2.2);
+      // 実車と同じ旋回の限界（最小回転半径・横グリップ）で向きを変え、曲がりきれない時は減速する
+      const T=CARTYPES.police,want=Math.atan2(dy,dx),diff=angDiff(c.a,want),ms=Math.abs(c.v)/MSU;
+      const yawMax=ms<0.3?0.6:Math.min(ms/T.rmin,T.grip/ms)+0.15;
+      c.a+=clamp(diff,-yawMax*dt,yawMax*dt);
+      let target=dist<45?(S.mode==='foot'?0:Math.abs(S.pcar.v)+10):T.max*0.92;
+      if(Math.abs(diff)>1.1)target=Math.min(target,32/0.72);
+      c.v+=clamp(target-c.v,-T.br*MSU*dt,T.a0*MSU*dt);
     }
-    const nx=c.x+Math.cos(c.a)*c.v*dt*VK,ny=c.y+Math.sin(c.a)*c.v*dt*VK;
-    smashAhead(c,nx,ny);
-    const hit=moveEnt(c,nx,ny,6,true);
-    if(hit){c.stuck+=dt;c.v*=0.3;}else c.stuck=Math.max(0,c.stuck-dt);
+    c.vs=0;c.w=0;
+    const span=CARTYPES.police.l/2;
+    smashAhead(c,c.x+Math.cos(c.a)*(span+c.v*dt*VK),c.y+Math.sin(c.a)*(span+c.v*dt*VK),CARTYPES.police.w/2+1);
+    c.x+=Math.cos(c.a)*c.v*dt*VK;c.y+=Math.sin(c.a)*c.v*dt*VK;
+    const h=resolveCar(c);
+    const hit=!!h;
+    if(h){wallResponse(c,h,0.1);c.stuck+=dt;}else c.stuck=Math.max(0,c.stuck-dt);
+    for(const o of parked)carCarCollide(c,o);
     if(c.stuck>6||(c.stuck>3&&dist>300)){ // スタック解除：同じ道路上へ復帰
       const p=copSpawnPoint(280,650);
-      if(p){c.x=p.x;c.y=p.y;c.a=p.a;c.stuck=0;c.v=80;}
+      if(p){c.x=p.x;c.y=p.y;c.a=p.a;c.stuck=0;c.v=40/0.72;}
     }
     // 体当たり・逮捕判定
-    if(S.mode==='car'&&dist<20){
-      S.pcar.hp-=40*dt;
-      S.pcar.v*=(1-1.2*dt);
-      if(Math.random()<dt*4)addPart(S.px,S.py,'spark',2);
+    if(S.mode==='car'&&dist<22){
+      S.pcar.hp-=6*dt;
+      if(Math.random()<dt*2)addPart(S.px,S.py,'spark',2);
     }
-    if(S.stars>0&&dist<(S.mode==='foot'?28:22)&&(S.mode==='foot'||Math.abs(S.pcar.v)<30))bust=true;
+    if(S.stars>0&&dist<(S.mode==='foot'?28:22)&&(S.mode==='foot'||Math.abs(S.pcar.v)<20))bust=true;
   }
   if(bust){S.bustT+=dt;if(S.bustT>1.4)busted();}
   else S.bustT=Math.max(0,S.bustT-dt*.5);
@@ -7785,7 +7981,7 @@ function ensureGig(){
   const a=GIGSPOTS[(Math.random()*GIGSPOTS.length)|0];
   let b=a;while(b===a)b=GIGSPOTS[(Math.random()*GIGSPOTS.length)|0];
   const dist=hyp(a[1]-b[1],a[2]-b[2]);
-  S.gig={from:a,to:b,time:Math.round(30+dist/80),reward:Math.round((dist*1.6+2500)/100)*100};
+  S.gig={from:a,to:b,time:Math.round(45+dist/26),reward:Math.round((dist*1.6+2500)/100)*100};
 }
 function updMission(dt){
   ensureGig();
@@ -9944,29 +10140,13 @@ function frame(ts){
     if(spawnT<=0){spawnT=.5;spawnTraffic();spawnPed();}
     spawnAmbient(dt);
     if(S.hp<=0)hospital();
-    // プレイヤー車 vs 通行車
-    if(S.mode==='car'){
+    // はねられた車・押された駐車車両の滑り（止まったら路上に残る）
+    for(let i=traffic.length-1;i>=0;i--){const o=traffic[i];if(o.loose&&updLooseCar(o,dt)){traffic.splice(i,1);o.v=0;o.wreck=true;parked.push(o);}}
+    for(const o of parked)if(o.loose)updLooseCar(o,dt);
+    for(const o of traffic)if(o.loose)for(const q of parked)if(q!==o&&hyp(q.x-o.x,q.y-o.y)<30)carCarCollide(o,q);
+    if(S.mode!=='car'){
       for(const o of traffic){
-        const d=hyp(o.x-S.pcar.x,o.y-S.pcar.y);
-        if(d<14){
-          const rel=Math.abs(S.pcar.v);
-          if(rel>60&&typeof G3!=='undefined'&&G3.dyn&&G3.dyn.dent){
-            const mx=(o.x+S.pcar.x)/2,my=(o.y+S.pcar.y)/2;
-            G3.dyn.dent(S.pcar,mx,my,rel);G3.dyn.dent(o,mx,my,rel*0.8);
-          }
-          if(rel>110){
-            o.stun=2.5;S.pcar.hp-=rel*.02;S.pcar.v*=.6;
-            addPart((o.x+S.pcar.x)/2,(o.y+S.pcar.y)/2,'spark',4);thud(.2);
-            S.hitCount++;
-            if(S.hitCount%3===0){heatEvent(1);toast('🚨 危険運転で通報された！');}
-          }else S.pcar.v*=.85;
-          const a=Math.atan2(o.y-S.pcar.y,o.x-S.pcar.x);
-          o.x+=Math.cos(a)*(14-d);o.y+=Math.sin(a)*(14-d);
-        }
-      }
-    }else{
-      for(const o of traffic){
-        if(o.v>70&&hyp(o.x-S.px,o.y-S.py)<8){
+        if(o.v>20&&hyp(o.x-S.px,o.y-S.py)<16&&carCircles(o,o.x,o.y,o.a).some(q=>hyp(q[0]-S.px,q[1]-S.py)<q[2]+1.4)){
           S.hp-=18;S.knock=1;S.dmgFlash=.6;S.shake=6;
           const a=Math.atan2(S.py-o.y,S.px-o.x);
           S.px+=Math.cos(a)*12;S.py+=Math.sin(a)*12;
@@ -12418,30 +12598,58 @@ G3.world = (function () {
     scene.add(m);
   }
   // モデルの三角形のうち、地面から 0.4〜1.9m（体の高さ）にある部分を OCC のマスに焼く
+  // ランドマークの当たり判定: 地面から 0.4〜1.9m の高さにある面を、高さで切り取ってから格子に塗る
+  // （三角形を細かく点で埋めると大きな壁で遅いので、辺をなぞり、水平に近い面だけ中を塗る）
   function bakeOccupancy(o) {
     if (typeof occAdd !== 'function') return;
     o.updateMatrixWorld(true);
-    const lo = 0.4 * U, hi = 1.9 * U, step = OCELL * 0.45;
-    const A = new THREE.Vector3(), B = new THREE.Vector3(), Cc = new THREE.Vector3();
+    const lo = 0.4 * U, hi = 1.9 * U, C2 = OCELL;
+    const P = [new THREE.Vector3(), new THREE.Vector3(), new THREE.Vector3()];
+    const clip = (poly, h, above) => {
+      const out = [];
+      for (let i = 0; i < poly.length; i++) {
+        const a = poly[i], b = poly[(i + 1) % poly.length], ia = above ? a[1] >= h : a[1] <= h, ib = above ? b[1] >= h : b[1] <= h;
+        if (ia) out.push(a);
+        if (ia !== ib) { const t = (h - a[1]) / (b[1] - a[1]); out.push([a[0] + (b[0] - a[0]) * t, h, a[2] + (b[2] - a[2]) * t]); }
+      }
+      return out;
+    };
     o.traverse(m => {
       if (!m.isMesh || !m.geometry || !m.geometry.attributes.position) return;
       const pos = m.geometry.attributes.position, idx = m.geometry.index;
       const n = idx ? idx.count : pos.count;
       for (let t = 0; t < n; t += 3) {
-        const ia = idx ? idx.getX(t) : t, ib = idx ? idx.getX(t + 1) : t + 1, ic = idx ? idx.getX(t + 2) : t + 2;
-        A.fromBufferAttribute(pos, ia).applyMatrix4(m.matrixWorld);
-        B.fromBufferAttribute(pos, ib).applyMatrix4(m.matrixWorld);
-        Cc.fromBufferAttribute(pos, ic).applyMatrix4(m.matrixWorld);
-        const g0 = heightAt(A.x, A.z);
-        const ymin = Math.min(A.y, B.y, Cc.y) - g0, ymax = Math.max(A.y, B.y, Cc.y) - g0;
-        if (ymax < lo || ymin > hi + 6) continue;
-        const L = Math.max(A.distanceTo(B), B.distanceTo(Cc), Cc.distanceTo(A));
-        const k = Math.max(1, Math.ceil(L / step));
-        for (let i = 0; i <= k; i++) for (let j = 0; i + j <= k; j++) {
-          const u = i / k, v = j / k, w = 1 - u - v;
-          const x = A.x * w + B.x * u + Cc.x * v, z = A.z * w + B.z * u + Cc.z * v, y = A.y * w + B.y * u + Cc.y * v;
-          const yr = y - heightAt(x, z);
-          if (yr >= lo && yr <= hi) occAdd(x, z);
+        for (let q = 0; q < 3; q++) P[q].fromBufferAttribute(pos, idx ? idx.getX(t + q) : t + q).applyMatrix4(m.matrixWorld);
+        const cx = (P[0].x + P[1].x + P[2].x) / 3, cz = (P[0].z + P[1].z + P[2].z) / 3, g0 = heightAt(cx, cz);
+        if (Math.max(P[0].y, P[1].y, P[2].y) - g0 < lo || Math.min(P[0].y, P[1].y, P[2].y) - g0 > hi) continue;
+        const poly = clip(clip(P.map(v => [v.x, v.y, v.z]), g0 + lo, true), g0 + hi, false);
+        if (poly.length < 2) continue;
+        for (let i = 0; i < poly.length; i++) {
+          const a = poly[i], b = poly[(i + 1) % poly.length], L = Math.hypot(b[0] - a[0], b[2] - a[2]), st = Math.max(1, Math.ceil(L / (C2 * 0.5)));
+          for (let j = 0; j <= st; j++) {
+            const x = a[0] + (b[0] - a[0]) * j / st, z = a[2] + (b[2] - a[2]) * j / st;
+            // 坂（石段など）の上では、その場所の地面からの高さで判定し直す
+            const yy = a[1] + (b[1] - a[1]) * j / st - heightAt(x, z);
+            if (yy >= lo - 0.3 && yy <= hi) occAdd(x, z);
+          }
+        }
+        let x0 = 1e9, x1 = -1e9, z0 = 1e9, z1 = -1e9;
+        for (const v of poly) { x0 = Math.min(x0, v[0]); x1 = Math.max(x1, v[0]); z0 = Math.min(z0, v[2]); z1 = Math.max(z1, v[2]); }
+        if (x1 - x0 > C2 && z1 - z0 > C2) {
+          for (let x = Math.floor(x0 / C2) * C2 + C2 / 2; x < x1; x += C2) for (let z = Math.floor(z0 / C2) * C2 + C2 / 2; z < z1; z += C2) {
+            let inside = false;
+            for (let i = 0, j = poly.length - 1; i < poly.length; j = i++) {
+              const a = poly[i], b = poly[j];
+              if ((a[2] > z) !== (b[2] > z) && x < (b[0] - a[0]) * (z - a[2]) / (b[2] - a[2]) + a[0]) inside = !inside;
+            }
+            if (!inside) continue;
+            // 面の高さ（平面の式）を地面と比べる
+            const e1 = [P[1].x - P[0].x, P[1].y - P[0].y, P[1].z - P[0].z], e2 = [P[2].x - P[0].x, P[2].y - P[0].y, P[2].z - P[0].z];
+            const nx = e1[1] * e2[2] - e1[2] * e2[1], ny = e1[2] * e2[0] - e1[0] * e2[2], nz = e1[0] * e2[1] - e1[1] * e2[0];
+            const y = Math.abs(ny) > 1e-6 ? P[0].y - (nx * (x - P[0].x) + nz * (z - P[0].z)) / ny : g0 + lo;
+            const yr = y - heightAt(x, z);
+            if (yr >= lo && yr <= hi) occAdd(x, z);
+          }
         }
       }
     });
@@ -12583,8 +12791,90 @@ G3.street = (function () {
     guard_pipe: 55, end_marker: 30, traffic_cone: 10, barricade: 20, koji_sign: 20, stand_sign: 15, nobori_a: 15, nobori_b: 15, nobori_c: 15,
     nobori_d: 15, nobori_e: 15, bicycle_a: 20, bicycle_b: 20, bicycle_c: 20, bench: 70, recycle_box: 40, post_square: 90, post_round: 90,
     planter_box: 70, potted_plant: 20, park_lamp: 80, taxi_sign: 40, iron_fence: 70, car_stop: 60, hydrant: 70, map_board: 90, parking_sign: 120 };
+  /* ---------- 見た目どおりの当たり判定 ----------
+     モデルの「体の高さ」(0.3〜1.9m) にある面を 8cm の格子に焼き、長方形の集まりにする。
+     ベンチの座面・自転車・柵・祠・看板の脚・ガソリンスタンドの柱などが形どおりに当たる。
+     布や頭上の物（暖簾・提灯・のぼりの旗・日よけ）はGTAと同じく通り抜けられる */
+  const SOFT = new Set(['noren', 'chochin', 'awning_red', 'awning_green', 'awning_blue', 'awning_orange', 'solar_panel', 'tv_antenna', 'tetrapod',
+    'nobori_a', 'nobori_b', 'nobori_c', 'nobori_d', 'nobori_e', 'backstop', 'jib_crane', 'lighthouse_red', 'lighthouse_white', 'fishing_boat']);
+  const baked = {};
+  function bakeShape(name) {
+    if (name in baked) return baked[name];
+    const node = NODE_ALIAS[name] ? G3.glbNode(...NODE_ALIAS[name]) : G3.glbNode('street', name);
+    if (!node || SOFT.has(name)) return (baked[name] = null);
+    node.updateMatrixWorld(true);
+    const inv = new THREE.Matrix4().copy(node.matrixWorld).invert();
+    const CELL = 0.08, LO = 0.3, HI = 1.9, cells = new Set();
+    const mark = (x, z) => cells.add(Math.floor(x / CELL) + ':' + Math.floor(-z / CELL));   // Blender (X, Y) = (x, -z)
+    const P = [new THREE.Vector3(), new THREE.Vector3(), new THREE.Vector3()];
+    const clip = (poly, h, keepAbove) => {   // y=h の平面で切る
+      const out = [];
+      for (let i = 0; i < poly.length; i++) {
+        const a = poly[i], b = poly[(i + 1) % poly.length];
+        const ina = keepAbove ? a[1] >= h : a[1] <= h, inb = keepAbove ? b[1] >= h : b[1] <= h;
+        if (ina) out.push(a);
+        if (ina !== inb) { const t = (h - a[1]) / (b[1] - a[1]); out.push([a[0] + (b[0] - a[0]) * t, h, a[2] + (b[2] - a[2]) * t]); }
+      }
+      return out;
+    };
+    node.traverse(m => {
+      if (!m.isMesh || !m.geometry) return;
+      const rel = new THREE.Matrix4().multiplyMatrices(inv, m.matrixWorld);
+      const pos = m.geometry.attributes.position, idx = m.geometry.index, n = idx ? idx.count : pos.count;
+      for (let t = 0; t < n; t += 3) {
+        for (let k = 0; k < 3; k++) P[k].fromBufferAttribute(pos, idx ? idx.getX(t + k) : t + k).applyMatrix4(rel);
+        if (Math.max(P[0].y, P[1].y, P[2].y) < LO || Math.min(P[0].y, P[1].y, P[2].y) > HI) continue;
+        const poly = clip(clip(P.map(v => [v.x, v.y, v.z]), LO, true), HI, false);
+        if (poly.length < 2) continue;
+        // 辺（縦の壁は線になる）
+        for (let i = 0; i < poly.length; i++) {
+          const a = poly[i], b = poly[(i + 1) % poly.length], L = Math.hypot(b[0] - a[0], b[2] - a[2]), st = Math.max(1, Math.ceil(L / (CELL * 0.5)));
+          for (let j = 0; j <= st; j++) mark(a[0] + (b[0] - a[0]) * j / st, a[2] + (b[2] - a[2]) * j / st);
+        }
+        // 面（座面など水平に近い面）
+        let x0 = 1e9, x1 = -1e9, z0 = 1e9, z1 = -1e9;
+        for (const v of poly) { x0 = Math.min(x0, v[0]); x1 = Math.max(x1, v[0]); z0 = Math.min(z0, v[2]); z1 = Math.max(z1, v[2]); }
+        if ((x1 - x0) > CELL && (z1 - z0) > CELL) {
+          for (let x = Math.floor(x0 / CELL) * CELL + CELL / 2; x < x1; x += CELL) for (let z = Math.floor(z0 / CELL) * CELL + CELL / 2; z < z1; z += CELL) {
+            let inside = false;
+            for (let i = 0, j = poly.length - 1; i < poly.length; j = i++) {
+              const a = poly[i], b = poly[j];
+              if ((a[2] > z) !== (b[2] > z) && x < (b[0] - a[0]) * (z - a[2]) / (b[2] - a[2]) + a[0]) inside = !inside;
+            }
+            if (inside) mark(x, z);
+          }
+        }
+      }
+    });
+    if (!cells.size) return (baked[name] = null);
+    // 連結した塊ごとに、詰まっていなければ長い方向で分けて長方形にする
+    const set = cells, seen = new Set(), comps = [];
+    for (const key of cells) {
+      if (seen.has(key)) continue;
+      const [ix, iy] = key.split(':').map(Number), comp = [], st = [[ix, iy]]; seen.add(key);
+      while (st.length) {
+        const [a, b] = st.pop(); comp.push([a, b]);
+        for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) { const k2 = (a + dx) + ':' + (b + dy); if (set.has(k2) && !seen.has(k2)) { seen.add(k2); st.push([a + dx, b + dy]); } }
+      }
+      comps.push(comp);
+    }
+    const bbox = cs => { let a0 = 1e9, a1 = -1e9, b0 = 1e9, b1 = -1e9; for (const [a, b] of cs) { a0 = Math.min(a0, a); a1 = Math.max(a1, a); b0 = Math.min(b0, b); b1 = Math.max(b1, b); } return [a0, a1, b0, b1]; };
+    const boxes = [];
+    const split = (cs, depth) => {
+      const [a0, a1, b0, b1] = bbox(cs), w = a1 - a0 + 1, h = b1 - b0 + 1;
+      if (cs.length / (w * h) >= 0.55 || w * h <= 6 || depth > 6) { boxes.push([a0, a1, b0, b1]); return; }
+      const byA = w >= h, mid = byA ? (a0 + a1) / 2 : (b0 + b1) / 2;
+      const L = cs.filter(c => (byA ? c[0] : c[1]) <= mid), R = cs.filter(c => (byA ? c[0] : c[1]) > mid);
+      if (!L.length || !R.length) { boxes.push([a0, a1, b0, b1]); return; }
+      split(L, depth + 1); split(R, depth + 1);
+    };
+    for (const c of comps) split(c, 0);
+    const out = boxes.length > 24 ? comps.map(bbox) : boxes;   // 箱が多すぎる物は塊ごとの外接長方形
+    return (baked[name] = out.map(([a0, a1, b0, b1]) => [(a0 + a1 + 1) / 2 * CELL, (b0 + b1 + 1) / 2 * CELL, (a1 - a0 + 1) / 2 * CELL, (b1 - b0 + 1) / 2 * CELL, 3]));
+  }
+  G3.bakeShape = bakeShape;
   function collide(name, x, y, rot, lift) {
-    const cs = COLL[name];
+    const cs = bakeShape(name) || COLL[name];
     if (!cs || lift > 1.5 || typeof addCollider !== 'function') return;
     const brk = BREAK[name], bid = name + '#' + (lists[name].length - 1);
     const al = -rot, ca = Math.cos(al), sa = Math.sin(al);
@@ -14330,7 +14620,7 @@ G3.street = (function () {
       const ix = p.x - p.nx * 1.0, iy = p.y - p.ny * 1.0;
       const ri = roadInfo(ix, iy);
       const ok = !inPort(p.x, p.y, 10) && !beach(p.x, p.y) && !inWaterRaw(ix, iy) && !nearBld(ix, iy, 1.5) &&
-        !(ri && ri.d < ri.road.w / 2 + 1) && !nearKey(ix, iy, 6) && railDist(ix, iy) > 6;
+        !(ri && ri.d < ri.road.w / 2 + G3.SW + 1.5) && !nearKey(ix, iy, 6) && railDist(ix, iy) > 6;   // 歩道の上には置かない
       return { ...p, ix, iy, ok };
     });
     for (let i = 0; i < wall.length;) {

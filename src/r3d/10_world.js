@@ -1784,30 +1784,58 @@ G3.world = (function () {
     scene.add(m);
   }
   // モデルの三角形のうち、地面から 0.4〜1.9m（体の高さ）にある部分を OCC のマスに焼く
+  // ランドマークの当たり判定: 地面から 0.4〜1.9m の高さにある面を、高さで切り取ってから格子に塗る
+  // （三角形を細かく点で埋めると大きな壁で遅いので、辺をなぞり、水平に近い面だけ中を塗る）
   function bakeOccupancy(o) {
     if (typeof occAdd !== 'function') return;
     o.updateMatrixWorld(true);
-    const lo = 0.4 * U, hi = 1.9 * U, step = OCELL * 0.45;
-    const A = new THREE.Vector3(), B = new THREE.Vector3(), Cc = new THREE.Vector3();
+    const lo = 0.4 * U, hi = 1.9 * U, C2 = OCELL;
+    const P = [new THREE.Vector3(), new THREE.Vector3(), new THREE.Vector3()];
+    const clip = (poly, h, above) => {
+      const out = [];
+      for (let i = 0; i < poly.length; i++) {
+        const a = poly[i], b = poly[(i + 1) % poly.length], ia = above ? a[1] >= h : a[1] <= h, ib = above ? b[1] >= h : b[1] <= h;
+        if (ia) out.push(a);
+        if (ia !== ib) { const t = (h - a[1]) / (b[1] - a[1]); out.push([a[0] + (b[0] - a[0]) * t, h, a[2] + (b[2] - a[2]) * t]); }
+      }
+      return out;
+    };
     o.traverse(m => {
       if (!m.isMesh || !m.geometry || !m.geometry.attributes.position) return;
       const pos = m.geometry.attributes.position, idx = m.geometry.index;
       const n = idx ? idx.count : pos.count;
       for (let t = 0; t < n; t += 3) {
-        const ia = idx ? idx.getX(t) : t, ib = idx ? idx.getX(t + 1) : t + 1, ic = idx ? idx.getX(t + 2) : t + 2;
-        A.fromBufferAttribute(pos, ia).applyMatrix4(m.matrixWorld);
-        B.fromBufferAttribute(pos, ib).applyMatrix4(m.matrixWorld);
-        Cc.fromBufferAttribute(pos, ic).applyMatrix4(m.matrixWorld);
-        const g0 = heightAt(A.x, A.z);
-        const ymin = Math.min(A.y, B.y, Cc.y) - g0, ymax = Math.max(A.y, B.y, Cc.y) - g0;
-        if (ymax < lo || ymin > hi + 6) continue;
-        const L = Math.max(A.distanceTo(B), B.distanceTo(Cc), Cc.distanceTo(A));
-        const k = Math.max(1, Math.ceil(L / step));
-        for (let i = 0; i <= k; i++) for (let j = 0; i + j <= k; j++) {
-          const u = i / k, v = j / k, w = 1 - u - v;
-          const x = A.x * w + B.x * u + Cc.x * v, z = A.z * w + B.z * u + Cc.z * v, y = A.y * w + B.y * u + Cc.y * v;
-          const yr = y - heightAt(x, z);
-          if (yr >= lo && yr <= hi) occAdd(x, z);
+        for (let q = 0; q < 3; q++) P[q].fromBufferAttribute(pos, idx ? idx.getX(t + q) : t + q).applyMatrix4(m.matrixWorld);
+        const cx = (P[0].x + P[1].x + P[2].x) / 3, cz = (P[0].z + P[1].z + P[2].z) / 3, g0 = heightAt(cx, cz);
+        if (Math.max(P[0].y, P[1].y, P[2].y) - g0 < lo || Math.min(P[0].y, P[1].y, P[2].y) - g0 > hi) continue;
+        const poly = clip(clip(P.map(v => [v.x, v.y, v.z]), g0 + lo, true), g0 + hi, false);
+        if (poly.length < 2) continue;
+        for (let i = 0; i < poly.length; i++) {
+          const a = poly[i], b = poly[(i + 1) % poly.length], L = Math.hypot(b[0] - a[0], b[2] - a[2]), st = Math.max(1, Math.ceil(L / (C2 * 0.5)));
+          for (let j = 0; j <= st; j++) {
+            const x = a[0] + (b[0] - a[0]) * j / st, z = a[2] + (b[2] - a[2]) * j / st;
+            // 坂（石段など）の上では、その場所の地面からの高さで判定し直す
+            const yy = a[1] + (b[1] - a[1]) * j / st - heightAt(x, z);
+            if (yy >= lo - 0.3 && yy <= hi) occAdd(x, z);
+          }
+        }
+        let x0 = 1e9, x1 = -1e9, z0 = 1e9, z1 = -1e9;
+        for (const v of poly) { x0 = Math.min(x0, v[0]); x1 = Math.max(x1, v[0]); z0 = Math.min(z0, v[2]); z1 = Math.max(z1, v[2]); }
+        if (x1 - x0 > C2 && z1 - z0 > C2) {
+          for (let x = Math.floor(x0 / C2) * C2 + C2 / 2; x < x1; x += C2) for (let z = Math.floor(z0 / C2) * C2 + C2 / 2; z < z1; z += C2) {
+            let inside = false;
+            for (let i = 0, j = poly.length - 1; i < poly.length; j = i++) {
+              const a = poly[i], b = poly[j];
+              if ((a[2] > z) !== (b[2] > z) && x < (b[0] - a[0]) * (z - a[2]) / (b[2] - a[2]) + a[0]) inside = !inside;
+            }
+            if (!inside) continue;
+            // 面の高さ（平面の式）を地面と比べる
+            const e1 = [P[1].x - P[0].x, P[1].y - P[0].y, P[1].z - P[0].z], e2 = [P[2].x - P[0].x, P[2].y - P[0].y, P[2].z - P[0].z];
+            const nx = e1[1] * e2[2] - e1[2] * e2[1], ny = e1[2] * e2[0] - e1[0] * e2[2], nz = e1[0] * e2[1] - e1[1] * e2[0];
+            const y = Math.abs(ny) > 1e-6 ? P[0].y - (nx * (x - P[0].x) + nz * (z - P[0].z)) / ny : g0 + lo;
+            const yr = y - heightAt(x, z);
+            if (yr >= lo && yr <= hi) occAdd(x, z);
+          }
         }
       }
     });

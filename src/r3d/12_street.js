@@ -55,8 +55,90 @@ G3.street = (function () {
     guard_pipe: 55, end_marker: 30, traffic_cone: 10, barricade: 20, koji_sign: 20, stand_sign: 15, nobori_a: 15, nobori_b: 15, nobori_c: 15,
     nobori_d: 15, nobori_e: 15, bicycle_a: 20, bicycle_b: 20, bicycle_c: 20, bench: 70, recycle_box: 40, post_square: 90, post_round: 90,
     planter_box: 70, potted_plant: 20, park_lamp: 80, taxi_sign: 40, iron_fence: 70, car_stop: 60, hydrant: 70, map_board: 90, parking_sign: 120 };
+  /* ---------- 見た目どおりの当たり判定 ----------
+     モデルの「体の高さ」(0.3〜1.9m) にある面を 8cm の格子に焼き、長方形の集まりにする。
+     ベンチの座面・自転車・柵・祠・看板の脚・ガソリンスタンドの柱などが形どおりに当たる。
+     布や頭上の物（暖簾・提灯・のぼりの旗・日よけ）はGTAと同じく通り抜けられる */
+  const SOFT = new Set(['noren', 'chochin', 'awning_red', 'awning_green', 'awning_blue', 'awning_orange', 'solar_panel', 'tv_antenna', 'tetrapod',
+    'nobori_a', 'nobori_b', 'nobori_c', 'nobori_d', 'nobori_e', 'backstop', 'jib_crane', 'lighthouse_red', 'lighthouse_white', 'fishing_boat']);
+  const baked = {};
+  function bakeShape(name) {
+    if (name in baked) return baked[name];
+    const node = NODE_ALIAS[name] ? G3.glbNode(...NODE_ALIAS[name]) : G3.glbNode('street', name);
+    if (!node || SOFT.has(name)) return (baked[name] = null);
+    node.updateMatrixWorld(true);
+    const inv = new THREE.Matrix4().copy(node.matrixWorld).invert();
+    const CELL = 0.08, LO = 0.3, HI = 1.9, cells = new Set();
+    const mark = (x, z) => cells.add(Math.floor(x / CELL) + ':' + Math.floor(-z / CELL));   // Blender (X, Y) = (x, -z)
+    const P = [new THREE.Vector3(), new THREE.Vector3(), new THREE.Vector3()];
+    const clip = (poly, h, keepAbove) => {   // y=h の平面で切る
+      const out = [];
+      for (let i = 0; i < poly.length; i++) {
+        const a = poly[i], b = poly[(i + 1) % poly.length];
+        const ina = keepAbove ? a[1] >= h : a[1] <= h, inb = keepAbove ? b[1] >= h : b[1] <= h;
+        if (ina) out.push(a);
+        if (ina !== inb) { const t = (h - a[1]) / (b[1] - a[1]); out.push([a[0] + (b[0] - a[0]) * t, h, a[2] + (b[2] - a[2]) * t]); }
+      }
+      return out;
+    };
+    node.traverse(m => {
+      if (!m.isMesh || !m.geometry) return;
+      const rel = new THREE.Matrix4().multiplyMatrices(inv, m.matrixWorld);
+      const pos = m.geometry.attributes.position, idx = m.geometry.index, n = idx ? idx.count : pos.count;
+      for (let t = 0; t < n; t += 3) {
+        for (let k = 0; k < 3; k++) P[k].fromBufferAttribute(pos, idx ? idx.getX(t + k) : t + k).applyMatrix4(rel);
+        if (Math.max(P[0].y, P[1].y, P[2].y) < LO || Math.min(P[0].y, P[1].y, P[2].y) > HI) continue;
+        const poly = clip(clip(P.map(v => [v.x, v.y, v.z]), LO, true), HI, false);
+        if (poly.length < 2) continue;
+        // 辺（縦の壁は線になる）
+        for (let i = 0; i < poly.length; i++) {
+          const a = poly[i], b = poly[(i + 1) % poly.length], L = Math.hypot(b[0] - a[0], b[2] - a[2]), st = Math.max(1, Math.ceil(L / (CELL * 0.5)));
+          for (let j = 0; j <= st; j++) mark(a[0] + (b[0] - a[0]) * j / st, a[2] + (b[2] - a[2]) * j / st);
+        }
+        // 面（座面など水平に近い面）
+        let x0 = 1e9, x1 = -1e9, z0 = 1e9, z1 = -1e9;
+        for (const v of poly) { x0 = Math.min(x0, v[0]); x1 = Math.max(x1, v[0]); z0 = Math.min(z0, v[2]); z1 = Math.max(z1, v[2]); }
+        if ((x1 - x0) > CELL && (z1 - z0) > CELL) {
+          for (let x = Math.floor(x0 / CELL) * CELL + CELL / 2; x < x1; x += CELL) for (let z = Math.floor(z0 / CELL) * CELL + CELL / 2; z < z1; z += CELL) {
+            let inside = false;
+            for (let i = 0, j = poly.length - 1; i < poly.length; j = i++) {
+              const a = poly[i], b = poly[j];
+              if ((a[2] > z) !== (b[2] > z) && x < (b[0] - a[0]) * (z - a[2]) / (b[2] - a[2]) + a[0]) inside = !inside;
+            }
+            if (inside) mark(x, z);
+          }
+        }
+      }
+    });
+    if (!cells.size) return (baked[name] = null);
+    // 連結した塊ごとに、詰まっていなければ長い方向で分けて長方形にする
+    const set = cells, seen = new Set(), comps = [];
+    for (const key of cells) {
+      if (seen.has(key)) continue;
+      const [ix, iy] = key.split(':').map(Number), comp = [], st = [[ix, iy]]; seen.add(key);
+      while (st.length) {
+        const [a, b] = st.pop(); comp.push([a, b]);
+        for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) { const k2 = (a + dx) + ':' + (b + dy); if (set.has(k2) && !seen.has(k2)) { seen.add(k2); st.push([a + dx, b + dy]); } }
+      }
+      comps.push(comp);
+    }
+    const bbox = cs => { let a0 = 1e9, a1 = -1e9, b0 = 1e9, b1 = -1e9; for (const [a, b] of cs) { a0 = Math.min(a0, a); a1 = Math.max(a1, a); b0 = Math.min(b0, b); b1 = Math.max(b1, b); } return [a0, a1, b0, b1]; };
+    const boxes = [];
+    const split = (cs, depth) => {
+      const [a0, a1, b0, b1] = bbox(cs), w = a1 - a0 + 1, h = b1 - b0 + 1;
+      if (cs.length / (w * h) >= 0.55 || w * h <= 6 || depth > 6) { boxes.push([a0, a1, b0, b1]); return; }
+      const byA = w >= h, mid = byA ? (a0 + a1) / 2 : (b0 + b1) / 2;
+      const L = cs.filter(c => (byA ? c[0] : c[1]) <= mid), R = cs.filter(c => (byA ? c[0] : c[1]) > mid);
+      if (!L.length || !R.length) { boxes.push([a0, a1, b0, b1]); return; }
+      split(L, depth + 1); split(R, depth + 1);
+    };
+    for (const c of comps) split(c, 0);
+    const out = boxes.length > 24 ? comps.map(bbox) : boxes;   // 箱が多すぎる物は塊ごとの外接長方形
+    return (baked[name] = out.map(([a0, a1, b0, b1]) => [(a0 + a1 + 1) / 2 * CELL, (b0 + b1 + 1) / 2 * CELL, (a1 - a0 + 1) / 2 * CELL, (b1 - b0 + 1) / 2 * CELL, 3]));
+  }
+  G3.bakeShape = bakeShape;
   function collide(name, x, y, rot, lift) {
-    const cs = COLL[name];
+    const cs = bakeShape(name) || COLL[name];
     if (!cs || lift > 1.5 || typeof addCollider !== 'function') return;
     const brk = BREAK[name], bid = name + '#' + (lists[name].length - 1);
     const al = -rot, ca = Math.cos(al), sa = Math.sin(al);
@@ -1802,7 +1884,7 @@ G3.street = (function () {
       const ix = p.x - p.nx * 1.0, iy = p.y - p.ny * 1.0;
       const ri = roadInfo(ix, iy);
       const ok = !inPort(p.x, p.y, 10) && !beach(p.x, p.y) && !inWaterRaw(ix, iy) && !nearBld(ix, iy, 1.5) &&
-        !(ri && ri.d < ri.road.w / 2 + 1) && !nearKey(ix, iy, 6) && railDist(ix, iy) > 6;
+        !(ri && ri.d < ri.road.w / 2 + G3.SW + 1.5) && !nearKey(ix, iy, 6) && railDist(ix, iy) > 6;   // 歩道の上には置かない
       return { ...p, ix, iy, ok };
     });
     for (let i = 0; i < wall.length;) {

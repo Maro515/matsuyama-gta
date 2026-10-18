@@ -11231,6 +11231,7 @@ G3.world = (function () {
   const THREE = G3.THREE;
   const U = G3.U;
   const WM = {};      // マテリアル
+  const WATER_T = { value: 0 };   // 水面のさざ波の時間
   const anim = { wheels: [], gondola: null, water: [], signals: [], winMats: [], lightPools: [], neon: [], wet: [], glow: [], carts: [] };
 
   /* ---------- ジオメトリ・ビルダー ---------- */
@@ -11328,8 +11329,23 @@ G3.world = (function () {
     WM.water = new THREE.MeshStandardMaterial({ color: 0x1d4a5e, roughness: 0.05, metalness: 0.0, envMapIntensity: 1.1 });
     if (G3.tex.water_n) {
       WM.water.normalMap = texRep('water_n', 1, 1);
-      WM.water.normalScale.set(0.32, 0.32);
-      anim.water.push(WM.water.normalMap);
+      WM.water.normalScale.set(0.42, 0.42);
+      // さざ波: 法線マップをワールド座標で大小2つの向きに流して重ね、ワールドの法線として与える（タイルの繰り返しが見えにくい）
+      WM.water.onBeforeCompile = sh => {
+        sh.uniforms.uWT = WATER_T;
+        sh.vertexShader = sh.vertexShader.replace('#include <common>', '#include <common>\nvarying vec3 vWPw;')
+          .replace('#include <begin_vertex>', '#include <begin_vertex>\nvWPw = (modelMatrix * vec4(transformed, 1.0)).xyz;');
+        sh.fragmentShader = sh.fragmentShader.replace('#include <common>', '#include <common>\nvarying vec3 vWPw;\nuniform float uWT;')
+          .replace('#include <normal_fragment_maps>', `
+            vec2 wuv1 = vWPw.xz / 42.0 + vec2(uWT * 0.011, uWT * 0.006);
+            vec2 wuv2 = vWPw.xz / 13.0 + vec2(-uWT * 0.008, uWT * 0.014);
+            vec3 wn1 = texture2D(normalMap, wuv1).xyz * 2.0 - 1.0;
+            vec3 wn2 = texture2D(normalMap, wuv2).xyz * 2.0 - 1.0;
+            vec2 wd = (wn1.xy + wn2.xy * 0.7) * normalScale;
+            vec3 wN = normalize(vec3(wd.x, 1.0, wd.y));
+            normal = normalize((viewMatrix * vec4(wN, 0.0)).xyz);`);
+      };
+      WM.water.customProgramCacheKey = () => 'water2';
     }
     WM.asphalt = worldUV(new THREE.MeshStandardMaterial({ map: G3.tex.asphalt, roughness: 0.88, metalness: 0, polygonOffset: true, polygonOffsetFactor: -1, polygonOffsetUnits: -4 }), 9);
     anim.wet.push(WM.asphalt);
@@ -11666,6 +11682,7 @@ G3.world = (function () {
     sea.receiveShadow = true;
     scene.add(sea);
     const wm2 = WM.water.clone();
+    wm2.onBeforeCompile = WM.water.onBeforeCompile; wm2.customProgramCacheKey = WM.water.customProgramCacheKey;
     wm2.polygonOffset = true; wm2.polygonOffsetFactor = -1; wm2.polygonOffsetUnits = -2;
     wm2.color.set(0x2c5a5c);
     if (wm2.normalMap) { wm2.normalMap = WM.water.normalMap; }
@@ -11961,6 +11978,7 @@ G3.world = (function () {
     }
     const mc = new THREE.MeshStandardMaterial({ map: G3.tex.concrete, vertexColors: true, roughness: 0.92, side: THREE.DoubleSide });
     const mw = WM.water.clone();
+    mw.onBeforeCompile = WM.water.onBeforeCompile; mw.customProgramCacheKey = WM.water.customProgramCacheKey;
     mw.color.set(0x34503f); mw.polygonOffset = true; mw.polygonOffsetFactor = -2; mw.polygonOffsetUnits = -4;
     const wm = gbW.mesh(mw, false); wm.receiveShadow = true;
     scene.add(wm, gbC.mesh(mc, true), gbM.mesh(WM.metal, true));
@@ -13633,6 +13651,7 @@ G3.world = (function () {
       for (const k of treeChunks) { const dx = k.x - c.x, dz = k.z - c.z; k.g.visible = dx * dx + dz * dz < k.far * k.far; }
     }
     for (const t of anim.water) { t.offset.x += dt * 0.004; t.offset.y += dt * 0.0025; }
+    WATER_T.value = (WATER_T.value + dt * (1 + 1.5 * S.rainI)) % 10000;   // 雨の日は波立つ
     for (const w of anim.wheels) {
       w.wheel.rotation.x += dt * 0.06;
       for (const g of w.gons) g.rotation.x = -w.wheel.rotation.x;   // ゴンドラは常に吊り下がる

@@ -48,7 +48,7 @@ const R3 = { ok: false, state: 'idle' };
   // 水の法線と窓のマスク（R・G に別々の窓を入れている）は ETC1S だとチャンネルが混ざるので元の画像のまま
   for (const k in TEX_LIST) if (k !== 'water_n' && !k.startsWith('facm_')) TEX_LIST[k][0] = TEX_LIST[k][0].replace(/\.(jpg|png)$/, '.ktx2');
   const GLB_LIST = ['vehicles', 'human', 'trains', 'trees', 'props', 'street', 'landmarks', 'misc'];
-  G3.tex = {}; G3.glb = {};
+  G3.tex = {}; G3.glb = {}; G3.glbFP = {};
 
   function setLoad(frac, txt) {
     const bar = document.getElementById('loadbar');
@@ -121,7 +121,10 @@ const R3 = { ok: false, state: 'idle' };
       tick('テクスチャ読み込み中…');
     }).concat(GLB_LIST.map(async n => {
       try {
-        G3.glb[n] = dequantize(await gl.loadAsync(assetURL('glb/' + n + '.glb')));
+        const gltf = await gl.loadAsync(assetURL('glb/' + n + '.glb'));
+        // 焼き込みの指紋用: モデルの内容（glTF の JSON 部分。頂点数・範囲・部品名など）のハッシュ
+        G3.glbFP[n] = gltf.parser && gltf.parser.json && typeof fpHash === 'function' ? fpHash(JSON.stringify(gltf.parser.json)) : '';
+        G3.glb[n] = dequantize(gltf);
       } catch (e) { console.warn('glb missing', n); G3.glb[n] = null; }
       tick('3Dモデル読み込み中…（' + n + '）');
     })));
@@ -642,6 +645,7 @@ const R3 = { ok: false, state: 'idle' };
     if (!initGL()) { R3.state = 'failed'; readyRes(); return; }
     try {
       const BT = G3.bootTimes = {}; let tb = performance.now();
+      if (typeof BAKE !== 'undefined') BT.gen = BAKE.ms;   // ページ読み込み時の街の生成（game.html）
       const lap = k => { const t = performance.now(); BT[k] = Math.round(t - tb); tb = t; };
       setLoad(0.02, 'アセット読み込み中…');
       await loadAssets(); lap('assets');
@@ -670,6 +674,16 @@ const R3 = { ok: false, state: 'idle' };
       setLoad(1, '3D描画を初期化できませんでした（簡易表示で起動します）');
     }
     readyRes();
+    if (typeof BAKE !== 'undefined' && BAKE.rec) saveBake();
+  }
+  // ?bake=rec: 生成しながら記録した街を開発サーバーへ保存する（build/baked/city.json → python3 build/bake_city.py）
+  function saveBake() {
+    const W = G3.bakeOut;
+    const all = { v: 1, game: Object.assign({ fp: BAKE.fp }, BAKE.out), world: W && W.fp ? W : null };
+    const txt = JSON.stringify(all);
+    window.__cityBake = txt;
+    console.log('city bake', Math.round(txt.length / 1024) + 'KB', all.world ? '' : '(3D なし: 街具などは焼き込まない)');
+    fetch('/__save?name=city', { method: 'POST', body: txt }).then(r => console.log('city bake saved', r.status)).catch(e => console.warn('city bake not saved', e));
   }
   R3.boot = boot;
   R3.ctx = () => ({ renderer, scene, camera, composer });

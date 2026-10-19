@@ -10,6 +10,7 @@
        await fetch('/__save?name=alley_data', {method: 'POST', body: JSON.stringify(genAlleys())});
      → python3 build/bake_alleys.py data
   建物の生成・ランドマーク・街具の配置を変えたら作り直す（古いデータは game.html 側で建物に掛かる物だけ捨てる）。
+  小道を作り直したら、続けて街の焼き込み（build/bake_city.py の手順）も作り直す（小道のデータは街の焼き込みの指紋に入る）。
 """
 import io, json, os, re, sys
 

@@ -88,6 +88,7 @@
 </style>
 <!--BUILD:VENDOR--><script src="../vendor/three-bundle.js"></script><!--/BUILD:VENDOR-->
 <!--BUILD:ASSETS--><script>window.ASSET_BASE='../assets/';</script><!--/BUILD:ASSETS-->
+<!--BUILD:BAKED--><script src="baked/city.js"></script><!--/BUILD:BAKED-->
 </head>
 <body>
 <canvas id="gl"></canvas>
@@ -173,6 +174,40 @@ const hyp=Math.hypot;
 function angDiff(a,b){let d=(b-a)%TAU;if(d>Math.PI)d-=TAU;if(d<-Math.PI)d+=TAU;return d;}
 function mulberry32(s){return function(){s|=0;s=s+0x6D2B79F5|0;let t=Math.imul(s^s>>>15,1|s);t=t+Math.imul(t^t>>>7,61|t)^t;return((t^t>>>14)>>>0)/4294967296;};}
 const rng=mulberry32(515);
+/* ---------- 街の焼き込み（2026-10-19） ----------
+   起動のたびに乱数で探していた配置（建物・木・みかん・自販機・田畑・生活道路・沿道の建物・用水路・河川敷・段々畑）を、
+   焼き込みデータ（src/baked/city.js の CITY_BAKE.game）から読む。3D の街具・登城道・当たり判定は CITY_BAKE.world（r3d 側）。
+   作り直しは build/bake_city.py の説明を参照。?bake=0 は生成だけ、?bake=rec は生成しながら記録する。
+   指紋（fp）= 下の「セーブ」までのソースの内容。焼き込んだ時と違えば（地図や生成を変えたら）自動で生成に切り替える */
+function fpHash(s){ // 文字列の 64bit ハッシュ（16進16桁）
+  let h1=0xdeadbeef^s.length,h2=0x41c6ce57^s.length;
+  for(let i=0;i<s.length;i++){const c=s.charCodeAt(i);h1=Math.imul(h1^c,2654435761);h2=Math.imul(h2^c,1597334677);}
+  h1=Math.imul(h1^(h1>>>16),2246822507)^Math.imul(h2^(h2>>>13),3266489909);
+  h2=Math.imul(h2^(h2>>>16),2246822507)^Math.imul(h1^(h1>>>13),3266489909);
+  return (h2>>>0).toString(16).padStart(8,'0')+(h1>>>0).toString(16).padStart(8,'0');
+}
+const BAKE=(()=>{
+  const q=location.search,want=(q.match(/[?&]bake=(\w+)/)||[])[1]||'';
+  const src=(document.currentScript&&document.currentScript.textContent)||'';
+  const end=src.indexOf('/* ---------- '+'セーブ ---------- */');
+  const fp=fpHash(end>0?src.slice(0,end):src);
+  // 当たり判定の節（3D の街具の焼き込みの指紋に入れる。街具の置き場所の判定に使うため）
+  const p0=src.indexOf('物理'+'・当たり判定'),p1=src.indexOf('/* ---------- 車の'+'当たり判定');
+  const fpPhys=fpHash(p0>0&&p1>p0?src.slice(p0,p1):src);
+  const D=window.CITY_BAKE||null;
+  const alley=/[?&]alley=/.test(q);   // 小道の焼き直し中（build/gen_alleys.js）は生成だけ
+  const rec=want==='rec'&&!alley;
+  const why=rec?'rec':want==='0'?'?bake=0':alley?'?alley':!D?'no data':D.v!==1||!D.game?'format':D.game.fp!==fp?'stale':'';
+  const G=why?null:D.game, out={};
+  if(why==='stale'||why==='format')console.warn('街の焼き込みが古いので生成します（作り直しは build/bake_city.py の説明を参照）');
+  return {fp,fpPhys,rec,play:!!G,why,data:D,out,t0:performance.now(),ms:0,
+    // 焼き込みがあれば記録を順に apply に渡して true（なければ false。呼び出し側が生成する）
+    load(name,apply){if(!G)return false;for(const r of G[name]||[])apply(r);return true;},
+    list(name){return G?G[name]||[]:null;},
+    // 生成の記録（?bake=rec の時だけ）。begin で空の記録を作る（0件の項目も「焼き込み済み」と分かるように）
+    begin(name){if(rec)out[name]=[];},
+    put(name,r){if(rec)out[name].push(r);}};
+})();
 
 /* ---------- 幾何ヘルパー ---------- */
 function seg(px,py,ax,ay,bx,by){
@@ -597,7 +632,24 @@ const ZONES=[
 ZONES[1].pal[3]='#aba29a'; // 全角文字混入ガード
 const _ov=[];
 const SGC=['#d43c3c','#2456a8','#e8a020','#3f8a52','#7a3ca8'];
-for(let zi=0;zi<ZONES.length;zi++){
+// 地区ごとの建物（焼き込みの記録 [zi,x,y,w2,h2,色,階数] から作るのも同じ関数）
+function zoneBuilding(zi,x,y,w2,h2,pi,hgt){
+  const z=ZONES[zi],col=z.pal[pi];
+  const sd=buildings.length;
+  let kind='office';
+  if(hgt<=1)kind='house';
+  else if(zi===6&&hgt>=3)kind='hotel';
+  else if((zi===2||zi===3||zi===4||zi>=9)&&hgt>=3&&sd%2===0)kind='mansion';
+  else if(hgt<=4&&sd%3===0)kind='shop';
+  const bld={x0:x-w2,y0:y-h2,x1:x+w2,y1:y+h2,c:col,hgt,seed:sd,kind,
+    sg:kind==='shop'?SGC[sd%5]:null,
+    hW:8+hgt*7+(sd%3)*2,
+    cN:shade(col,.96),cS:shade(col,.8),cW:shade(col,1.07),cE:shade(col,.7),
+    cR:shade(col,1.1),cRd:shade(col,.88)};
+  buildings.push(bld);gridAdd(bldGrid,bld.x0,bld.y0,bld.x1,bld.y1,bld);
+}
+BAKE.begin('zone');
+if(!BAKE.load('zone',r=>zoneBuilding(...r)))for(let zi=0;zi<ZONES.length;zi++){
   const z=ZONES[zi];
   let placed=0,tries=0;
   while(placed<z.n&&tries<z.n*14){
@@ -616,40 +668,32 @@ for(let zi=0;zi<ZONES.length;zi++){
     gridNear(bldGrid,x,y,_ov);
     for(const b of _ov)if(x+w2+7>b.x0&&x-w2-7<b.x1&&y+h2+7>b.y0&&y-h2-7<b.y1){bad=true;break;}
     if(bad)continue;
-    const col=z.pal[(rng()*z.pal.length)|0];
+    const pi=(rng()*z.pal.length)|0;
     const hgt=Math.round(lerp(z.hg[0],z.hg[1],rng()));
-    const sd=buildings.length;
-    let kind='office';
-    if(hgt<=1)kind='house';
-    else if(zi===6&&hgt>=3)kind='hotel';
-    else if((zi===2||zi===3||zi===4||zi>=9)&&hgt>=3&&sd%2===0)kind='mansion';
-    else if(hgt<=4&&sd%3===0)kind='shop';
-    const bld={x0:x-w2,y0:y-h2,x1:x+w2,y1:y+h2,c:col,hgt,seed:sd,kind,
-      sg:kind==='shop'?SGC[sd%5]:null,
-      hW:8+hgt*7+(sd%3)*2,
-      cN:shade(col,.96),cS:shade(col,.8),cW:shade(col,1.07),cE:shade(col,.7),
-      cR:shade(col,1.1),cRd:shade(col,.88)};
-    buildings.push(bld);gridAdd(bldGrid,bld.x0,bld.y0,bld.x1,bld.y1,bld);
+    zoneBuilding(zi,x,y,w2,h2,pi,hgt);BAKE.put('zone',[zi,x,y,w2,h2,pi,hgt]);
     placed++;
   }
 }
 /* 公園・丘の樹木 */
 const TREES=[];
-{let t=0;
+BAKE.begin('trees');
+if(!BAKE.load('trees',r=>TREES.push(r))){let t=0;
  while(TREES.length<170&&t++<3000){
   const x=rng()*W,y=rng()*H;
   const h=hillAt(x,y),p=inPark(x,y);
   if(!h&&!p)continue;
   if(h&&h.castle&&hyp(x-5834,y-2760)<150)continue;
-  TREES.push([x,y,5+rng()*6]);
+  const s=5+rng()*6;TREES.push([x,y,s]);BAKE.put('trees',[x,y,s]);
  }}
 /* 海の波・停泊船 */
 const WAVES=[];
-{let t=0;while(WAVES.length<46&&t++<2000){const x=rng()*W,y=rng()*H;
-  if(inPoly(SEA,x,y)&&!inPoly(ISLAND,x,y))WAVES.push([x,y,10+rng()*14]);}}
+BAKE.begin('waves');
+if(!BAKE.load('waves',r=>WAVES.push(r))){let t=0;while(WAVES.length<46&&t++<2000){const x=rng()*W,y=rng()*H;
+  if(inPoly(SEA,x,y)&&!inPoly(ISLAND,x,y)){const s=10+rng()*14;WAVES.push([x,y,s]);BAKE.put('waves',[x,y,s]);}}}
 /* みかん配置 */
 const MIKANS=[];
-{let t=0;
+BAKE.begin('mikans');
+if(!BAKE.load('mikans',([x,y])=>MIKANS.push({x,y,id:MIKANS.length,got:false}))){let t=0;
  while(MIKANS.length<60&&t++<4000){
   const x=200+rng()*(W-400),y=150+rng()*(H-300);
   if(inWaterRaw(x,y))continue;
@@ -658,18 +702,22 @@ const MIKANS=[];
   let bad=false;
   gridNear(bldGrid,x,y,_ov);
   for(const b of _ov)if(x>b.x0-8&&x<b.x1+8&&y>b.y0-8&&y<b.y1+8){bad=true;break;}
-  if(!bad)MIKANS.push({x,y,id:MIKANS.length,got:false});
+  if(!bad){MIKANS.push({x,y,id:MIKANS.length,got:false});BAKE.put('mikans',[x,y]);}
  }}
-/* 街路樹（並木道） */
+/* 街路樹（並木道）。位置は道路から決まり、乱数は大きさだけ */
+BAKE.begin('strees');
+{const SZ=BAKE.list('strees');let si=0;
 for(const rn of ['平和通り','花園町通り','空港通り','千舟町通り']){
   const r=ROADS.find(q=>q.n===rn);
   if(!r)continue;
   for(let d=70;d<r.pl.len-40;d+=150){
     const p=plAt(r.pl,d);
-    for(const sgn of[-1,1])
-      TREES.push([p.x+Math.sin(p.a)*sgn*(r.w/2+13),p.y-Math.cos(p.a)*sgn*(r.w/2+13),4.5+rng()*2]);
+    for(const sgn of[-1,1]){
+      const sz=SZ?SZ[si++]:4.5+rng()*2;BAKE.put('strees',sz);
+      TREES.push([p.x+Math.sin(p.a)*sgn*(r.w/2+13),p.y-Math.cos(p.a)*sgn*(r.w/2+13),sz]);
+    }
   }
-}
+}}
 /* 電柱（生活道路沿い・電線で連結） */
 const POLES=[];
 for(const r of ROADS){
@@ -694,7 +742,8 @@ function sigCol(g){ // 信号現示（16秒サイクル）
 }
 /* 自動販売機 */
 const VENDING=[];
-{let t=0;
+BAKE.begin('vending');
+if(!BAKE.load('vending',([x,y])=>VENDING.push({x,y,c:['#d43c3c','#2456a8','#f0f0f2'][VENDING.length%3]}))){let t=0;
  while(VENDING.length<110&&t++<4000){
   const x=300+rng()*(W-600),y=250+rng()*(H-500);
   if(inWaterRaw(x,y))continue;
@@ -704,7 +753,7 @@ const VENDING=[];
   let bad=false;
   gridNear(bldGrid,x,y,_ov);
   for(const b of _ov)if(x>b.x0-6&&x<b.x1+6&&y>b.y0-6&&y<b.y1+6){bad=true;break;}
-  if(!bad)VENDING.push({x,y,c:['#d43c3c','#2456a8','#f0f0f2'][VENDING.length%3]});
+  if(!bad){VENDING.push({x,y,c:['#d43c3c','#2456a8','#f0f0f2'][VENDING.length%3]});BAKE.put('vending',[x,y]);}
  }}
 /* バス停・マンホール */
 const BUSSTOPS=[];
@@ -725,7 +774,9 @@ for(const r of ROADS){
 }
 /* 田畑（郊外の農地パッチ） */
 const FIELDS=[];
-{
+const FIELD_COL=['#9dbf7a','#a8c684','#b5cc8e','#8fb471','#c2b98a','#b3a97e'];
+BAKE.begin('fields');
+if(!BAKE.load('fields',([x,y,w,h,ci,v])=>FIELDS.push({x,y,w,h,c:FIELD_COL[ci],v:!!v}))){
   const FZ=[[2600,3860,4700,4420],[1600,4640,3400,5120],[4400,620,5600,1560],
     [6700,3560,8150,4340],[2200,2450,3500,3420],[5600,4560,7200,5320]];
   for(const z of FZ){
@@ -742,15 +793,16 @@ const FIELDS=[];
         gridNear(bldGrid,cx2,cy2,_ov);
         for(const b of _ov)if(fx+fw>b.x0-8&&fx<b.x1+8&&fy+fh>b.y0-8&&fy<b.y1+8){bad=true;break;}
         if(bad)continue;
-        FIELDS.push({x:fx,y:fy,w:fw,h:fh,
-          c:['#9dbf7a','#a8c684','#b5cc8e','#8fb471','#c2b98a','#b3a97e'][(rng()*6)|0],v:rng()<.5});
+        const ci=(rng()*6)|0,v=rng()<.5;
+        FIELDS.push({x:fx,y:fy,w:fw,h:fh,c:FIELD_COL[ci],v});BAKE.put('fields',[fx,fy,fw,fh,ci,v?1:0]);
       }
     }
   }
 }
 /* みかん畑（丘の斜面に植栽列） */
 const ORCHARDS=[];
-for(const h of HILLS){
+BAKE.begin('orchards');
+if(!BAKE.load('orchards',r=>ORCHARDS.push(r)))for(const h of HILLS){
   if(h.castle)continue;
   const step=Math.max(34,h.rx/8);
   for(let gy=h.y-h.ry;gy<h.y+h.ry;gy+=step)
@@ -759,18 +811,19 @@ for(const h of HILLS){
       const rr2=nx*nx+ny2*ny2;
       if(rr2<0.3||rr2>0.82)continue;
       if(rng()<0.38)continue;
-      ORCHARDS.push([gx+rng()*10,gy+rng()*10]);
+      const ox=gx+rng()*10,oy=gy+rng()*10;ORCHARDS.push([ox,oy]);BAKE.put('orchards',[ox,oy]);
     }
 }
 /* ビニールハウス */
 const GREENH=[];
-{let t=0;
+{const addGH=f=>{f.gh=true;GREENH.push({x:f.x+f.w/2,y:f.y+f.h/2,a:f.w>=f.h?0:Math.PI/2});};
+ BAKE.begin('greenh');
+ if(!BAKE.load('greenh',i=>addGH(FIELDS[i]))){let t=0;
  while(GREENH.length<16&&t++<600&&FIELDS.length){
-  const f=FIELDS[(rng()*FIELDS.length)|0];
+  const fi=(rng()*FIELDS.length)|0,f=FIELDS[fi];
   if(f.gh||f.w<74)continue;
-  f.gh=true;
-  GREENH.push({x:f.x+f.w/2,y:f.y+f.h/2,a:f.w>=f.h?0:Math.PI/2});
- }}
+  addGH(f);BAKE.put('greenh',fi);
+ }}}
 
 /* ---------- 追加ランドマーク（伊佐爾波神社・椿神社） ----------
    建物・みかん等の生成の後に足すので既存の位置は変わらない。敷地と参道・石段に掛かる建物は撤去し、
@@ -799,7 +852,14 @@ addLandmarks(LMS_ADD);
 /* ---------- 生活道路・路地（既存の建物のすき間を通し、既存の道路につなぐ） ----------
    ほかの配置が全部決まった後に追加するので、建物・みかん等の位置は変わらない。歩道なし・幅6.4m */
 const LANE_W=16;
-{
+function addLane(ax,ay,ex,ey){ // 生活道路を1本足す（焼き込みの記録 [ax,ay,ex,ey] から足すのも同じ）
+  const r={n:'生活道路',kind:'lane',w:LANE_W,pts:[[ax,ay],[ex,ey]]};
+  r.pl=buildPl(r.pts);ROADS.push(r);
+  const sg={ax,ay,bx:ex,by:ey,road:r};
+  gridAdd(roadGrid,Math.min(ax,ex)-60,Math.min(ay,ey)-60,Math.max(ax,ex)+60,Math.max(ay,ey)+60,sg);
+}
+BAKE.begin('lanes');
+if(!BAKE.load('lanes',r=>addLane(...r))){
   const lr=mulberry32(8101);
   const PTS=[...LAMPS.map(l=>[l[0],l[1],5]),...POLES.map(p=>[p.x,p.y,5]),...VENDING.map(v=>[v.x,v.y,6]),
     ...BUSSTOPS.map(b=>[b[0],b[1],10]),...SIGNALS.map(q=>[q.x,q.y,5]),...TREES.map(t=>[t[0],t[1],6])];
@@ -842,10 +902,7 @@ const LANE_W=16;
             for(let t=0.15;t<=0.85;t+=0.1){const x=lerp(ax,ex,t),y=lerp(ay,ey,t);const ri=roadInfo(x,y);n++;if(ri&&ri.d<ri.road.w/2+30)par++;}
             if(par/n<0.3&&!nearLane(ax,ay,ex,ey)){
               lanes.push([ax,ay,ex,ey]);
-              const r={n:'生活道路',kind:'lane',w:LANE_W,pts:[[ax,ay],[ex,ey]]};
-              r.pl=buildPl(r.pts);ROADS.push(r);
-              const sg={ax,ay,bx:ex,by:ey,road:r};
-              gridAdd(roadGrid,Math.min(ax,ex)-60,Math.min(ay,ey)-60,Math.max(ax,ex)+60,Math.max(ay,ey)+60,sg);
+              addLane(ax,ay,ex,ey);BAKE.put('lanes',[ax,ay,ex,ey]);
             }
           }
           run=null;
@@ -1145,7 +1202,18 @@ function INFILL_AREA(x,y){
 const INFILL_BLVD=new Set(['平和通り','花園町通り','空港通り','千舟町通り']);
 const INFILL_FRONT=17;
 function infillFront(r){return r.kind==='arcade'?r.w/2+0.4:r.kind==='lane'?r.w/2+1.4:INFILL_BLVD.has(r.n)?r.w/2+INFILL_FRONT:r.w/2+8.2;}
-{
+const INFILL_PAL=['#c9c4b8','#b8b4ac','#d2cbbd','#a9adb2','#c4b8a6','#bfc4c8','#d8d0c0','#b0a898','#c8bca8','#9fa6ad'];
+function infillBuilding(x0,y0,x1,y1,hgt,shop,pi){ // 焼き込みの記録 [x0,y0,x1,y1,階数,店か,色] から作るのも同じ
+  const sd=buildings.length,kind=shop?'shop':'office',col=INFILL_PAL[pi];
+  const bld={x0,y0,x1,y1,c:col,hgt,seed:sd,kind,infill:true,
+    sg:kind==='shop'?SGC[sd%5]:null,
+    hW:8+hgt*7+(sd%3)*2,
+    cN:shade(col,.96),cS:shade(col,.8),cW:shade(col,1.07),cE:shade(col,.7),
+    cR:shade(col,1.1),cRd:shade(col,.88)};
+  buildings.push(bld);gridAdd(bldGrid,x0,y0,x1,y1,bld);
+}
+BAKE.begin('infill');
+if(!BAKE.load('infill',r=>infillBuilding(...r))){
   const ir=mulberry32(7301);
   const KEY=[[5880,3560],[6382,3428],[6355,2655]];
   for(const m of MIKANS)KEY.push([m.x,m.y]);
@@ -1153,7 +1221,6 @@ function infillFront(r){return r.kind==='arcade'?r.w/2+0.4:r.kind==='lane'?r.w/2
   for(const m of MISSIONS){KEY.push(m.start);if(m.goal)KEY.push(m.goal);for(const c of m.cps||[])KEY.push(c);}
   const PTS=[...LAMPS.map(l=>[l[0],l[1],3]),...POLES.map(p=>[p.x,p.y,3]),...VENDING.map(v=>[v.x,v.y,4]),
     ...BUSSTOPS.map(b=>[b[0],b[1],8]),...SIGNALS.map(q=>[q.x,q.y,3]),...TREES.map(t=>[t[0],t[1],5]),...parked.map(c=>[c.x,c.y,8])];
-  const PAL=['#c9c4b8','#b8b4ac','#d2cbbd','#a9adb2','#c4b8a6','#bfc4c8','#d8d0c0','#b0a898','#c8bca8','#9fa6ad'];
   const clearOf=(px,py,r)=>{
     const ri=roadInfo(px,py);
     if(!ri)return true;
@@ -1210,15 +1277,9 @@ function infillFront(r){return r.kind==='arcade'?r.w/2+0.4:r.kind==='lane'?r.w/2
         if(!okLot){d+=5;continue;}
         const dogo=hyp(cx-7400,cy-2300)<480;
         const hgt=arc||dogo?2+((ir()*3)|0):3+((ir()*ir()*6)|0);
-        const sd=buildings.length;
-        const kind=(arc||dogo||hgt<=4)&&ir()<0.75?'shop':'office';
-        const col=PAL[(ir()*PAL.length)|0];
-        const bld={x0,y0,x1,y1,c:col,hgt,seed:sd,kind,infill:true,
-          sg:kind==='shop'?SGC[sd%5]:null,
-          hW:8+hgt*7+(sd%3)*2,
-          cN:shade(col,.96),cS:shade(col,.8),cW:shade(col,1.07),cE:shade(col,.7),
-          cR:shade(col,1.1),cRd:shade(col,.88)};
-        buildings.push(bld);gridAdd(bldGrid,x0,y0,x1,y1,bld);
+        const shop=(arc||dogo||hgt<=4)&&ir()<0.75?1:0;
+        const pi=(ir()*INFILL_PAL.length)|0;
+        infillBuilding(x0,y0,x1,y1,hgt,shop,pi);BAKE.put('infill',[x0,y0,x1,y1,hgt,shop,pi]);
         d+=fw+(arc?0:ir()*3);
       }
     }
@@ -1228,7 +1289,10 @@ function infillFront(r){return r.kind==='arcade'?r.w/2+0.4:r.kind==='lane'?r.w/2
 /* ---------- 用水路（田畑のあいだを流れるコンクリート水路。道路の下は暗渠、所々に板橋） ----------
    ほかの配置が全部決まった後に追加するので、既存の位置は変わらない。幅2m（外寸5単位）、縁は地面から約40cm立ち上がる */
 const CANAL_W=5,CANALS=[];
-{
+// 焼き込みの記録 [縦か,c,t0,t1, 区間の種類コード(0=w 1=b 2=c),a,b, ...]
+const CANAL_PK='wbc';
+BAKE.begin('canals');
+if(!BAKE.load('canals',([v,c,t0,t1,...f])=>{const parts=[];for(let i=0;i<f.length;i+=3)parts.push([CANAL_PK[f[i]],f[i+1],f[i+2]]);CANALS.push({vert:!!v,c,t0,t1,parts});})){
   const cr=mulberry32(9101);
   const FZ=[[2600,3860,4700,4420],[1600,4640,3400,5120],[4400,620,5600,1560],
     [6700,3560,8150,4340],[2200,2450,3500,3420],[5600,4560,7200,5320]];
@@ -1320,6 +1384,7 @@ const CANAL_W=5,CANALS=[];
       }
       const t0=g[0].t0,t1=g[g.length-1].t1;
       CANALS.push({vert:ln.vert,c:ln.c,t0,t1,parts});
+      BAKE.put('canals',[ln.vert?1:0,ln.c,t0,t1,...parts.flatMap(p=>[CANAL_PK.indexOf(p[0]),p[1],p[2]])]);
     }
   }
 }
@@ -1327,7 +1392,13 @@ const CANAL_W=5,CANALS=[];
 /* ---------- 河川敷（石手川の桜並木・両岸の遊歩道・飛び石、重信川の中州） ----------
    ほかの配置が全部決まった後に足すので既存の位置は変わらない */
 const RIVERSIDE={sakura:[],walks:[],bars:[]};
-{
+for(const k of ['walks','sakura','steps','bars'])BAKE.begin('rv_'+k);
+if(BAKE.play){
+  for(const [ri,sg,d0,d1] of BAKE.list('rv_walks'))RIVERSIDE.walks.push({ri,sg,d0,d1});
+  for(const r of BAKE.list('rv_sakura'))RIVERSIDE.sakura.push(r);
+  for(const [ax,ay,bx,by] of BAKE.list('rv_steps'))STEPSTONES.push({ax,ay,bx,by});
+  for(const [x,y,a,l,w] of BAKE.list('rv_bars'))RIVERSIDE.bars.push({x,y,a,l,w});
+}else{
   const sr=mulberry32(9301);
   const KP=[...MIKANS.map(m=>[m.x,m.y]),...GIGSPOTS.map(g=>[g[1],g[2]]),...MISSIONS.flatMap(m=>[m.start,...(m.goal?[m.goal]:[]),...(m.cps||[])])];
   const clearAt=(x,y,m)=>{
@@ -1353,7 +1424,7 @@ const RIVERSIDE={sakura:[],walks:[],bars:[]};
         const q=at(rv,d,sg*(rv.w/2+9));
         const ok=d<rv.pl.len&&clearAt(q.x,q.y,3.5);
         if(ok&&d0===null)d0=d;
-        if(!ok&&d0!==null){if(d-d0>=40)RIVERSIDE.walks.push({ri,sg,d0,d1:d-4});d0=null;}
+        if(!ok&&d0!==null){if(d-d0>=40){RIVERSIDE.walks.push({ri,sg,d0,d1:d-4});BAKE.put('rv_walks',[ri,sg,d0,d-4]);}d0=null;}
       }
     }
     // 桜並木（石手川の市街地の区間）
@@ -1362,7 +1433,7 @@ const RIVERSIDE={sakura:[],walks:[],bars:[]};
         const p=plAt(rv.pl,d);
         if(p.x<4900||p.x>7900)continue;
         const q=at(rv,d,sg*(rv.w/2+28+sr()*3));
-        if(clearAt(q.x,q.y,4))RIVERSIDE.sakura.push([q.x,q.y]);
+        if(clearAt(q.x,q.y,4)){RIVERSIDE.sakura.push([q.x,q.y]);BAKE.put('rv_sakura',[q.x,q.y]);}
       }
       // 飛び石: 橋から離れた所で、両岸に遊歩道がある場所に2か所
       let last=-1e9;
@@ -1373,14 +1444,15 @@ const RIVERSIDE={sakura:[],walks:[],bars:[]};
         if(nearRoad)continue;
         const A=at(rv,d,rv.w/2+4),B=at(rv,d,-(rv.w/2+4));
         if(!clearAt(at(rv,d,rv.w/2+9).x,at(rv,d,rv.w/2+9).y,3.5)||!clearAt(at(rv,d,-(rv.w/2+9)).x,at(rv,d,-(rv.w/2+9)).y,3.5))continue;
-        STEPSTONES.push({ax:A.x,ay:A.y,bx:B.x,by:B.y});last=d;
+        STEPSTONES.push({ax:A.x,ay:A.y,bx:B.x,by:B.y});BAKE.put('rv_steps',[A.x,A.y,B.x,B.y]);last=d;
       }
     }
     // 重信川の中州（砂利の島。見た目だけで水の判定はそのまま）
     if(rv.n==='重信川'){
       for(let d=300;d<rv.pl.len-300;d+=700+sr()*500){
         const sg=sr()<0.5?1:-1, q=at(rv,d,sg*(rv.w/2-17));
-        RIVERSIDE.bars.push({x:q.x,y:q.y,a:q.a,l:60+sr()*70,w:12+sr()*8});
+        const l=60+sr()*70,w=12+sr()*8;
+        RIVERSIDE.bars.push({x:q.x,y:q.y,a:q.a,l,w});BAKE.put('rv_bars',[q.x,q.y,q.a,l,w]);
       }
     }
   });
@@ -1390,6 +1462,10 @@ const RIVERSIDE={sakura:[],walks:[],bars:[]};
    市街や海に向いた斜面6か所。生成の最後に足し、範囲内の散らばったみかんの木は段々畑に置き換える */
 const ESTATES=[];
 {
+  // 焼き込みの記録 [hi,tc,half,R0,R1, 段の石積み[[r,t0,t1,t0,t1...]...], みかんの列[同], railT0,railT1]
+  const arcRec=([r,...f])=>{const segs=[];for(let i=0;i+1<f.length;i+=2)segs.push([f[i],f[i+1]]);return {r,segs};};
+  BAKE.begin('estates');
+  if(!BAKE.load('estates',([hi,tc,half,R0,R1,walls,rows,railT0,railT1])=>ESTATES.push({hi,tc,half,R0,R1,walls:walls.map(arcRec),rows:rows.map(arcRec),railT0,railT1}))){
   const KP=[...MIKANS.map(m=>[m.x,m.y]),...GIGSPOTS.map(g=>[g[1],g[2]]),...MISSIONS.flatMap(m=>[m.start,...(m.goal?[m.goal]:[]),...(m.cps||[])])];
   const CONF=[[3,Math.PI,0.36],[4,2.4,0.32],[6,Math.PI,0.4],[1,-0.8,0.45],[7,0,0.5],[5,Math.PI/2,0.34]];
   const R0=0.56,R1=0.9;
@@ -1431,6 +1507,9 @@ const ESTATES=[];
     let ok=0;for(let k=0;k<=20;k++){const r=R1+0.04-(R1+0.04-R0+0.02)*k/20,[x,y]=P(r,tc);if(okPt(x,y,2))ok++;}
     if(ok<16)continue;
     ESTATES.push({hi,tc,half,R0,R1,walls,rows,railT0:R1+0.03,railT1:R0-0.01});
+    const flat=w=>[w.r,...w.segs.flat()];
+    BAKE.put('estates',[hi,tc,half,R0,R1,walls.map(flat),rows.map(flat),R1+0.03,R0-0.01]);
+  }
   }
   // 段々畑の中の散らばったみかんの木は外す（列に植え替え）
   const inEstate=(x,y)=>ESTATES.some(e=>{const h=HILLS[e.hi],dx=(x-h.x)/h.rx,dy=(y-h.y)/h.ry,r=Math.hypot(dx,dy);let da=Math.atan2(dy,dx)-e.tc;da=Math.atan2(Math.sin(da),Math.cos(da));return r>e.R0-0.04&&r<e.R1+0.05&&Math.abs(da)<e.half+0.05;});
@@ -1499,6 +1578,16 @@ const ALLEY_STYLE=['ura','yoko','ishi','minato','jutaku','tsuchi'];   // 裏路�
 const ALLEY_CUTS=[[0,2332.5,6471.4,6604.6,5,0],[0,2395.1,6619.4,6776.6,5,0],[0,2905.8,6825.4,6918.6,6,0],[0,2946.1,6341.4,6436.6,6,0],[0,2946.1,6825.4,6884.6,5,0],[0,3042.7,6293.4,6436.6,6,0],[0,3345.4,6053.4,6082.6,5,1],[0,3345.4,6119.4,6156.6,5,1],[0,3345.4,6241.4,6294.6,5,1],[0,3379.8,5933.4,6038.6,5,1],[0,3413.4,6053.4,6082.6,5,1],[0,3413.4,6119.4,6156.6,5,1],[0,3413.4,6173.4,6202.6,5,1],[0,3413.4,6233.4,6294.6,5,1],[0,3443.1,5933.4,6038.6,5,0],[0,3485.8,6053.4,6082.6,6,0],[0,3485.8,6119.4,6156.6,6,0],[1,6191.1,3135.4,3166.6,5,1],[1,6294.2,3133.4,3166.6,5,1],[1,6294.2,3205.4,3266.6,5,1],[1,6326.8,2971.4,3074.6,5,0],[1,6401,3131.4,3164.6,5,1],[1,6401,3203.4,3264.6,5,1],[1,6494,3127.4,3162.6,6,0],[1,6494,3369.4,3450.6,5,0],[1,6536.9,3125.4,3162.6,5,0],[1,6536.9,3369.4,3448.6,5,0],[1,6578.2,3125.4,3162.6,5,0],[1,6578.2,3201.4,3260.6,6,0],[1,6578.2,3313.4,3354.6,5,0],[1,6578.2,3369.4,3446.6,6,0],[0,2619.5,5119.4,5252.6,5,4],[0,3074.6,4919.4,5132.6,5,0],[0,3111.6,4919.4,5132.6,5,0],[1,4853.5,3025.4,3176.6,6,0],[1,5009.6,3045.4,3174.6,5,0],[1,5080.7,3393.4,3526.6,5,4],[1,5185.3,2865.4,3012.6,5,0],[1,5287.1,3087.4,3170.6,6,0],[1,5348.5,3101.4,3168.6,5,0],[1,5447.5,3123.4,3168.6,5,0],[1,5073.9,2009.4,2138.6,6,4],[1,6813.4,2113.4,2224.6,5,4],[1,6870.4,2105.4,2288.6,5,0],[0,3601.5,6233.4,6428.6,5,0],[0,3739.1,4753.4,4934.6,6,4],[0,3840.6,4753.4,4934.6,5,4],[0,3946.7,5653.4,5848.6,6,4],[0,3990.8,6107.4,6204.6,5,4],[0,4032.4,5919.4,6092.6,5,4],[0,4032.4,6107.4,6204.6,6,4],[0,4084,5443.4,5642.6,6,4],[0,4181,5937.4,6026.6,5,4],[1,4612.6,3777.4,3930.6,6,4],[1,4654.7,3761.4,3926.6,5,4],[1,4863.9,3951.4,4022.6,6,4],[1,4863.9,4233.4,4362.6,6,4],[1,5300.1,3935.4,3992.6,6,4],[1,5490.4,4019.4,4238.6,5,4],[1,5786.1,3925.4,4022.6,6,4],[1,6024.7,3919.4,4058.6,6,4],[1,6024.7,4073.4,4146.6,5,4],[1,6180.2,3913.4,4058.6,5,4],[0,2532.7,7163.4,7210.6,6,2],[0,3406.4,7759.4,7828.6,5,4],[0,3406.4,7921.4,8094.6,5,4],[1,6916.1,2973.4,3080.6,5,0],[1,6946.7,2751.4,2872.6,6,0],[1,7241.2,2579.4,2666.6,5,2],[1,7822.7,2391.4,2456.6,6,2],[1,7863.8,2391.4,2474.6,6,4],[0,1862,1265.4,1424.6,5,3],[0,1961,1065.4,1192.6,6,3],[0,1961,1207.4,1394.6,5,3],[0,2017.4,1065.4,1192.6,6,3],[0,2017.4,1207.4,1392.6,5,3],[0,2017.4,1409.4,1650.6,5,3],[0,2062.7,1409.4,1650.6,5,4],[0,2062.7,1667.4,1876.6,5,4],[0,4207.4,3093.4,3166.6,5,4],[0,4265.2,1931.4,1984.6,6,4],[0,4265.2,3053.4,3166.6,5,4],[0,4320,1931.4,1984.6,5,4],[0,4320,1999.4,2204.6,5,4],[0,4374.6,3053.4,3288.6,5,4],[0,4418.7,1999.4,2204.6,6,4],[0,4464.4,1999.4,2204.6,5,4],[0,4464.4,2957.4,3038.6,5,4],[0,4464.4,3053.4,3288.6,5,4],[0,4514.1,2735.4,2874.6,6,4],[0,4565.3,3181.4,3288.6,5,4],[0,941.2,4999.4,5188.6,6,4],[1,4779.5,669.4,772.6,5,4],[1,4822.4,669.4,772.6,6,4],[0,2576.4,3019.4,3108.6,6,4],[0,3956.1,4115.4,4296.6,5,4],[0,4011.7,3771.4,3832.6,6,4],[0,4055.3,3577.4,3756.6,5,4],[0,4557.7,2957.4,3166.6,6,4],[1,3294,4065.4,4188.6,5,4],[1,4818.1,3701.4,3914.6,5,4],[1,4818.1,3953.4,4024.6,6,4],[0,1048.3,5203.4,5404.6,5,4],[0,1198.8,5169.4,5396.6,6,4],[0,1198.8,5433.4,5530.6,5,4],[0,1247.5,4647.4,4762.6,6,4],[0,1247.5,4873.4,5026.6,5,4],[0,1293.1,4647.4,4762.6,6,4],[1,4796.4,787.4,906.6,5,4],[1,4796.4,1365.4,1554.6,6,4],[1,4840.5,787.4,906.6,5,4],[1,4881.8,669.4,772.6,6,4],[1,4881.8,921.4,1002.6,5,4],[1,4881.8,1041.4,1160.6,5,4],[1,5037.4,921.4,970.6,5,4],[1,5037.4,1249.4,1416.6,5,4],[1,5037.4,1431.4,1486.6,6,4],[1,5082.6,987.4,1052.6,5,4],[1,5082.6,1249.4,1416.6,5,4],[1,5486.4,1117.4,1290.6,6,4]];
 const ALLEY_DATA=[[7,0,6746.1,3116.1,6746.1,3228.1,6896.1,3228.1,6896.1,3134.1],[7,0,5706.8,3440.2,5706.8,3550.2],[4,0,6699.4,2277.1,6699.4,2493.1,6605.4,2493.1,6605.4,2417.1],[7,0,6474.2,2960.7,6560.2,2960.7,6560.2,3002.7],[7,0,6351.8,2281,6351.8,2359,6373.8,2359,6373.8,2485,6431.8,2485],[7,0,5583.4,2436,5711.4,2436,5711.4,2528,5583.4,2528],[7,0,6989.7,2820.8,6859.7,2820.8,6859.7,2826.8,6963.7,2826.8,6963.7,2750.8],[7,0,6472.2,2800.7,6554.2,2800.7,6554.2,2960.7,6474.2,2960.7],[4,0,6330.6,3495.1,6330.6,3601.1,6332.6,3601.1,6332.6,3493.1],[7,0,5862.3,2286.5,5862.3,2346.5],[7,0,5585.2,3344,5585.2,3422,5697.2,3422,5697.2,3340],[7,0,4920.5,2979.5,4920.5,2895.5,5060.5,2895.5,5060.5,2997.5],[7,0,5271.9,2704.3,5271.9,2800.3,5449.9,2800.3,5449.9,2700.3],[7,4,5449.2,3203.1,5449.2,3271.1,5389.2,3271.1,5389.2,3375.1],[7,4,4094.7,2812.6,4380.7,2812.6,4380.7,2882.6],[7,4,5326.4,3264.5,5306.4,3264.5,5306.4,3410.5,5316.4,3410.5],[7,4,4953.2,3589.1,4953.2,3455.1,4803.2,3455.1,4803.2,3639.1],[7,4,5192.7,2812.2,5300.7,2812.2,5300.7,2704.2],[7,4,5220.9,2301,5220.9,2345,5170.9,2345,5170.9,2671],[7,4,4525,2822.3,4525,2684.3,4645,2684.3,4645,2790.3,4589,2790.3,4589,2926.3],[7,0,5011.6,2711.5,5011.6,2909.5,5001.6,2909.5,5001.6,2989.5],[7,0,5346.3,3045.1,5346.3,2971.1,5442.3,2971.1,5442.3,3047.1,5356.3,3047.1],[7,4,5168.1,3282.9,5326.1,3282.9],[7,4,4280.5,2859.8,4280.5,2749.8,4430.5,2749.8,4430.5,2891.8],[7,4,4857.5,2890.1,4997.5,2890.1,4997.5,2846.1,5177.5,2846.1],[7,0,4881.6,2715.2,4881.6,2891.2,4857.6,2891.2],[7,4,4771.5,2826.3,4949.5,2826.3,4949.5,2712.3],[7,0,4527.8,2850,4657.8,2850,4657.8,2898,4527.8,2898],[7,0,5369.2,3051.3,5369.2,2925.3,5283.2,2925.3,5283.2,3031.3],[7,4,4941.4,1619.5,5023.4,1619.5,5023.4,1499.5],[7,4,4894.4,1640,4830.4,1640,4830.4,1964,4932.4,1964],[7,4,4840.2,1568.5,4840.2,1726.5,4908.2,1726.5],[7,4,5579.2,1934.5,5979.2,1934.5,5979.2,2024.5],[7,0,5539.2,2177.3,5481.2,2177.3,5481.2,2183.3,5539.2,2183.3],[7,4,4843.4,3526,4693.4,3526,4693.4,3680],[7,4,5440.3,4127.9,5580.3,4127.9,5580.3,4069.9,5442.3,4069.9],[7,4,5651.3,4007.2,5765.3,4007.2,5765.3,3923.2],[7,4,6040.6,4249.3,6090.6,4249.3,6090.6,4143.3,6208.6,4143.3],[7,4,5055.4,3940.3,5055.4,4054.3,4949.4,4054.3],[7,4,4563,4030.9,4817,4030.9],[7,0,5462.3,3572.8,5468.3,3572.8,5468.3,3630.8,5534.3,3630.8,5534.3,3578.8,5462.3,3578.8],[7,4,4828.1,4021.7,4828.1,3983.7,4822.1,3983.7,4822.1,4015.7,4828.1,4015.7,4828.1,3951.7],[7,4,5523,4239.8,5523,4135.8,5651,4135.8,5651,4215.8],[4,4,4892,3816.2,4892,3842.2,4886,3842.2,4886,3910.2],[7,4,5218.6,3894.2,5218.6,3772.2,5416.6,3772.2],[7,4,5153.1,4194.2,5153.1,4048.2,5107.1,4048.2,5107.1,4208.2],[7,0,6444.3,3612.1,6466.3,3612.1,6466.3,3690.1],[7,4,5315.2,3511.2,5315.2,3587.2,5383.2,3587.2,5383.2,3589.2,5315.2,3589.2,5315.2,3511.2],[4,2,7003.5,2289.3,7003.5,2277.3,7145.5,2277.3,7145.5,2429.3,7281.5,2429.3],[7,2,7066.5,2299.7,7066.5,2345.7,7022.5,2345.7,7022.5,2533.7,7084.5,2533.7,7084.5,2671.7],[7,2,7063.1,2303.4,7283.1,2303.4,7283.1,2237.4,7365.1,2237.4],[7,2,6946.6,2303.8,6946.6,2423.8,7090.6,2423.8,7090.6,2611.8,7146.6,2611.8],[7,4,1998.7,4366,2204.7,4366],[7,4,4865.7,1487,4731.7,1487,4731.7,1419,4845.7,1419,4845.7,1427,4853.7,1427],[7,0,6519.5,3313.5,6519.5,3325.5,6525.5,3325.5,6525.5,3353.5],[7,0,6513.4,3018.2,6513.4,3068.2],[7,0,5424.3,2215.6,5424.3,2239.6],[4,0,5650.6,2292,5650.6,2306,5656.6,2306,5656.6,2316,5650.6,2316,5650.6,2292],[4,0,6553.6,2277.5,6553.6,2293.5,6559.6,2293.5,6559.6,2359.5],[4,0,6825.9,2595.8,6853.9,2595.8,6853.9,2643.8,6863.9,2643.8,6863.9,2679.8],[7,0,6856.3,2749.7,6856.3,2775.7],[7,0,6470.9,2482.3,6512.9,2482.3,6512.9,2554.3],[7,0,4958.5,3138.4,4958.5,3174.4],[7,0,5409,3112.9,5409,3158.9],[7,0,5223.5,3072.1,5223.5,3114.1],[4,0,5509.8,3383.1,5509.8,3479.1,5621.8,3479.1,5621.8,3343.1],[7,0,5464.6,3496.2,5492.6,3496.2,5492.6,3588.2,5460.6,3588.2],[7,2,7103.7,2760.9,7301.7,2760.9,7301.7,2698.9],[4,0,6559.6,3416.6,6587.6,3416.6,6587.6,3444.6],[7,0,6619.8,3366.7,6619.8,3392.7],[7,0,5784.2,3441,5784.2,3483,5790.2,3483,5790.2,3441],[7,0,5890.9,2373.9,5916.9,2373.9],[4,0,6491.4,3487.6,6491.4,3527.6,6503.4,3527.6,6503.4,3615.6,6443.4,3615.6],[7,0,6444.1,3613.7,6710.1,3613.7,6710.1,3475.7],[7,0,6369.6,3071.5,6369.6,3017.5,6375.6,3017.5,6375.6,3059.5,6369.6,3059.5,6369.6,3071.5],[7,0,4771.6,3175.7,4771.6,3091.7,4903.6,3091.7],[5,4,6825.4,2861.2,6956.8,2861.2],[5,4,3225.9,3841.7,3004.5,3841.7,3004.5,3779.7],[5,5,5169.4,3436.9,5262.6,3436.9],[7,5,5241.4,3496.4,5266.6,3496.4],[5,5,5315.6,3477.4,5315.6,3496.6],[5,5,5343.2,3467.4,5343.2,3496.6],[5,5,4931.4,2153.1,4952.6,2153.1],[5,5,4931.4,2224.8,4960.6,2224.8],[7,5,4931.4,2256.6,4962.6,2256.6],[5,5,6791.8,2115.4,6791.8,2220.6],[7,5,5169.4,3569.7,5238.6,3569.7],[7,5,4665.4,3756.6,4736.6,3756.6],[7,5,6237.4,3756.6,6596.6,3756.6],[5,5,6163.4,3808.8,6200.6,3808.8],[7,5,6163.4,3841.5,6200.6,3841.5],[5,5,6107.4,3927.8,6202.6,3927.8],[7,5,5569.4,3960.1,5636.6,3960.1],[7,5,5521.4,3997,5636.6,3997],[7,5,5789.4,4082.5,5864.6,4082.5],[7,5,5369.4,4110.5,5402.6,4110.5],[7,5,5327.4,4143,5402.6,4143],[5,5,5527.4,4305.9,5574.6,4305.9],[5,5,4831.4,4367.5,4854.6,4367.5],[5,5,4871.8,3681.4,4871.8,3800.6],[7,5,4871.8,3949.4,4871.8,4022.6],[5,5,4962.2,4233.4,4962.2,4304.6],[7,5,4994.3,4229.4,4994.3,4286.6],[7,5,5144.1,4267.4,5144.1,4290.6],[7,5,5205.2,4257.4,5205.2,4290.6],[7,5,5240.8,4259.4,5240.8,4290.6],[5,5,5271.5,4261.4,5271.5,4290.6],[7,5,5301.1,4265.4,5301.1,4290.6],[5,5,5368.9,3933.4,5368.9,3992.6],[7,5,5368.9,4269.4,5368.9,4290.6],[5,5,5368.9,4307.4,5368.9,4362.6],[5,5,5485.1,3931.4,5485.1,3950.6],[5,5,5572.7,3809.4,5572.7,3886.6],[7,5,5600.4,3809.4,5600.4,3858.6],[7,5,5682.7,4233.4,5682.7,4252.6],[7,5,5713.9,3825.4,5713.9,3884.6],[5,5,5713.9,4233.4,5713.9,4254.6],[5,5,5804.2,4233.4,5804.2,4262.6],[5,5,5837.4,4233.4,5837.4,4264.6],[7,5,5871,4233.4,5871,4266.6],[7,5,6087.4,3745.4,6087.4,3794.6],[7,5,7027.4,3121,7048.6,3121],[5,5,7113.4,3121,7348.6,3121],[5,5,7361.4,3190.1,7378.6,3190.1],[7,5,7759.4,3334.5,7782.6,3334.5],[5,5,7845.4,3393.7,7904.6,3393.7],[7,5,7759.4,3431,7828.6,3431],[5,5,7845.4,3454.4,7904.6,3454.4],[5,5,7845.4,3486.8,7904.6,3486.8],[7,5,7002.7,2711.4,7002.7,2736.6],[7,5,7002.7,2751.4,7002.7,2804.6],[7,5,7038,2709.4,7038,2736.6],[5,5,7061.2,2709.4,7061.2,2738.6],[7,5,8073.9,3385.4,8073.9,3420.6],[5,5,1019.4,2083.2,1048.6,2083.2],[5,5,2221.4,4113.8,2560.6,4113.8],[7,5,3093.4,4113.8,3224.6,4113.8],[5,5,2555.4,4138.7,2578.6,4138.7],[7,5,2221.4,4165.9,2240.6,4165.9],[5,5,3053.4,4193.7,3078.6,4193.7],[7,5,3181.4,4254.7,3288.6,4254.7],[5,5,3053.4,4282.9,3166.6,4282.9],[5,5,3181.4,4282.9,3288.6,4282.9],[7,5,1931.4,4348.6,1984.6,4348.6],[5,5,2957.4,4348.6,3038.6,4348.6],[7,5,1931.4,4376,1984.6,4376],[7,5,1931.4,4464.1,1984.6,4464.1],[5,5,1999.4,4487.5,2204.6,4487.5],[7,5,2889.4,4487.5,2940.6,4487.5],[7,5,2957.4,4487.5,3038.6,4487.5],[7,5,3181.4,4487.5,3288.6,4487.5],[7,5,1931.4,4521.8,1984.6,4521.8],[5,5,2889.4,4521.8,2940.6,4521.8],[5,5,2957.4,4521.8,3038.6,4521.8],[5,5,3053.4,4521.8,3166.6,4521.8],[7,5,2735.4,4586.2,2874.6,4586.2],[5,5,1931.4,4609.5,1984.6,4609.5],[7,5,3271.4,4609.5,3288.6,4609.5],[5,5,3159.4,4659.5,3292.6,4659.5],[7,5,1721.4,4782.8,1768.6,4782.8],[5,5,1721.4,4833.8,1768.6,4833.8],[5,5,2340.7,4213.4,2340.7,4666.6],[7,5,2404,4205.4,2404,4662.6],[7,5,2914.8,4129.4,2914.8,4164.6],[7,5,2949.3,4123.4,2949.3,4164.6],[5,5,2981,4117.4,2981,4164.6],[5,5,3054,4105.4,3054,4164.6],[7,5,3199.9,4081.4,3199.9,4164.6],[5,5,4511.7,401.4,4511.7,578.6],[7,5,4540.3,593.4,4540.3,712.6],[7,5,4571.9,503.4,4571.9,576.6],[5,5,4571.9,593.4,4571.9,712.6],[5,5,4607.7,321.4,4607.7,462.6],[7,5,4777.9,309.4,4777.9,654.6],[5,5,4777.9,787.4,4777.9,876.6],[7,5,4806.6,921.4,4806.6,948.6],[7,5,4865.7,669.4,4865.7,772.6],[5,5,5129.9,921.4,5129.9,970.6],[5,5,2957.4,2576.3,3004.6,2576.3],[5,5,2957.4,2638.8,3004.6,2638.8],[5,5,3019.4,2638.8,3270.6,2638.8],[7,5,3933.4,2665,3994.6,2665],[7,5,4011.4,2665,4080.6,2665],[7,5,3933.4,2693.2,3994.6,2693.2],[7,5,3090.1,2499.4,3090.1,2516.6],[5,5,3125.4,2499.4,3125.4,2526.6],[7,5,3771.4,3840.3,4100.6,3840.3],[7,5,4115.4,3923.2,4132.6,3923.2],[7,5,3847.4,3952.2,3864.6,3952.2],[7,5,3379.4,3987.2,3398.6,3987.2],[7,5,4493.4,3987.2,4548.6,3987.2],[5,5,3577.4,4012,3600.6,4012],[5,5,4493.4,4012,4548.6,4012],[5,5,3127.4,4035.8,3144.6,4035.8],[5,5,3577.4,4035.8,3756.6,4035.8],[5,5,3771.4,4035.8,3832.6,4035.8],[7,5,4493.4,4035.8,4548.6,4035.8],[7,5,3093.4,4130.2,3224.6,4130.2],[7,5,3181.4,4313.3,3288.6,4313.3],[5,5,3181.4,4344.6,3288.6,4344.6],[5,5,4459.4,4650,4478.6,4650],[7,5,4431.4,4677,4478.6,4677],[7,5,4431.4,4706.8,4478.6,4706.8],[7,5,4279.4,4739.2,4296.6,4739.2],[7,5,4431.4,4739.2,4478.6,4739.2],[5,5,3441.4,4768.4,3546.6,4768.4],[7,5,3441.4,4801.5,3622.6,4801.5],[5,5,4165.4,4801.5,4296.6,4801.5],[5,5,4311.4,4801.5,4416.6,4801.5],[5,5,3011.4,3781.4,3011.4,3936.6],[7,5,3011.4,4113.4,3011.4,4164.6],[7,5,3155.9,3801.4,3155.9,3934.6],[7,5,3630.8,4699.4,3630.8,4764.6],[7,5,3662.3,4699.4,3662.3,4778.6],[5,5,3719.6,4699.4,3719.6,4804.6],[7,5,3742.4,3879.4,3742.4,3920.6],[5,5,3791.6,3885.4,3791.6,3910.6],[7,5,4309.9,3871.4,4309.9,3902.6],[5,5,4346.8,3863.4,4346.8,3906.6],[7,5,4406.7,3851.4,4406.7,3912.6],[5,5,4406.7,4559.4,4406.7,4614.6],[7,5,4476.7,4559.4,4476.7,4580.6],[7,5,7925.4,3558,7986.6,3558],[7,5,8003.4,3558,8052.6,3558],[7,5,8003.4,3589.4,8052.6,3589.4],[5,5,5103.4,1142.7,5152.6,1142.7],[7,5,5103.4,1177.6,5152.6,1177.6],[7,5,4647.4,1211.3,4762.6,1211.3],[5,5,5103.4,1211.3,5152.6,1211.3],[7,5,4777.4,1239.2,4818.6,1239.2],[7,5,4777.4,1289.8,4828.6,1289.8],[7,5,4561,1049.4,4561,1102.6],[5,5,4680.1,1049.4,4680.1,1102.6],[5,5,4717,863.4,4717,1032.6],[5,5,4717,1049.4,4717,1102.6],[7,5,4747.3,939.4,4747.3,1032.6],[5,5,4747.3,1049.4,4747.3,1102.6],[7,5,4803.1,1159.4,4803.1,1350.6],[5,5,4831.6,787.4,4831.6,906.6],[5,5,4831.6,921.4,4831.6,990.6],[5,5,4856.7,669.4,4856.7,772.6],[7,5,4907.9,1175.4,4907.9,1416.6],[5,5,4907.9,1431.4,4907.9,1448.6],[7,5,5020.1,1075.4,5020.1,1160.6],[7,5,5105,921.4,5105,970.6],[7,5,5167.1,921.4,5167.1,970.6],[5,5,5167.1,987.4,5167.1,1074.6],[7,5,5167.1,1249.4,5167.1,1350.6],[7,5,5263.8,1135.4,5263.8,1234.6],[7,5,5263.8,1249.4,5263.8,1350.6],[7,5,5292.3,987.4,5292.3,1102.6],[5,5,5292.3,1249.4,5292.3,1350.6],[5,5,5420,1117.4,5420,1152.6],[7,5,5478.4,1117.4,5478.4,1290.6],[7,5,5508.5,1307.4,5508.5,1350.6],[7,5,5573.2,1307.4,5573.2,1350.6]];
 const ALLEYS=[];
+// 建物を割る1手（焼き込みの記録）: [0,建物,縦か,a0,a1]=縮める / [1,建物,縦か,a0,a1,b0,b1]=2つに割る / [2,建物]=撤去
+function applyCut([t,i,v,a0,a1,b0,b1]){
+  const b=buildings[i],set=(o,p,q)=>{if(v){o.x0=p;o.x1=q;}else{o.y0=p;o.y1=q;}};
+  if(t===1){
+    const b2=Object.assign({},b);
+    set(b,a0,a1);set(b2,b0,b1);b2.seed=(b.seed*7+13)%99991;
+    buildings.push(b2);gridAdd(bldGrid,b2.x0,b2.y0,b2.x1,b2.y1,b2);
+  }else if(t===0)set(b,a0,a1);
+  else{b.noDraw=true;b.cut=true;for(const [k,a] of bldGrid){const j=a.indexOf(b);if(j>=0)a.splice(j,1);}}
+}
 function cutBuildings(vert,c,t0,t1,half){ // 縦なら x=c の帯（幅 2*half）で建物を割る。9単位未満の切れ端は撤去
   const hits=new Set(),tmp=[];
   for(let t=t0;t<=t1;t+=4){gridNear(bldGrid,vert?c:t,vert?t:c,tmp);for(const b of tmp)hits.add(b);}
@@ -1506,15 +1595,9 @@ function cutBuildings(vert,c,t0,t1,half){ // 縦なら x=c の帯（幅 2*half�
     if(b.noDraw)continue;
     const [p0,p1,q0,q1]=vert?[b.x0,b.x1,b.y0,b.y1]:[b.y0,b.y1,b.x0,b.x1];
     if(p1<=c-half||p0>=c+half||q1<=t0||q0>=t1)continue;
-    const okA=c-half-p0>=9,okB=p1-(c+half)>=9;
-    const set=(o,a0,a1)=>{if(vert){o.x0=a0;o.x1=a1;}else{o.y0=a0;o.y1=a1;}};
-    if(okA&&okB){
-      const b2=Object.assign({},b);
-      set(b,p0,c-half);set(b2,c+half,p1);b2.seed=(b.seed*7+13)%99991;
-      buildings.push(b2);gridAdd(bldGrid,b2.x0,b2.y0,b2.x1,b2.y1,b2);
-    }else if(okA)set(b,p0,c-half);
-    else if(okB)set(b,c+half,p1);
-    else{b.noDraw=true;b.cut=true;for(const [k,a] of bldGrid){const i=a.indexOf(b);if(i>=0)a.splice(i,1);}}
+    const okA=c-half-p0>=9,okB=p1-(c+half)>=9,i=buildings.indexOf(b),v=vert?1:0;
+    const op=okA&&okB?[1,i,v,p0,c-half,c+half,p1]:okA?[0,i,v,p0,c-half]:okB?[0,i,v,c+half,p1]:[2,i];
+    applyCut(op);BAKE.put('acut',op);
   }
 }
 {
@@ -1522,39 +1605,50 @@ function cutBuildings(vert,c,t0,t1,half){ // 縦なら x=c の帯（幅 2*half�
   const AL=(location.search.match(/[?&]alley=(\d)/)||[])[1];   // 開発用: ?alley=0 小道なし / ?alley=1 割るだけ（焼き直しの時）
   if(AL==='0')ALLEY_CUTS.length=0;
   if(AL==='0'||AL==='1')ALLEY_DATA.length=0;
+  // 焼き込み: 建物を割った手順（acut）・残した ALLEY_DATA の番号（akeep）・道路との接続（ajunc）
+  for(const k of ['acut','akeep','ajunc'])BAKE.begin(k);
+  const CUTS=BAKE.list('acut'),KEEP=BAKE.list('akeep'),JUNC=BAKE.list('ajunc');
+  if(CUTS)for(const op of CUTS)applyCut(op);
   for(const [v,c,t0,t1,w,s] of ALLEY_CUTS){
     // ランドマークの敷地を横切る切り通しは捨てる（後から足したランドマークと重なった古いデータ）
     const hw=w/2+1,[ax0,ax1,ay0,ay1]=v?[c-hw,c+hw,t0,t1]:[t0,t1,c-hw,c+hw];
     if(LMS.some(l=>l.solid&&ax1>l.solid[0]&&ax0<l.solid[2]&&ay1>l.solid[1]&&ay0<l.solid[3]))continue;
-    cutBuildings(!!v,c,t0,t1,w/2+0.35);
+    if(!CUTS)cutBuildings(!!v,c,t0,t1,w/2+0.35);
     ALLEYS.push(mk(v?[[c,t0],[c,t1]]:[[t0,c],[t1,c]],w,s));
   }
-  const tmp=[];
-  for(const e of ALLEY_DATA){
+  const tmp=[],keep=KEEP?new Set(KEEP):null;
+  ALLEY_DATA.forEach((e,ei)=>{
+    if(keep&&!keep.has(ei))return;
     const [w,s,...f]=e,pts=[];
     for(let i=0;i+1<f.length;i+=2)pts.push([f[i],f[i+1]]);
-    if(pts.length<2)continue;
+    if(pts.length<2)return;
     const a=mk(pts,w,s);
     // 建物に掛かっていたら捨てる（生成を変えて古くなったデータ）
     let ok=true;
-    for(let d=1;d<a.pl.len-1&&ok;d+=3){
+    if(!keep)for(let d=1;d<a.pl.len-1&&ok;d+=3){
       const p=plAt(a.pl,d);gridNear(bldGrid,p.x,p.y,tmp);
       for(const b of tmp)if(p.x>b.x0-w/2+0.2&&p.x<b.x1+w/2-0.2&&p.y>b.y0-w/2+0.2&&p.y<b.y1+w/2-0.2){ok=false;break;}
     }
-    if(ok)ALLEYS.push(a);
-  }
+    if(ok){ALLEYS.push(a);BAKE.put('akeep',ei);}
+  });
   // 名前のある実在の小道（道標を立てる）
   // [名前, よみ, ローマ字, 幅, 様式, 折れ線, 道標の見出し, 行き先（奥は行き止まりではなく建物の入口）]
   for(const [n,k,e,w,s,pts,hd,dest] of [
     ['上人坂','じょうにんざか','Jonin-zaka',6,2,[[7528,2097],[7528,2120],[7567,2120]]],   // 宝厳寺の山門へ上る坂（かつての「ネオン坂」）
     ['萬翠荘','ばんすいそう','Bansuiso',6,2,[[6001,3084],[6001,3001],[6045,3001]],'重要文化財',true],   // 一番町通りから県庁と坂の上の雲ミュージアムの間を上り、車寄せの前へ
   ]){const a=mk(pts,w,s);Object.assign(a,{n,k,e,hd,dest:!!dest,named:true});ALLEYS.push(a);}
-  // 端が道路（歩道）に接していれば、歩行者はそこから道路へ出る
-  for(const a of ALLEYS)for(const end of [0,1]){
+  // 端が道路（歩道）に接していれば、歩行者はそこから道路へ出る（焼き込みの記録 [小道,端,道路,道路上の距離]）
+  if(JUNC)for(const [ai,end,ri,od] of JUNC)ALLEYS[ai].junc.push({d:end?ALLEYS[ai].pl.len:0,road:ROADS[ri],od});
+  else ALLEYS.forEach((a,ai)=>{for(const end of [0,1]){
     const p=a.pts[end?a.pts.length-1:0],ri=roadInfo(p[0],p[1]);
-    if(ri&&ri.d<ri.road.w/2+8.5&&ri.road.kind!=='arcade')a.junc.push({d:end?a.pl.len:0,road:ri.road,od:dOnPl(ri.road.pl,p[0],p[1])});
-  }
+    if(ri&&ri.d<ri.road.w/2+8.5&&ri.road.kind!=='arcade'){
+      const od=dOnPl(ri.road.pl,p[0],p[1]);
+      a.junc.push({d:end?a.pl.len:0,road:ri.road,od});BAKE.put('ajunc',[ai,end,ROADS.indexOf(ri.road),od]);
+    }
+  }});
 }
+
+BAKE.ms=Math.round(performance.now()-BAKE.t0);   // 街の生成（焼き込みを読む）にかかった時間
 
 /* ---------- セーブ ---------- */
 const SAVEKEY='matsuyama-gta-save';

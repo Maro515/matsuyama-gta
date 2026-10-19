@@ -5,12 +5,58 @@
    乱数は独立したシードを使う（建物配置の乱数列には触れない）。
    座標: 道路のオフセット o は n=(-sin a, cos a) 方向が正（10_world の L 側）。
    ========================================================= */
-G3.street = (function () {
+G3.street = (function STREET() {
   const THREE = G3.THREE;
   const U = G3.U;
   const TAU = Math.PI * 2;
   const stats = {};
   let lists = {};
+
+  /* ---------- 焼き込み（2026-10-19）: 置き場所の判定の記録 ----------
+     空き・重なりの判定（free・nearBld・clearOfRoad・onAlley・nearOtherAlley・nearLM・overlapsOther・lotFree と inWaterRaw・inPark・hillAt・
+     propHit・blockedAt）の結果を ?bake=rec の生成で呼ばれた順に1ビットずつ記録し、起動時は計算せずに記録を返す。
+     乱数の消費・位置や向きの計算・置く処理は生成と同じに走るので、置かれる物と位置は生成と1ビットも違わない。
+     使うのは 10_world の bakeSetup の指紋が合う時だけ（G3.bakeW.play）。判定の中から呼ばれた判定は記録しない（depth）。
+     タッチ端末は山の木の数が違う（G3.Q.trees。木の当たり判定が変わる）ので、記録と同じ端末の種類の時だけ使い、ほかは生成する */
+  const TP = { mode: null, bytes: null, n: 0, i: 0, depth: 0, on: false, bits: [], marks: [], k: 0, bad: null };
+  const tp = fn => function () {
+    if (!TP.on || TP.depth) return fn.apply(this, arguments);
+    if (TP.mode === 'play') { const i = TP.i++; return i < TP.n && ((TP.bytes[i >> 3] >> (i & 7)) & 1) === 1; }
+    TP.depth++;
+    let r;
+    try { r = fn.apply(this, arguments); } finally { TP.depth--; }
+    if (TP.mode === 'rec') TP.bits.push(r ? 1 : 0);
+    return r;
+  };
+  const inWaterRaw = tp(window.inWaterRaw), inPark = tp(window.inPark), hillAt = tp(window.hillAt), propHit = tp(window.propHit), blockedAt = tp(window.blockedAt);
+  function tapeStart() {
+    const BW = G3.bakeW || {}, S = BW.play && BW.data.street, use = S && S.qt === G3.Q.trees;
+    TP.mode = use ? 'play' : BW.rec ? 'rec' : null;
+    TP.on = !!TP.mode; TP.i = 0; TP.k = 0; TP.bits = []; TP.marks = []; TP.bad = null;
+    if (S) Object.assign(baked, S.shapes);   // 街具の当たり判定の形（モデルから焼いた長方形。端末によらない）
+    if (use) {
+      const b = atob(S.tape), u = new Uint8Array(b.length);
+      for (let i = 0; i < b.length; i++) u[i] = b.charCodeAt(i);
+      TP.bytes = u; TP.n = S.n; TP.marks = S.marks;
+    }
+  }
+  // 段の区切りごとに記録の位置を合わせる（ずれたら古い記録＝指紋の漏れ。以後の段がおかしくなるのでログに出す）
+  function tapeMark(name) {
+    if (TP.mode === 'rec') TP.marks.push(TP.bits.length);
+    else if (TP.mode === 'play' && TP.marks[TP.k] !== TP.i && !TP.bad) { TP.bad = name; console.error('街具の焼き込みが合いません（' + name + '）。?bake=rec で作り直してください'); }
+    TP.k++;
+  }
+  function tapeEnd() {
+    if (TP.mode === 'rec') {
+      const u = new Uint8Array((TP.bits.length + 7) >> 3);
+      TP.bits.forEach((b, i) => { if (b) u[i >> 3] |= 1 << (i & 7); });
+      let str = '';
+      for (let i = 0; i < u.length; i += 8192) str += String.fromCharCode.apply(null, u.subarray(i, i + 8192));
+      G3.bakeOut.street = { n: TP.bits.length, qt: G3.Q.trees, tape: btoa(str), marks: TP.marks, shapes: Object.assign({}, baked) };
+    }
+    stats.bake = { mode: TP.mode, n: TP.mode === 'play' ? TP.n : TP.bits.length, used: TP.i, bad: TP.bad };
+    TP.on = false; TP.bytes = null; TP.bits = [];
+  }
 
   /* ---------- 地区 ---------- */
   function zoneOf(x, y) {
@@ -190,7 +236,8 @@ G3.street = (function () {
   // 近くにすでに何か置いたか（簡易の占有グリッド）
   const occ = new Map();
   const okey = (x, y) => ((x / 12) | 0) + ',' + ((y / 12) | 0);
-  function free(x, y, r = 6) {
+  const free = tp(freeAt);
+  function freeAt(x, y, r = 6) {
     for (let i = -1; i <= 1; i++) for (let j = -1; j <= 1; j++) {
       const a = occ.get(((x / 12 | 0) + i) + ',' + ((y / 12 | 0) + j));
       if (a) for (const p of a) if (hyp(p[0] - x, p[1] - y) < r + p[2]) return false;
@@ -198,6 +245,7 @@ G3.street = (function () {
     return true;
   }
   function take(x, y, r = 3) {
+    if (TP.mode === 'play' && TP.on) return;   // 空きの判定は記録から返すので、占有を覚える必要がない
     const k = okey(x, y);
     (occ.get(k) || occ.set(k, []).get(k)).push([x, y, r]);
   }
@@ -207,6 +255,8 @@ G3.street = (function () {
     for (const m of MIKANS) KEYPTS.push([m.x, m.y]);
     for (const g of GIGSPOTS) KEYPTS.push([g[1], g[2]]);
     for (const m of MISSIONS) { KEYPTS.push(m.start); if (m.goal) KEYPTS.push(m.goal); for (const c of m.cps || []) KEYPTS.push(c); }
+    alleyIndex();
+    if (TP.mode === 'play') return;   // 以下は占有の予約だけ（空きの判定を記録から返す時は要らない）
     for (const l of LAMPS) take(l[0], l[1], 3);
     for (const p of POLES) take(p.x, p.y, 3);
     for (const v of VENDING) take(v.x, v.y, 4);
@@ -216,7 +266,6 @@ G3.street = (function () {
     for (const k of KEYPTS) take(k[0], k[1], 7);
     for (const r of ROADS) if (r.kind === 'lane') for (let d = 0; d <= r.pl.len; d += 6) { const p = plAt(r.pl, d); take(p.x, p.y, r.w / 2 - 0.5); }
     // 小道は真ん中を歩けるように空ける（両端は路地の小物を置く所）
-    alleyIndex();
     if (typeof ALLEYS !== 'undefined') for (const a of ALLEYS) for (let d = 0; d <= a.pl.len; d += 3) { const p = plAt(a.pl, d); take(p.x, p.y, Math.max(1.2, a.w / 2 - 1.2)); }
     // 追加ランドマークの石段・参道の前（歩道の柵や街具で入口を塞がない）
     for (const l of LMS) if (l.ex) for (let x = l.ex[0] - 12; x <= l.ex[2] + 12; x += 4) for (let y = l.ex[1] - 12; y <= l.ex[3] + 12; y += 4) take(x, y, 3);
@@ -229,12 +278,12 @@ G3.street = (function () {
     if (typeof CANALS !== 'undefined') for (const cn of CANALS) for (let t = cn.t0; t <= cn.t1; t += 4) take(cn.vert ? cn.c : t, cn.vert ? t : cn.c, CANAL_W / 2 + 1);
   }
   // 建物（bldGrid）と、3D時に bldGrid から外したランドマークの敷地（LMS.solid）の両方を見る
-  const nearBld = (x, y, m) => {
+  const nearBld = tp((x, y, m) => {
     gridNear(bldGrid, x, y, _ov);
     for (const b of _ov) if (x > b.x0 - m && x < b.x1 + m && y > b.y0 - m && y < b.y1 + m) return true;
     for (const l of LMS) { const s2 = l.solid; if (s2 && x > s2[0] - m && x < s2[2] + m && y > s2[1] - m && y < s2[3] + m) return true; }
     return false;
-  };
+  });
 
   /* ---------- 第1段: 道路端の柵・植え込み・車止め ---------- */
   const HEDGE_ROADS = new Set(['平和通り', '花園町通り', '千舟町通り', '空港通り', '大手町通り']);
@@ -871,14 +920,14 @@ G3.street = (function () {
   }
   const faceLen = (b, f) => (f % 2 === 0) ? b.x1 - b.x0 : b.y1 - b.y0;
   const AWN = { '#d43c3c': 'awning_red', '#3f8a52': 'awning_green', '#2456a8': 'awning_blue', '#e8a020': 'awning_orange', '#7a3ca8': 'awning_red' };
-  const overlapsOther = (b, x, y, m) => {
+  const overlapsOther = tp((b, x, y, m) => {
     gridNear(bldGrid, x, y, _ov);
     for (const o of _ov) if (o !== b && x > o.x0 - m && x < o.x1 + m && y > o.y0 - m && y < o.y1 + m) return true;
     return false;
-  };
+  });
   // ランドマーク（モデルの敷地）の近くか
-  const nearLM = (x, y, m) => LMS.some(l => (l.solid ? (x > l.solid[0] - m && x < l.solid[2] + m && y > l.solid[1] - m && y < l.solid[3] + m) : hyp(l.x - x, l.y - y) < m));
-  const clearOfRoad = (x, y, m) => { const ri = roadInfo(x, y); return !ri || ri.d > ri.road.w / 2 + (ri.road.kind === 'lane' ? 0.6 : G3.SW) + m; };
+  const nearLM = tp((x, y, m) => LMS.some(l => (l.solid ? (x > l.solid[0] - m && x < l.solid[2] + m && y > l.solid[1] - m && y < l.solid[3] + m) : hyp(l.x - x, l.y - y) < m)));
+  const clearOfRoad = tp((x, y, m) => { const ri = roadInfo(x, y); return !ri || ri.d > ri.road.w / 2 + (ri.road.kind === 'lane' ? 0.6 : G3.SW) + m; });
 
   function buildingDetails() {
     const rr = mulberry32(5304);
@@ -1723,18 +1772,21 @@ G3.street = (function () {
   function lotFree(r, d, sg, W, D, o0, opt = {}) {
     const pts = [];
     for (const u of [0, 0.5, 1]) for (const vv of [0, 0.5, 1]) pts.push(at(r, d + u * W, sg * (o0 + vv * D)));
+    return lotOk(r, W, opt, pts) ? pts : null;
+  }
+  const lotOk = tp((r, W, opt, pts) => {
     for (const q of pts) {
       const rq = roadInfo(q.x, q.y);
       if (inWaterRaw(q.x, q.y) || hillAt(q.x, q.y) || inPark(q.x, q.y, 4) || nearBld(q.x, q.y, 3) || !free(q.x, q.y, 6) || railDist(q.x, q.y) < 18 ||
-        nearLM(q.x, q.y, opt.lm || 60) || propHit(q.x, q.y, 3, true) || (rq && rq.road !== r && rq.d < rq.road.w / 2 + G3.SW + 2)) return null;
+        nearLM(q.x, q.y, opt.lm || 60) || propHit(q.x, q.y, 3, true) || (rq && rq.road !== r && rq.d < rq.road.w / 2 + G3.SW + 2)) return false;
     }
-    if (FIELDS.some(f => pts.some(q => q.x > f.x - 4 && q.x < f.x + f.w + 4 && q.y > f.y - 4 && q.y < f.y + f.h + 4))) return null;
-    if (parked.some(c => pts.some(q => hyp(c.x - q.x, c.y - q.y) < W * 0.5 + 6))) return null;
+    if (FIELDS.some(f => pts.some(q => q.x > f.x - 4 && q.x < f.x + f.w + 4 && q.y > f.y - 4 && q.y < f.y + f.h + 4))) return false;
+    if (parked.some(c => pts.some(q => hyp(c.x - q.x, c.y - q.y) < W * 0.5 + 6))) return false;
     const xs = pts.map(q => q.x), ys = pts.map(q => q.y);
     const bx0 = Math.min(...xs) - 8, bx1 = Math.max(...xs) + 8, by0 = Math.min(...ys) - 8, by1 = Math.max(...ys) + 8;
-    if (KEYPTS.some(k => k[0] > bx0 && k[0] < bx1 && k[1] > by0 && k[1] < by1)) return null;
-    return pts;
-  }
+    if (KEYPTS.some(k => k[0] > bx0 && k[0] < bx1 && k[1] > by0 && k[1] < by1)) return false;
+    return true;
+  });
 
   /* ---------- 第6段: コンビニ ---------- */
   function konbinis(scene) {
@@ -3066,19 +3118,21 @@ G3.street = (function () {
       gridAdd(alleyGrid, Math.min(ax, bx) - 10, Math.min(ay, by) - 10, Math.max(ax, bx) + 10, Math.max(ay, by) + 10, { ax, ay, bx, by, a });
     }
   }
-  function onAlley(x, y, m) {   // 小道の路面（幅/2 + m）の上なら、その小道
+  const onAlley = tp(alleyAtPt);
+  const onOtherAlley = tp((x, y, m, a) => { const o = alleyAtPt(x, y, m); return !!o && o !== a; });   // a 以外の小道の上か
+  function alleyAtPt(x, y, m) {   // 小道の路面（幅/2 + m）の上なら、その小道
     if (!alleyGrid) return null;
     gridNear(alleyGrid, x, y, _ag);
     for (const s of _ag) if (seg(x, y, s.ax, s.ay, s.bx, s.by).d < s.a.w / 2 + m) return s.a;
     return null;
   }
   // ほかの小道の中心線から r 以内か（小道が交わる所に、別の小道の小物がはみ出さないように）
-  function nearOtherAlley(x, y, a, r) {
+  const nearOtherAlley = tp((x, y, a, r) => {
     if (!alleyGrid) return false;
     gridNear(alleyGrid, x, y, _ag);
     for (const s of _ag) if (s.a !== a && seg(x, y, s.ax, s.ay, s.bx, s.by).d < r) return true;
     return false;
-  }
+  });
   // 折れ線上の距離 d の位置と向き
   function alleyAt(a, d) { const p = plAt(a.pl, clamp(d, 0, a.pl.len)); return { x: p.x, y: p.y, a: p.a, nx: -Math.sin(p.a), ny: Math.cos(p.a) }; }
   function alleys(scene) {
@@ -3189,7 +3243,7 @@ G3.street = (function () {
               const mx = sx + tx * SEG / 2, my = sy + ty * SEG / 2, ex = sx + tx * SEG, ey = sy + ty * SEG;
               // 外側に建物がある所（壁がある）・道路・ほかの小道・大事な地点の近くには立てない
               if ([[sx, sy], [mx, my], [ex, ey]].some(([x, y]) => nearBld(x + nx * sg * 1.6, y + ny * sg * 1.6, 0.4) || nearBld(x, y, 0.3) || !clearOfRoad(x, y, 0.4)
-                || (onAlley(x, y, 0.2) && onAlley(x, y, 0.2) !== a) || !free(x, y, 0.2) || nearLM(x, y, 2))) continue;
+                || onOtherAlley(x, y, 0.2, a) || !free(x, y, 0.2) || nearLM(x, y, 2))) continue;
               if (ishi) put('dobei', mx, my, -ang, 0);
               else put('block_wall', sx, sy, -ang, 0);
               nWall++;
@@ -3289,60 +3343,33 @@ G3.street = (function () {
 
   function build(scene) {
     if (!G3.glb.street) return;
-    seedOcc();
-    tramStops(scene);
-    laneFurniture(scene);
-    roadMarks(scene);
-    guideSigns(scene);
-    signs();
-    dogo(scene);
-    arcades();
-    yuzuki();
-    furniture(scene);
-    ports();
-    coastline(scene);
-    fishingHarbor();
-    crossings(scene);
-    catenary(scene);
-    gasStations(scene);
-    konbinis(scene);
-    overpasses(scene);
-    stations();
-    trailheads();
-    powerLines(scene);
-    billboards(scene);
-    riverside();
-    parks(scene);
-    shrines();
-    farmHuts();
-    taxiStands();
-    busShelters();
-    roadworks();
-    gomiStations();
-    roadEdges();
-    buildingDetails();
-    shopSigns(scene);
-    houseYards(scene);
-    greenery();
-    exteriors();
-    vacantLots(scene);
-    alleys(scene);
-    tramBoards(scene, boards, cells);   // 電停・駅・登城道・小道の名標をまとめて1枚に
-    nightLights(scene);
-    shopLights(scene);
-    roofs();
-    boats();
-    cranes();
+    const ST = G3.streetTimes = {};   // 段ごとの時間（ms、計測用）
+    tapeStart();
+    const steps = [seedOcc, tramStops, laneFurniture, roadMarks, guideSigns, signs, dogo, arcades, yuzuki, furniture, ports, coastline,
+      fishingHarbor, crossings, catenary, gasStations, konbinis, overpasses, stations, trailheads, powerLines, billboards, riverside,
+      parks, shrines, farmHuts, taxiStands, busShelters, roadworks, gomiStations, roadEdges, buildingDetails, shopSigns, houseYards,
+      greenery, exteriors, vacantLots, alleys,
+      function tramBoardsAll(sc) { tramBoards(sc, boards, cells); },   // 電停・駅・登城道・小道の名標をまとめて1枚に
+      nightLights, shopLights, roofs, boats, cranes];
+    for (const f of steps) {
+      const t0 = performance.now();
+      f(scene);
+      tapeMark(f.name);
+      ST[f.name] = Math.round(performance.now() - t0);
+    }
     // 雨の夜の映り込み: 街灯の灯具（ポールから 2.15m・高さ 6.4m）とコンビニの明るい店先（flush で lists は空になる）
     for (const M of lists.xlamp || []) { const e = M.elements; G3.refl.lamp(e[12] + e[0] * 2.15, e[14] + e[2] * 2.15, e[13] + 6.4 * U); }
     for (const M of lists.konbini || []) {
       const e = M.elements, fx = e[0] / U, fz = e[2] / U;
       G3.refl.add(e[12] + fx * 6.2 * U, e[14] + fz * 6.2 * U, e[13] + 1.4 * U, 7 * U, 1.1 * U, 0xf2f8ff, 0.45, fx, fz);
     }
+    let t1 = performance.now();
     flush(scene);
+    ST.flush = Math.round(performance.now() - t1);
     flutterAndBob(scene);
-    freeKeyPoints();
-    extraAmb();
+    freeKeyPoints(); tapeMark('freeKeyPoints');
+    extraAmb(); tapeMark('extraAmb');
+    tapeEnd();
     ensureWater();   // 消火栓の放水用（起動時の下準備でシェーダーを作っておく）
     G3.street.stats = stats;
     G3.street.amb = amb;
@@ -3357,5 +3384,5 @@ G3.street = (function () {
     }
     return best;
   }
-  return { build, update, zoneOf, activeCrossing, breakAt };
+  return { build, update, zoneOf, activeCrossing, breakAt, src: () => STREET.toString() };
 })();

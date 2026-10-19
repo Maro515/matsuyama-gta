@@ -2,7 +2,7 @@
 /* =========================================================
    静的な街の構築（地形・水・丘・田畑・道路・鉄道・建物・樹木・街具）
    ========================================================= */
-G3.world = (function () {
+G3.world = (function WORLD() {
   const THREE = G3.THREE;
   const U = G3.U;
   const WM = {};      // マテリアル
@@ -1433,9 +1433,12 @@ G3.world = (function () {
     const gb = new GB(true), gbR = new GB(true);
     const CP = C('#a9a398'), CS = C('#6f6a62'), CW = C('#7a5638');
     const W = 2.8;   // 半幅（道幅 2.2m）
-    for (const t of TRAIL_DEF) {
-      const pts = routeTrail(h, t.from, t.to);
-      if (!pts) continue;
+    const BW = G3.bakeW, TR = BW.play ? BW.data.trails : null;   // 焼き込み: 経路（A* の結果の折れ線）
+    if (BW.rec) G3.bakeOut.trails = [];
+    TRAIL_DEF.forEach((t, ti) => {
+      const pts = TR ? TR[ti] : routeTrail(h, t.from, t.to);
+      if (BW.rec) G3.bakeOut.trails.push(pts);
+      if (!pts) return;
       const pl = buildPl(pts);
       G3.trails.push(Object.assign({}, t, { pts, pl }));
       // 2単位ごとに地形へ貼る帯。急な所（こう配 0.22 超）は 1.6 単位ごとに石段の段鼻
@@ -1465,7 +1468,7 @@ G3.world = (function () {
           }
         }
       }
-    }
+    });
     const m = gb.mesh(new THREE.MeshStandardMaterial({ map: G3.tex.concrete, vertexColors: true, roughness: 0.9, side: THREE.DoubleSide, polygonOffset: true, polygonOffsetFactor: -1, polygonOffsetUnits: -4 }), false);
     m.receiveShadow = true; scene.add(m);
     if (gbR.p.length) scene.add(gbR.mesh(new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.8 }), true));
@@ -2268,6 +2271,7 @@ G3.world = (function () {
   }
   G3.lmMat = lmMat;
   function buildLandmarks(scene) {
+    const BW = G3.bakeW, occB = BW.play ? BW.data.occ : null;   // 焼き込み: OCC のマス（並べた番号の連なり）
     for (const l of LMS) {
       const mp = LM_MAP[l.n];
       if (!mp) continue;
@@ -2312,10 +2316,15 @@ G3.world = (function () {
       }
       scene.add(o);
       if (node) {
-        bakeOccupancy(o); placedLM.push(l);
+        if (!occB) bakeOccupancy(o);
+        placedLM.push(l);
         const bb = new THREE.Box3().setFromObject(o);
         (G3.lmBoxes || (G3.lmBoxes = [])).push([bb.min.x, bb.min.z, bb.max.x, bb.max.z]);
       }
+    }
+    if (typeof OCC !== 'undefined') {
+      if (occB) unrun(occB, k => OCC.add(k));
+      else if (BW.rec) G3.bakeOut.occ = runs([...OCC].sort((a, b) => a - b));
     }
     // 手書きの矩形（LMS.solid）はモデルと合わないことがあるので、モデルから焼いた当たり判定に置き換える
     if (typeof bldGrid !== 'undefined') {
@@ -2510,9 +2519,42 @@ G3.world = (function () {
     return n;
   }
 
+  /* ---------- 焼き込み（2026-10-19） ----------
+     登城道の経路（A*）・ランドマークの当たり判定（OCC）・3D の街具（12_street の置き場所の判定）を CITY_BAKE.world から読む。
+     指紋 = 街の生成（game.html の BAKE.fp）・当たり判定の節（BAKE.fpPhys）・このファイルと 12_street.js のコード・地形の高さ・
+     モデル（street/props/landmarks）の内容・three.js の版。違えば生成する（?bake=0・?alley=… も生成） */
+  function bakeSetup() {
+    const B = typeof BAKE !== 'undefined' ? BAKE : null;
+    const core = heightAt.toString() + hillProfile.toString() + JSON.stringify([HILLS3, CASTLE_DECK, DECKS, U, THREE.REVISION]);
+    const fp = fpHash([B ? B.fp : '', B ? B.fpPhys : '', WORLD.toString(), G3.street ? G3.street.src() : '', core,
+      G3.glbFP.street, G3.glbFP.props, G3.glbFP.landmarks].join('|'));
+    const D = B && B.data && B.data.world, rec = !!(B && B.rec);
+    const why = !B ? 'no BAKE' : rec ? 'rec' : (B.why === '?bake=0' || B.why === '?alley') ? B.why : !D ? 'no data' : D.fp !== fp ? 'stale' : '';
+    G3.bakeW = { fp, rec, play: !why, why, data: why ? null : D };
+    if (rec) G3.bakeOut = { fp };
+    if (why && why !== 'rec' && why !== '?bake=0' && why !== '?alley' && B && B.data) console.warn('街の焼き込み（3D）が古いので生成します:', why);
+  }
+  // 並べた整数の列 ⇔ 連なり [飛ばす数, 続く数, ...]（OCC のマスの番号を小さく持つ）
+  function runs(a) {
+    const out = [];
+    let prev = -1;
+    for (let i = 0; i < a.length;) {
+      let j = i;
+      while (j + 1 < a.length && a[j + 1] === a[j] + 1) j++;
+      out.push(a[i] - prev - 1, j - i + 1);
+      prev = a[j]; i = j + 1;
+    }
+    return out;
+  }
+  function unrun(r, fn) {
+    let k = -1;
+    for (let i = 0; i < r.length; i += 2) { k += r[i]; for (let n = 0; n < r[i + 1]; n++) fn(++k); }
+  }
+
   function build() {
     const scene = G3.scene, WT = G3.worldTimes = {}; let tw = performance.now();
     const lapw = k => { const t = performance.now(); WT[k] = Math.round(t - tw); tw = t; };
+    bakeSetup();
     buildMaterials();
     buildGround(scene); lapw('buildGround');
     buildWater(scene); lapw('buildWater');

@@ -16,3 +16,4 @@
 - 1ファイル版: `python3 build/assemble.py` で `index.html` を作る（素材を全部埋め込むので、ダブルクリックでオフラインでも動く）。生成物なのでリポジトリには入れない
 - 公開: main に push すると GitHub Actions（`.github/workflows/pages.yml`）が同じ手順で組み立てて GitHub Pages に出す
 - 素材を作り直したら: 3D モデルは `sh blender/build_all.sh`（最後に頂点の量子化まで行う）、画像は `sh build/compress_textures.sh`（KTX2 化）
+- 街の配置（建物・木・路地・街具など）は焼き込みデータ `src/baked/city.js` から読む（起動時に乱数で探さない）。地図・生成・当たり判定・モデルを変えたら、開発サーバーで `/src/game.html?bake=rec` を開いて起動を待ち、`python3 build/bake_city.py` で作り直す（古いままでも起動時の生成に戻るだけで街は正しい。`?bake=0` は焼き込みを使わない）

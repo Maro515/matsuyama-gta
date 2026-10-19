@@ -3072,6 +3072,13 @@ G3.street = (function () {
     for (const s of _ag) if (seg(x, y, s.ax, s.ay, s.bx, s.by).d < s.a.w / 2 + m) return s.a;
     return null;
   }
+  // ほかの小道の中心線から r 以内か（小道が交わる所に、別の小道の小物がはみ出さないように）
+  function nearOtherAlley(x, y, a, r) {
+    if (!alleyGrid) return false;
+    gridNear(alleyGrid, x, y, _ag);
+    for (const s of _ag) if (s.a !== a && seg(x, y, s.ax, s.ay, s.bx, s.by).d < r) return true;
+    return false;
+  }
   // 折れ線上の距離 d の位置と向き
   function alleyAt(a, d) { const p = plAt(a.pl, clamp(d, 0, a.pl.len)); return { x: p.x, y: p.y, a: p.a, nx: -Math.sin(p.a), ny: Math.cos(p.a) }; }
   function alleys(scene) {
@@ -3159,7 +3166,7 @@ G3.street = (function () {
         const dep = DEPTH[nm] || 0.6, o = h + 0.25 - dep;
         if (o - dep < CLEAR && !SOFT.has(nm) && !nm.startsWith('weed')) continue;
         const x = q.x + q.nx * sg * o, y = q.y + q.ny * sg * o;
-        if (!free(x, y, Math.min(0.5, dep)) || nearLM(x, y, 2)) continue;
+        if (!free(x, y, Math.min(0.5, dep)) || nearLM(x, y, 2) || nearOtherAlley(x, y, a, 3.6)) continue;   // 自転車などの長い物が交差する小道をふさがない
         // 壁から路地の中を向く（+X が外向き）／長い物は壁に沿わせる
         const inA = Math.atan2(-q.ny * sg, -q.nx * sg);
         put(nm, x, y, ALONG.has(nm) ? -q.a : -inA, 0);

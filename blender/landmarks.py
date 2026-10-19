@@ -625,10 +625,27 @@ def campus(name, w, d):
 
 
 def mitsukoshi():
+    """松山三越（一番町通りの南、大街道アーケード入口の西）。ゲームの街区（一番町通りと二番町通りの間）に
+    収まる細長い平面。看板は北（一番町通り）と東（大街道）。"""
+    w, d = 40.4, 10.0
+
     def extra(M, top):
-        return [box('band', (55.4, 29.4, 2.2), (0, 0, top - 1.2), M['green']),
-                text3d('sign', '三越', 2.4, (0, -14.9, top - 1.2), '-Y', M['cream'], font=MINCHO)]
-    return simple_office('mitsukoshi', 55, 29, 7, upper='shop', ground='gshop', extra=extra)
+        return [box('band', (w + 0.4, d + 0.4, 2.2), (0, 0, top - 1.2), M['green']),
+                text3d('sign', '三越', 2.4, (0, d / 2 + 0.4, top - 1.2), '+Y', M['cream'], font=MINCHO),
+                text3d('sign_e', '三越', 1.6, (w / 2 + 0.4, 0, top - 1.2), '+X', M['cream'], font=MINCHO)]
+    return simple_office('mitsukoshi', w, d, 7, upper='shop', ground='gshop', extra=extra)
+
+
+def court():
+    """松山地方裁判所（一番町通りの北、萬翠荘の南）。5階建ての庁舎で、玄関は南（一番町通り）"""
+    w, d = 30.0, 18.0
+
+    def extra(M, top):
+        return [box('canopy', (9, 3.2, 0.35), (0, -d / 2 - 1.6, 3.9), M['conc']),
+                cyl('col', 0.25, 3.7, (-4.0, -d / 2 - 2.9, 1.85), M['conc'], verts=12),
+                cyl('col', 0.25, 3.7, (4.0, -d / 2 - 2.9, 1.85), M['conc'], verts=12),
+                text3d('k', '松山地方裁判所', 0.9, (0, -d / 2 - 0.15, 5.0), '-Y', M['dark'], font=MINCHO)]
+    return simple_office('court', w, d, 5, upper='office', ground='goffice', extra=extra)
 
 
 def iyogin():
@@ -1367,7 +1384,8 @@ def build():
              cityhall(), prefoffice(), shiki(), ishiteji(), campus('campus_a', 110, 70), campus('campus_b', 98, 56),
              hospital(), police(), shrine(), stadium(), parktower(), airport(), port('port', 28, 34, '三津浜港'),
              port('ferryterminal', 52, 34, '松山観光港'), ropeway(), mitsukoshi(), sakakumo(), artmuseum(), iyogin(),
-             fujigran(), radiotower(), school('school_a', 62, 26), school('school_b', 62, 22), isaniwa(), tsubaki(), asuka(), shikido(), hogonji(), himegin(), yujinja(), ishizaki(), shinonome()]
+             fujigran(), radiotower(), school('school_a', 62, 26), school('school_b', 62, 22), isaniwa(), tsubaki(), asuka(), shikido(), hogonji(), himegin(), yujinja(), ishizaki(), shinonome(),
+             court()]
     return roots
 
 

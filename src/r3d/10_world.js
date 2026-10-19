@@ -2234,6 +2234,7 @@ G3.world = (function () {
     '伊予銀行本店': ['iyogin', 0], 'フジグラン松山': ['fujigran', 0], '南海放送鉄塔': ['radiotower', 0],
     '松山東高': ['school_a', 0], '市立小学校': ['school_b', 0], '伊佐爾波神社': ['isaniwa', 0], '椿神社': ['tsubaki', 0],
     '飛鳥乃湯泉': ['asuka', 0], '子規堂': ['shikido', 0], '宝厳寺': ['hogonji', 0], 'ひめぎんホール': ['himegin', 0], '湯神社': ['yujinja', 0], '石崎汽船旧本社': ['ishizaki', 0], '東雲神社': ['shinonome', 0],
+    '松山地方裁判所': ['court', 0],
   };
   // Blender側のマテリアル命名規約に従い、ゲーム用マテリアルへ差し替える
   const lmCache = {};
